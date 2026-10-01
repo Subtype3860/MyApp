@@ -1,6 +1,6 @@
 namespace MyApp.Application.DTO {
     public record LoginRequest(string UserNameOrEmail, string Password);
-    public record AuthResponse(string Token, string Role);
+    public record AuthResponse(string Token, string Role, IReadOnlyList<string> Permissions);
     public record CreateUserRequest(
         string FirstName,
         string MiddleName,
@@ -15,5 +15,6 @@ namespace MyApp.Application.DTO {
         string UserName,
         string? Password,
         Guid ProfessionId,
-        string Role);
+        string Role,
+        IReadOnlyList<string>? Permissions);
 }

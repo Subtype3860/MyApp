@@ -11,6 +11,7 @@ namespace MyApp.Domain.Entities {
         public Guid PositionId { get; set; }
         public Profession Profession { get; set; } = null!;
         public required string Role { get; set; }
+        public string Permissions { get; set; } = string.Empty;
         public DateTime CreatedAt { get; set; }
         public byte[]? AvatarContent { get; set; }
         public string? AvatarContentType { get; set; }

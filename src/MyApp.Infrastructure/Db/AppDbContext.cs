@@ -19,6 +19,7 @@ namespace MyApp.Infrastructure.Db {
                 entity.Property(x => x.PasswordHash).HasColumnName("password_hash").IsRequired();
                 entity.Property(x => x.PositionId).HasColumnName("position").IsRequired();
                 entity.Property(x => x.Role).HasColumnName("role").IsRequired().HasMaxLength(30);
+                entity.Property(x => x.Permissions).HasColumnName("permissions").IsRequired();
                 entity.Property(x => x.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("NOW()");
                 entity.Property(x => x.AvatarContent).HasColumnName("avatar_content");
                 entity.Property(x => x.AvatarContentType)

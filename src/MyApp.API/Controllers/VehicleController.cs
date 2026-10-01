@@ -3,14 +3,19 @@ using System.Security.Claims;
 using System.Text;
 using MyApp.Application.DTO;
 using MyApp.Application.Services;
+using MyApp.Application.Security;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace MyApp.API.Controllers;
 
+/// <summary>
+/// API-контроллер для работы с журналом техники: закупки, неисправности,
+/// моточасы, ремонтные работы и их медиавложения (фото/видео), заявки на запчасти.
+/// </summary>
 [ApiController]
 [Route("api/vehicles")]
-[Authorize]
+[Authorize(Policy = Permissions.VehiclesView)]
 public class VehicleController : ControllerBase
 {
     private const long MaximumHoursImportSize = 5 * 1024 * 1024;
@@ -18,6 +23,7 @@ public class VehicleController : ControllerBase
     private const long MaximumVideoSize = 100 * 1024 * 1024;
     private const long MaximumRequestFileSize = 20 * 1024 * 1024;
 
+    /// <summary>Возвращает список всей техники.</summary>
     [HttpGet]
     public async Task<IActionResult> GetVehicles(
         [FromServices] IVehicleService service,
@@ -27,6 +33,7 @@ public class VehicleController : ControllerBase
         return Ok(vehicles);
     }
 
+    /// <summary>Возвращает журнал техники (закупки, неисправности, моточасы, работы) за период.</summary>
     [HttpGet("{vehicleId:guid}/journal")]
     public async Task<IActionResult> GetJournal(
         Guid vehicleId,
@@ -39,6 +46,7 @@ public class VehicleController : ControllerBase
         return journal is null ? NotFound() : Ok(journal);
     }
 
+    /// <summary>Добавляет запись о закупке техники в журнал.</summary>
     [HttpPost("{vehicleId:guid}/purchases")]
     public async Task<IActionResult> AddPurchase(
         Guid vehicleId,
@@ -51,6 +59,7 @@ public class VehicleController : ControllerBase
             $"/api/vehicles/{vehicleId}/journal");
     }
 
+    /// <summary>Регистрирует новую неисправность техники.</summary>
     [HttpPost("{vehicleId:guid}/defects")]
     public async Task<IActionResult> AddDefect(
         Guid vehicleId,
@@ -63,6 +72,7 @@ public class VehicleController : ControllerBase
             $"/api/vehicles/{vehicleId}/journal");
     }
 
+    /// <summary>Прикрепляет фотографии к неисправности.</summary>
     [HttpPost("defects/{defectId:guid}/photos")]
     [IgnoreAntiforgeryToken]
     public async Task<IActionResult> AddDefectPhoto(
@@ -93,6 +103,7 @@ public class VehicleController : ControllerBase
         return this.ToActionResult(result, ids => Created($"/api/vehicles/defect-photos/{ids[0]}", new { id = ids[0] }));
     }
 
+    /// <summary>Переводит неисправность в статус «в работе» (принятие в работу).</summary>
     [HttpPost("defects/{defectId:guid}/claim")]
     public async Task<IActionResult> ClaimDefect(
         Guid defectId,
@@ -108,6 +119,7 @@ public class VehicleController : ControllerBase
         return this.ToActionResult(result, _ => NoContent());
     }
 
+    /// <summary>Прикрепляет видео к неисправности.</summary>
     [HttpPost("defects/{defectId:guid}/videos")]
     [IgnoreAntiforgeryToken]
     public async Task<IActionResult> AddDefectVideo(
@@ -138,6 +150,7 @@ public class VehicleController : ControllerBase
         return this.ToActionResult(result, ids => Created($"/api/vehicles/defect-videos/{ids[0]}", new { id = ids[0] }));
     }
 
+    /// <summary>Возвращает файл видео неисправности по идентификатору.</summary>
     [HttpGet("defect-videos/{videoId:guid}")]
     public async Task<IActionResult> GetDefectVideo(
         Guid videoId,
@@ -148,6 +161,7 @@ public class VehicleController : ControllerBase
         return video is null ? NotFound() : File(video.Content, video.ContentType, video.FileName, enableRangeProcessing: true);
     }
 
+    /// <summary>Удаляет видео неисправности.</summary>
     [HttpDelete("defect-videos/{videoId:guid}")]
     public async Task<IActionResult> DeleteDefectVideo(
         Guid videoId,
@@ -163,6 +177,7 @@ public class VehicleController : ControllerBase
         return this.ToActionResult(result, _ => NoContent());
     }
 
+    /// <summary>Возвращает файл фотографии неисправности по идентификатору.</summary>
     [HttpGet("defect-photos/{photoId:guid}")]
     public async Task<IActionResult> GetDefectPhoto(
         Guid photoId,
@@ -173,6 +188,7 @@ public class VehicleController : ControllerBase
         return photo is null ? NotFound() : File(photo.Content, photo.ContentType, photo.FileName, enableRangeProcessing: true);
     }
 
+    /// <summary>Удаляет фотографию неисправности.</summary>
     [HttpDelete("defect-photos/{photoId:guid}")]
     public async Task<IActionResult> DeleteDefectPhoto(
         Guid photoId,
@@ -188,6 +204,7 @@ public class VehicleController : ControllerBase
         return this.ToActionResult(result, _ => NoContent());
     }
 
+    /// <summary>Добавляет запись о моточасах техники.</summary>
     [HttpPost("{vehicleId:guid}/hours")]
     public async Task<IActionResult> AddHours(
         Guid vehicleId,
@@ -200,6 +217,7 @@ public class VehicleController : ControllerBase
             $"/api/vehicles/{vehicleId}/journal");
     }
 
+    /// <summary>Импортирует моточасы техники из файла.</summary>
     [HttpPost("hours/import")]
     [IgnoreAntiforgeryToken]
     public async Task<IActionResult> ImportHours(
@@ -238,6 +256,7 @@ public class VehicleController : ControllerBase
         }
     }
 
+    /// <summary>Создаёт запись о ремонтных работах для неисправности.</summary>
     [HttpPost("{vehicleId:guid}/works")]
     public async Task<IActionResult> AddWork(
         Guid vehicleId,
@@ -250,6 +269,7 @@ public class VehicleController : ControllerBase
             $"/api/vehicles/{vehicleId}/journal");
     }
 
+    /// <summary>Прикрепляет фотографии к ремонтным работам.</summary>
     [HttpPost("works/{workId:guid}/photos")]
     [IgnoreAntiforgeryToken]
     public async Task<IActionResult> AddWorkPhoto(
@@ -280,6 +300,7 @@ public class VehicleController : ControllerBase
         return this.ToActionResult(result, ids => Created($"/api/vehicles/work-photos/{ids[0]}", new { id = ids[0] }));
     }
 
+    /// <summary>Возвращает файл фотографии ремонтных работ по идентификатору.</summary>
     [HttpGet("work-photos/{photoId:guid}")]
     public async Task<IActionResult> GetWorkPhoto(
         Guid photoId,
@@ -290,6 +311,7 @@ public class VehicleController : ControllerBase
         return photo is null ? NotFound() : File(photo.Content, photo.ContentType, photo.FileName, enableRangeProcessing: true);
     }
 
+    /// <summary>Удаляет фотографию ремонтных работ.</summary>
     [HttpDelete("work-photos/{photoId:guid}")]
     public async Task<IActionResult> DeleteWorkPhoto(
         Guid photoId,
@@ -305,6 +327,7 @@ public class VehicleController : ControllerBase
         return this.ToActionResult(result, _ => NoContent());
     }
 
+    /// <summary>Прикрепляет видео к ремонтным работам.</summary>
     [HttpPost("works/{workId:guid}/videos")]
     [IgnoreAntiforgeryToken]
     public async Task<IActionResult> AddWorkVideo(
@@ -335,6 +358,7 @@ public class VehicleController : ControllerBase
         return this.ToActionResult(result, ids => Created($"/api/vehicles/work-videos/{ids[0]}", new { id = ids[0] }));
     }
 
+    /// <summary>Возвращает файл видео ремонтных работ по идентификатору.</summary>
     [HttpGet("work-videos/{videoId:guid}")]
     public async Task<IActionResult> GetWorkVideo(
         Guid videoId,
@@ -345,6 +369,7 @@ public class VehicleController : ControllerBase
         return video is null ? NotFound() : File(video.Content, video.ContentType, video.FileName, enableRangeProcessing: true);
     }
 
+    /// <summary>Удаляет видео ремонтных работ.</summary>
     [HttpDelete("work-videos/{videoId:guid}")]
     public async Task<IActionResult> DeleteWorkVideo(
         Guid videoId,
@@ -360,10 +385,11 @@ public class VehicleController : ControllerBase
         return this.ToActionResult(result, _ => NoContent());
     }
 
-    [HttpPut("works/{workId:guid}/parts-request")]
+    [HttpPost("defects/{defectId:guid}/parts-requests")]
     [IgnoreAntiforgeryToken]
-    public async Task<IActionResult> UpdatePartsRequest(
-        Guid workId,
+    public async Task<IActionResult> AddPartsRequest(
+        Guid defectId,
+        [FromBody] VehiclePartsRequest request,
         [FromServices] IVehicleService service,
         CancellationToken cancellationToken)
     {
@@ -372,53 +398,49 @@ public class VehicleController : ControllerBase
             return Unauthorized();
         }
 
-        var form = await Request.ReadFormAsync(cancellationToken);
-        if (!DateOnly.TryParse(form["requestDate"], out var requestDate))
-        {
-            return BadRequest(new ValidationProblemDetails(new Dictionary<string, string[]>
-            {
-                ["requestDate"] = ["Укажите дату заявки."]
-            }));
-        }
-
-        var file = form.Files.GetFile("file");
-        if (file?.Length > MaximumRequestFileSize)
-        {
-            return InvalidFile("Файл заявки должен быть не более 20 МБ.");
-        }
-
-        byte[]? content = null;
-        if (file is { Length: > 0 })
-        {
-            await using var stream = new MemoryStream();
-            await file.CopyToAsync(stream, cancellationToken);
-            content = stream.ToArray();
-        }
-
-        var result = await service.UpdatePartsRequestAsync(
-            workId,
-            new VehiclePartsRequest(
-                form["requestNumber"].ToString(),
-                requestDate,
-                file is null ? null : Path.GetFileName(file.FileName),
-                file?.ContentType,
-                content),
-            userId,
-            cancellationToken);
-
-        return this.ToActionResult(result, _ => NoContent());
+        var result = await service.AddPartsRequestAsync(
+            defectId, request, userId, cancellationToken);
+        return this.ToActionResult(result, id => Created(
+            $"/api/vehicles/defects/{defectId}/parts-requests/{id}",
+            new { id }));
     }
 
-    [HttpGet("works/{workId:guid}/parts-request/file")]
-    public async Task<IActionResult> GetPartsRequestFile(
-        Guid workId,
+    [HttpPut("parts-requests/{requestId:guid}")]
+    [IgnoreAntiforgeryToken]
+    public async Task<IActionResult> UpdatePartsRequest(
+        Guid requestId,
+        [FromBody] VehiclePartsRequest request,
         [FromServices] IVehicleService service,
         CancellationToken cancellationToken)
     {
-        var file = await service.GetPartsRequestFileAsync(workId, cancellationToken);
-        return file is null ? NotFound() : File(file.Content, file.ContentType, file.FileName, enableRangeProcessing: true);
+        if (!TryGetUserId(out var userId))
+        {
+            return Unauthorized();
+        }
+
+        var result = await service.UpdatePartsRequestAsync(
+            requestId, request, userId, cancellationToken);
+        return this.ToActionResult(result, _ => NoContent());
     }
 
+    [HttpDelete("parts-requests/{requestId:guid}")]
+    [IgnoreAntiforgeryToken]
+    public async Task<IActionResult> DeletePartsRequest(
+        Guid requestId,
+        [FromServices] IVehicleService service,
+        CancellationToken cancellationToken)
+    {
+        if (!TryGetUserId(out var userId))
+        {
+            return Unauthorized();
+        }
+
+        var result = await service.DeletePartsRequestAsync(
+            requestId, userId, cancellationToken);
+        return this.ToActionResult(result, _ => NoContent());
+    }
+
+    /// <summary>Удаляет запись журнала техники (закупка, неисправность, моточасы или работа).</summary>
     [HttpDelete("{category}/{id:guid}")]
     public async Task<IActionResult> DeleteEntry(
         string category,
@@ -435,6 +457,7 @@ public class VehicleController : ControllerBase
         return deleted ? NoContent() : NotFound();
     }
 
+    /// <summary>Выполняет создание записи журнала от имени текущего пользователя и возвращает <c>201 Created</c>.</summary>
     private async Task<IActionResult> CreateAsync(
         Func<Guid, Task<MyApp.Application.Common.ServiceResult<Guid>>> create,
         string location)
@@ -448,6 +471,7 @@ public class VehicleController : ControllerBase
         return this.ToActionResult(result, id => Created(location, new { id }));
     }
 
+    /// <summary>Пытается извлечь идентификатор текущего пользователя из claims.</summary>
     private bool TryGetUserId(out Guid userId)
     {
         var value = User.FindFirstValue(ClaimTypes.NameIdentifier)
@@ -455,6 +479,7 @@ public class VehicleController : ControllerBase
         return Guid.TryParse(value, out userId);
     }
 
+    /// <summary>Формирует ответ <c>400 Bad Request</c> с сообщением об ошибке файла.</summary>
     private IActionResult InvalidFile(string message) =>
         BadRequest(new ValidationProblemDetails(new Dictionary<string, string[]> { ["file"] = [message] }));
 }

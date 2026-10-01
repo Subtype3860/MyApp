@@ -1,5 +1,5 @@
 <script setup>
-import { ref } from 'vue'
+import { onBeforeUnmount, ref } from 'vue'
 import AuthLogin from './components/AuthLogin.vue'
 import HomeView from './components/HomeView.vue'
 import MaintenanceView from './components/MaintenanceView.vue'
@@ -13,16 +13,35 @@ import VehicleJournalView from './components/VehicleJournalView.vue'
 
 const TOKEN_KEY = 'myapp.authToken'
 const ROLE_KEY = 'myapp.userRole'
+const PERMISSIONS_KEY = 'myapp.userPermissions'
 
 const storedToken = localStorage.getItem(TOKEN_KEY)
 const storedRole = localStorage.getItem(ROLE_KEY)
+const storedPermissions = localStorage.getItem(PERMISSIONS_KEY)
+const legacyPermissionMap = {
+  'tables.view': 'menu.tables',
+  'vehicles.view': 'menu.vehicles',
+  'requirements.view': 'menu.requirements',
+  'maintenance.view': 'menu.maintenance',
+}
+const parsePermissions = (value) => {
+  try {
+    const permissions = JSON.parse(value || '[]')
+    return [...new Set(
+      permissions.map((permission) => legacyPermissionMap[permission] || permission),
+    )]
+  } catch {
+    return []
+  }
+}
 if (storedToken && !storedRole) {
   localStorage.removeItem(TOKEN_KEY)
 }
 
 const token = ref(storedRole ? storedToken : null)
 const role = ref(storedRole)
-const isNavigationCollapsed = ref(false)
+const permissions = ref(parsePermissions(storedPermissions))
+const isNavigationCollapsed = ref(true)
 const currentPage = ref('home')
 const currentTable = ref('v_full_ost')
 const currentSettings = ref('users')
@@ -30,24 +49,41 @@ const currentVehicleSection = ref('defects')
 const selectedComponentRows = ref([])
 const selectedResponsibleEmployee = ref(null)
 const profileVersion = ref(0)
+const sessionExpiredMessage = ref('')
 
 function handleAuthenticated(authData) {
   localStorage.setItem(TOKEN_KEY, authData.token)
   localStorage.setItem(ROLE_KEY, authData.role)
+  localStorage.setItem(PERMISSIONS_KEY, JSON.stringify(authData.permissions || []))
   token.value = authData.token
   role.value = authData.role
+  permissions.value = authData.permissions || []
+  sessionExpiredMessage.value = ''
 }
 
 function handleLogout() {
   localStorage.removeItem(TOKEN_KEY)
   localStorage.removeItem(ROLE_KEY)
+  localStorage.removeItem(PERMISSIONS_KEY)
   token.value = null
   role.value = null
-  isNavigationCollapsed.value = false
+  permissions.value = []
+  isNavigationCollapsed.value = true
   currentPage.value = 'home'
   selectedComponentRows.value = []
   selectedResponsibleEmployee.value = null
 }
+
+function handleSessionExpired(event) {
+  sessionExpiredMessage.value =
+    event.detail?.message || 'Срок действия сессии истёк. Требуется повторная авторизация.'
+  handleLogout()
+}
+
+window.addEventListener('myapp:session-expired', handleSessionExpired)
+onBeforeUnmount(() => {
+  window.removeEventListener('myapp:session-expired', handleSessionExpired)
+})
 
 function openTable(tableName) {
   if (
@@ -104,7 +140,11 @@ function updateSelectedComponentRows(rows) {
 </script>
 
 <template>
-  <AuthLogin v-if="!token" @authenticated="handleAuthenticated" />
+  <AuthLogin
+    v-if="!token"
+    :session-message="sessionExpiredMessage"
+    @authenticated="handleAuthenticated"
+  />
 
   <div v-else class="app-shell">
     <NavigationSidebar
@@ -113,11 +153,12 @@ function updateSelectedComponentRows(rows) {
       :active-table="currentTable"
       :active-settings="currentSettings"
       :active-vehicle-section="currentVehicleSection"
-      :is-admin="role === 'administrator'"
+      :is-admin="String(role).toLowerCase() === 'administrator'"
+      :permissions="permissions"
       :selected-components-count="selectedComponentRows.length"
       :token="token"
       :profile-version="profileVersion"
-      @toggle="isNavigationCollapsed = !isNavigationCollapsed"
+      @toggle="isNavigationCollapsed = true"
       @navigate="currentPage = $event"
       @navigate-table="openTable"
       @navigate-selected-components="openSelectedComponents"
@@ -168,13 +209,11 @@ function updateSelectedComponentRows(rows) {
     <VehicleJournalView
       v-else-if="currentPage === 'vehicles'"
       :navigation-collapsed="isNavigationCollapsed"
-      :role="role"
       :section="currentVehicleSection"
       :token="token"
-      @navigate-section="openVehicleSection"
     />
     <SettingsView
-      v-else-if="currentPage === 'settings' && role === 'administrator'"
+      v-else-if="currentPage === 'settings' && String(role).toLowerCase() === 'administrator'"
       :navigation-collapsed="isNavigationCollapsed"
       :selected-section="currentSettings"
       :token="token"

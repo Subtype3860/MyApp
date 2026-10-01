@@ -1,5 +1,6 @@
 using MyApp.Application.DTO;
 using MyApp.Application.Services;
+using MyApp.Application.Security;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -10,6 +11,9 @@ namespace MyApp.API.Controllers;
 [Authorize(Roles = "administrator")]
 public class AdminUserController : ControllerBase
 {
+    [HttpGet("permissions")]
+    public IActionResult GetPermissions() => Ok(Permissions.Catalog);
+
     [HttpGet]
     public async Task<IActionResult> GetAll(
         [FromServices] IUserService userService,

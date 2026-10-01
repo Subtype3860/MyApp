@@ -1,6 +1,7 @@
 using MyApp.API.Extensions;
 using MyApp.Application;
 using MyApp.Application.Security;
+using MyApp.Application.Storage;
 using MyApp.Infrastructure;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -11,19 +12,46 @@ var connectionString = builder.Configuration.GetConnectionString("DefaultConnect
     ?? throw new InvalidOperationException(
         "Connection string 'DefaultConnection' is required.");
 var jwtSection = builder.Configuration.GetRequiredSection("Jwt");
+var jwtKey = jwtSection.GetValue<string>("Key");
+if (string.IsNullOrWhiteSpace(jwtKey))
+{
+    throw new InvalidOperationException(
+        "Configuration value 'Jwt:Key' must be provided and must not be empty.");
+}
+if (System.Text.Encoding.UTF8.GetByteCount(jwtKey) < 32)
+{
+    throw new InvalidOperationException(
+        "Configuration value 'Jwt:Key' must contain at least 32 bytes.");
+}
 var jwtOptions = new JwtOptions(
-    jwtSection.GetValue<string>("Key")
-        ?? throw new InvalidOperationException("Configuration value 'Jwt:Key' is required."),
+    jwtKey,
     jwtSection.GetValue<string>("Issuer")
         ?? throw new InvalidOperationException("Configuration value 'Jwt:Issuer' is required."),
     jwtSection.GetValue<string>("Audience")
         ?? throw new InvalidOperationException("Configuration value 'Jwt:Audience' is required."));
+var mediaStorageSection = builder.Configuration.GetRequiredSection("MediaStorage");
+var mediaStorageOptions = new MediaStorageOptions(
+    mediaStorageSection.GetValue<string>("PhotoDirectory")
+        ?? throw new InvalidOperationException("Configuration value 'MediaStorage:PhotoDirectory' is required."),
+    mediaStorageSection.GetValue<string>("VideoDirectory")
+        ?? throw new InvalidOperationException("Configuration value 'MediaStorage:VideoDirectory' is required."));
 builder.Services.AddApplication();
 builder.Services.AddInfrastructure(
     connectionString,
-    jwtOptions);
+    jwtOptions,
+    mediaStorageOptions);
 builder.Services.AddJwtAuthentication(builder.Configuration);
-builder.Services.AddAuthorization();
+builder.Services.AddAuthorization(options =>
+{
+    options.AddPolicy(Permissions.TablesView, policy =>
+        policy.RequireClaim("permission", Permissions.TablesView));
+    options.AddPolicy(Permissions.VehiclesView, policy =>
+        policy.RequireClaim("permission", Permissions.VehiclesView));
+    options.AddPolicy(Permissions.RequirementsView, policy =>
+        policy.RequireClaim("permission", Permissions.RequirementsView));
+    options.AddPolicy(Permissions.MaintenanceView, policy =>
+        policy.RequireClaim("permission", Permissions.MaintenanceView));
+});
 builder.Services.AddControllers();
 
 var app = builder.Build();

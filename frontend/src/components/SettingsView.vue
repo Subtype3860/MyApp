@@ -22,6 +22,7 @@ const props = defineProps({
 
 const users = ref([])
 const professions = ref([])
+const permissionCatalog = ref([])
 const editingUserId = ref(null)
 const editingProfessionId = ref(null)
 const professionName = ref('')
@@ -47,6 +48,7 @@ const editUserForm = reactive({
   password: '',
   professionId: '',
   role: 'user',
+  permissions: [],
 })
 
 const transliterationMap = {
@@ -138,6 +140,19 @@ async function loadUsers() {
   }
 }
 
+async function loadPermissionCatalog() {
+  try {
+    const response = await fetch('/api/admin/users/permissions', {
+      headers: authHeaders(),
+    })
+    if (!response.ok) throw new Error('Не удалось загрузить каталог прав.')
+    permissionCatalog.value = await response.json()
+  } catch (error) {
+    errorMessage.value =
+      error instanceof Error ? error.message : 'Не удалось загрузить каталог прав.'
+  }
+}
+
 async function registerUser() {
   isSubmitting.value = true
   errorMessage.value = ''
@@ -177,6 +192,7 @@ function editUser(user) {
     password: '',
     professionId: user.positionId,
     role: user.role,
+    permissions: [...(user.permissions || [])],
   })
   errorMessage.value = ''
   successMessage.value = ''
@@ -334,6 +350,7 @@ watch(
     if (section === 'users') {
       loadUsers()
       ensureProfessionsLoaded()
+      loadPermissionCatalog()
     } else if (section === 'registration') {
       registrationForm.password = buildTemporaryPassword()
       ensureProfessionsLoaded()
@@ -418,6 +435,36 @@ watch(
             <option value="administrator">Администратор</option>
           </select>
         </label>
+        <fieldset class="user-permissions">
+          <legend>Что пользователь может просматривать</legend>
+          <template v-for="menu in permissionCatalog" :key="menu.key">
+            <label class="permission-option permission-option--menu">
+              <input
+                v-model="editUserForm.permissions"
+                type="checkbox"
+                :value="menu.key"
+                :disabled="editUserForm.role === 'administrator'"
+              />
+              <span>{{ menu.label }}</span>
+            </label>
+            <label
+              v-for="item in menu.children || []"
+              :key="item.key"
+              class="permission-option permission-option--submenu"
+            >
+              <input
+                v-model="editUserForm.permissions"
+                type="checkbox"
+                :value="item.key"
+                :disabled="editUserForm.role === 'administrator'"
+              />
+              <span>{{ item.label }}</span>
+            </label>
+          </template>
+          <small v-if="editUserForm.role === 'administrator'">
+            Администратор получает доступ ко всем разделам.
+          </small>
+        </fieldset>
         <label>
           <span>Новый пароль</span>
           <input v-model="editUserForm.password" type="password" minlength="6" />

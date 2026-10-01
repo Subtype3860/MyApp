@@ -1,5 +1,6 @@
 using MyApp.Application.DTO;
 using MyApp.Application.Services;
+using MyApp.Application.Security;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -10,7 +11,7 @@ namespace MyApp.API.Controllers;
 public class MaintenanceTemplateController : ControllerBase
 {
     [HttpGet("/api/maintenance-templates")]
-    [Authorize]
+    [Authorize(Policy = Permissions.MaintenanceView)]
     public async Task<IActionResult> GetAll(
         [FromServices] IMaintenanceTemplateService service,
         CancellationToken cancellationToken)

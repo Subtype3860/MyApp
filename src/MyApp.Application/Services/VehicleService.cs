@@ -9,6 +9,11 @@ using System.Text.RegularExpressions;
 
 namespace MyApp.Application.Services;
 
+/// <summary>
+/// Реализация <see cref="IVehicleService"/>: бизнес-логика журнала техники —
+/// валидация заявок, прав пользователей на неисправности/работы, ограничений
+/// на медиафайлы и делегирование хранения данных в <see cref="IVehicleRepository"/>.
+/// </summary>
 public sealed class VehicleService(
     IVehicleRepository repository,
     IUserRepository userRepository) : IVehicleService
@@ -125,11 +130,6 @@ public sealed class VehicleService(
         Guid userId,
         CancellationToken cancellationToken)
     {
-        if (!await HasProfessionAsync(
-                userId, ExecutorProfessions, cancellationToken))
-        {
-            return ServiceResult<bool>.Unauthorized();
-        }
         if (!await repository.DefectExistsAsync(defectId, cancellationToken))
         {
             return ServiceResult<bool>.NotFound();
@@ -310,8 +310,7 @@ public sealed class VehicleService(
         CancellationToken cancellationToken)
     {
         var user = await userRepository.FindByIdAsync(userId, cancellationToken);
-        if (user is null || !IsAdministrator(user) &&
-            !ExecutorProfessions.Contains(user.Profession.Name.Trim()))
+        if (user is null)
         {
             return ServiceResult<Guid>.Unauthorized();
         }
@@ -428,8 +427,8 @@ public sealed class VehicleService(
             "work-video", videoId, userId,
             repository.DeleteWorkVideoAsync, cancellationToken);
 
-    public async Task<ServiceResult<bool>> UpdatePartsRequestAsync(
-        Guid workId,
+    public async Task<ServiceResult<Guid>> AddPartsRequestAsync(
+        Guid defectId,
         VehiclePartsRequest request,
         Guid userId,
         CancellationToken cancellationToken)
@@ -437,47 +436,105 @@ public sealed class VehicleService(
         if (!await HasProfessionAsync(
                 userId, ["Старший механик"], cancellationToken))
         {
-            return ServiceResult<bool>.Unauthorized();
+            return ServiceResult<Guid>.Unauthorized();
         }
+
         var errors = new Dictionary<string, string[]>();
         if (Clean(request.RequestNumber).Length is < 1 or > 100)
         {
             errors[nameof(request.RequestNumber)] =
                 ["Укажите номер заявки длиной не более 100 символов."];
         }
-        if (request.Content is { Length: > MaximumRequestFileSize })
+        if (request.Description.Trim().Length is < 1 or > 5000)
         {
-            errors["file"] = ["Размер файла не должен превышать 20 МБ."];
+            errors[nameof(request.Description)] =
+                ["Укажите описание заявки длиной от 1 до 5000 символов."];
         }
-        if (request.Content is { Length: > 0 } &&
-            string.IsNullOrWhiteSpace(request.FileName))
+        if (errors.Count > 0)
         {
-            errors["file"] = ["Укажите имя файла."];
+            return ServiceResult<Guid>.Validation(errors);
         }
+
+        var id = await repository.AddPartsRequestAsync(
+            defectId,
+            request with
+            {
+                RequestNumber = Clean(request.RequestNumber),
+                Description = request.Description.Trim(),
+                RequiredParts = request.RequiredParts?.Trim() ?? ""
+            },
+            userId,
+            cancellationToken);
+        return id is Guid value
+            ? ServiceResult<Guid>.Success(value)
+            : ServiceResult<Guid>.Conflict(
+                "Заявку можно добавить только к неисправности со статусом awaiting_parts.");
+    }
+
+    public async Task<ServiceResult<bool>> UpdatePartsRequestAsync(
+        Guid requestId,
+        VehiclePartsRequest request,
+        Guid userId,
+        CancellationToken cancellationToken)
+    {
+        if (!await HasProfessionAsync(userId, ["Старший механик"], cancellationToken))
+        {
+            return ServiceResult<bool>.Unauthorized();
+        }
+
+        var errors = ValidatePartsRequest(request);
         if (errors.Count > 0)
         {
             return ServiceResult<bool>.Validation(errors);
         }
+
         var updated = await repository.UpdatePartsRequestAsync(
-            workId,
-            request with
-            {
-                RequestNumber = Clean(request.RequestNumber),
-                FileName = request.FileName is null
-                    ? null
-                    : SafeFileName(request.FileName)
-            },
-            cancellationToken);
+            requestId, NormalizePartsRequest(request), cancellationToken);
         return updated
             ? ServiceResult<bool>.Success(true)
-            : ServiceResult<bool>.Conflict(
-                "Заявку можно добавить только к работе со статусом awaiting_parts.");
+            : ServiceResult<bool>.NotFound();
     }
 
-    public Task<VehicleRequestFileContent?> GetPartsRequestFileAsync(
-        Guid workId,
-        CancellationToken cancellationToken) =>
-        repository.GetPartsRequestFileAsync(workId, cancellationToken);
+    public async Task<ServiceResult<bool>> DeletePartsRequestAsync(
+        Guid requestId,
+        Guid userId,
+        CancellationToken cancellationToken)
+    {
+        if (!await HasProfessionAsync(userId, ["Старший механик"], cancellationToken))
+        {
+            return ServiceResult<bool>.Unauthorized();
+        }
+
+        var deleted = await repository.DeletePartsRequestAsync(requestId, cancellationToken);
+        return deleted
+            ? ServiceResult<bool>.Success(true)
+            : ServiceResult<bool>.NotFound();
+    }
+
+    private static Dictionary<string, string[]> ValidatePartsRequest(
+        VehiclePartsRequest request)
+    {
+        var errors = new Dictionary<string, string[]>();
+        if (Clean(request.RequestNumber).Length is < 1 or > 100)
+        {
+            errors[nameof(request.RequestNumber)] =
+                ["Укажите номер заявки длиной не более 100 символов."];
+        }
+        if (request.Description.Trim().Length is < 1 or > 5000)
+        {
+            errors[nameof(request.Description)] =
+                ["Укажите описание заявки длиной от 1 до 5000 символов."];
+        }
+        return errors;
+    }
+
+    private static VehiclePartsRequest NormalizePartsRequest(VehiclePartsRequest request) =>
+        request with
+        {
+            RequestNumber = Clean(request.RequestNumber),
+            Description = request.Description.Trim(),
+            RequiredParts = request.RequiredParts?.Trim() ?? ""
+        };
 
     private async Task<ServiceResult<Guid>> CreateAsync(
         Guid vehicleId,
@@ -535,7 +592,11 @@ public sealed class VehicleService(
         var description = ValidateText(request.Description, "Выполненные работы");
         var failure = ValidateText(request.Cause, "Причина отказа");
         var status = Clean(request.Status);
-        return description ?? failure ??
+        var repairDateTimeError = request.RepairDateTime is { } repairDateTime &&
+            repairDateTime > DateTimeOffset.UtcNow.AddMinutes(5)
+                ? "Дата и время ремонта не могут быть в будущем."
+                : null;
+        return description ?? failure ?? repairDateTimeError ??
             (status is not ("repaired" or "faulty" or "awaiting_parts")
                 ? "Статус должен быть repaired, faulty или awaiting_parts."
                 : status == "awaiting_parts" &&

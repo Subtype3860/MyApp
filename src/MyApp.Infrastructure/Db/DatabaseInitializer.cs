@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using MyApp.Application.Abstractions;
+using MyApp.Application.Security;
 using MyApp.Domain.Entities;
 
 namespace MyApp.Infrastructure.Db;
@@ -144,11 +145,19 @@ public sealed class DatabaseInitializer(AppDbContext db) : IDatabaseInitializer
                 password_hash text NOT NULL,
                 position uuid NOT NULL,
                 role varchar(30) NOT NULL,
+                permissions text NOT NULL DEFAULT 'menu.tables,menu.vehicles,menu.requirements,menu.maintenance',
                 created_at timestamptz NOT NULL DEFAULT NOW(),
                 CONSTRAINT fk_app_users_professions_position
                     FOREIGN KEY (position) REFERENCES professions(id)
                     ON DELETE RESTRICT
             )
+            """,
+            cancellationToken);
+        await db.Database.ExecuteSqlRawAsync(
+            """
+            ALTER TABLE app_users
+            ADD COLUMN IF NOT EXISTS permissions text
+                NOT NULL DEFAULT 'menu.tables,menu.vehicles,menu.requirements,menu.maintenance'
             """,
             cancellationToken);
         await db.Database.ExecuteSqlRawAsync(
@@ -442,11 +451,6 @@ public sealed class DatabaseInitializer(AppDbContext db) : IDatabaseInitializer
                 performer varchar(300) NOT NULL DEFAULT '',
                 note text NOT NULL DEFAULT '',
                 defect_id uuid REFERENCES vehicle_defects(id) ON DELETE CASCADE,
-                purchase_request_number varchar(100) NOT NULL DEFAULT '',
-                purchase_request_date date,
-                purchase_request_file_name varchar(255),
-                purchase_request_content_type varchar(100),
-                purchase_request_content bytea,
                 failure_cause text NOT NULL DEFAULT '',
                 repair_status varchar(30) NOT NULL DEFAULT 'repaired',
                 required_parts text NOT NULL DEFAULT '',
@@ -456,15 +460,33 @@ public sealed class DatabaseInitializer(AppDbContext db) : IDatabaseInitializer
                 created_at timestamptz NOT NULL DEFAULT NOW()
             );
 
+            CREATE TABLE IF NOT EXISTS vehicle_parts_requests (
+                id uuid PRIMARY KEY,
+                defect_id uuid NOT NULL REFERENCES vehicle_defects(id) ON DELETE CASCADE,
+                request_date date NOT NULL,
+                request_number varchar(100) NOT NULL DEFAULT '',
+                description text NOT NULL DEFAULT '',
+                required_parts text NOT NULL DEFAULT '',
+                created_by uuid NOT NULL REFERENCES app_users(id) ON DELETE RESTRICT,
+                created_at timestamptz NOT NULL DEFAULT NOW()
+            );
+
+            CREATE UNIQUE INDEX IF NOT EXISTS ux_vehicle_parts_requests_legacy
+                ON vehicle_parts_requests (defect_id, request_number, request_date, description);
+            CREATE INDEX IF NOT EXISTS ix_vehicle_parts_requests_defect_created
+                ON vehicle_parts_requests (defect_id, created_at);
+
+            ALTER TABLE vehicle_works
+                DROP COLUMN IF EXISTS purchase_request_number,
+                DROP COLUMN IF EXISTS purchase_request_date,
+                DROP COLUMN IF EXISTS purchase_request_file_name,
+                DROP COLUMN IF EXISTS purchase_request_content_type,
+                DROP COLUMN IF EXISTS purchase_request_content,
+                DROP COLUMN IF EXISTS purchase_request_description;
+
             ALTER TABLE vehicle_works
                 ADD COLUMN IF NOT EXISTS defect_id uuid
                     REFERENCES vehicle_defects(id) ON DELETE CASCADE,
-                ADD COLUMN IF NOT EXISTS purchase_request_number varchar(100)
-                    NOT NULL DEFAULT '',
-                ADD COLUMN IF NOT EXISTS purchase_request_date date,
-                ADD COLUMN IF NOT EXISTS purchase_request_file_name varchar(255),
-                ADD COLUMN IF NOT EXISTS purchase_request_content_type varchar(100),
-                ADD COLUMN IF NOT EXISTS purchase_request_content bytea,
                 ADD COLUMN IF NOT EXISTS failure_cause text NOT NULL DEFAULT '',
                 ADD COLUMN IF NOT EXISTS repair_status varchar(30)
                     NOT NULL DEFAULT 'repaired',
@@ -509,7 +531,7 @@ public sealed class DatabaseInitializer(AppDbContext db) : IDatabaseInitializer
                         INSERT INTO vehicle_works (
                             id, vehicle_id, work_date, description,
                             engine_hours, performer, note, defect_id,
-                            purchase_request_number, created_by, created_at)
+                            created_by, created_at)
                         SELECT
                             md5(defects.id::text || '':legacy-repair'')::uuid,
                             defects.vehicle_id,
@@ -519,7 +541,6 @@ public sealed class DatabaseInitializer(AppDbContext db) : IDatabaseInitializer
                             '''',
                             '''',
                             defects.id,
-                            '''',
                             defects.created_by,
                             defects.created_at
                         FROM vehicle_defects AS defects
@@ -658,6 +679,7 @@ public sealed class DatabaseInitializer(AppDbContext db) : IDatabaseInitializer
                 "RywEjkyVe79il+wrlDQ2SKatTxMl4GLyzef57VQDf54=",
             PositionId = administratorProfession.Id,
             Role = "administrator",
+            Permissions = string.Join(',', Permissions.All),
             CreatedAt = DateTime.UtcNow
         });
         await db.SaveChangesAsync(cancellationToken);

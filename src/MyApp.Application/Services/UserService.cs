@@ -3,6 +3,7 @@ using MyApp.Application.Abstractions;
 using MyApp.Application.Common;
 using MyApp.Application.DTO;
 using MyApp.Domain.Entities;
+using MyApp.Application.Security;
 
 namespace MyApp.Application.Services;
 
@@ -24,6 +25,7 @@ public sealed class UserService(
             user.PositionId,
             user.Profession.Name,
             user.Role,
+            GetPermissions(user),
             user.CreatedAt)).ToArray();
     }
 
@@ -74,6 +76,7 @@ public sealed class UserService(
             PasswordHash = passwordHasher.Hash(temporaryPassword),
             PositionId = request.ProfessionId,
             Role = "user",
+            Permissions = string.Join(',', Permissions.All),
             CreatedAt = DateTime.UtcNow
         };
 
@@ -139,6 +142,9 @@ public sealed class UserService(
         user.Role = userName.Equals("boora", StringComparison.OrdinalIgnoreCase)
             ? "administrator"
             : request.Role;
+        user.Permissions = user.Role.Equals("administrator", StringComparison.OrdinalIgnoreCase)
+            ? string.Join(',', Permissions.All)
+            : string.Join(',', NormalizePermissions(request.Permissions));
 
         if (!string.IsNullOrWhiteSpace(request.Password))
         {
@@ -329,6 +335,12 @@ public sealed class UserService(
             errors[nameof(request.Role)] = ["Укажите допустимую роль."];
         }
 
+        if (request.Permissions is not null &&
+            request.Permissions.Any(permission => !Permissions.IsKnown(permission)))
+        {
+            errors[nameof(request.Permissions)] = ["Указано неизвестное право доступа."];
+        }
+
         if (!string.IsNullOrEmpty(request.Password) && request.Password.Length < 6)
         {
             errors[nameof(request.Password)] =
@@ -337,6 +349,18 @@ public sealed class UserService(
 
         return errors;
     }
+
+    private static IReadOnlyList<string> GetPermissions(User user) =>
+        user.Role.Equals("administrator", StringComparison.OrdinalIgnoreCase)
+            ? Permissions.All
+            : NormalizePermissions(user.Permissions.Split(
+                ',',
+                StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+
+    private static IReadOnlyList<string> NormalizePermissions(IEnumerable<string>? permissions) =>
+        Permissions.Expand(permissions)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
 
     private static void AddRequiredError(
         IDictionary<string, string[]> errors,

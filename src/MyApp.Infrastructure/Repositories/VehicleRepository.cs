@@ -1,13 +1,20 @@
 using MyApp.Application.Abstractions;
 using MyApp.Application.DTO;
+using MyApp.Application.Storage;
 using Npgsql;
 
 namespace MyApp.Infrastructure.Repositories;
 
-public sealed class VehicleRepository(NpgsqlDataSource dataSource) : IVehicleRepository
+/// <summary>
+/// Реализация <see cref="IVehicleRepository"/> на PostgreSQL (Npgsql): хранит
+/// технику, журнал закупок/неисправностей/моточасов/работ и их медиавложения,
+/// используя <see cref="IMediaStorageService"/> для файлов на диске.
+/// </summary>
+public sealed class VehicleRepository(
+    NpgsqlDataSource dataSource,
+    IMediaStorageService mediaStorage,
+    MediaStorageOptions mediaStorageOptions) : IVehicleRepository
 {
-    private const string ImageDirectory = "/mnt/dietpi/img";
-    private const string VideoDirectory = "/mnt/dietpi/video";
     private const string VehicleSelect =
         """
         SELECT
@@ -206,7 +213,7 @@ public sealed class VehicleRepository(NpgsqlDataSource dataSource) : IVehicleRep
             "defect_id",
             defectId,
             photos,
-            ImageDirectory,
+            mediaStorage.SavePhotoAsync,
             cancellationToken);
 
     public Task<VehicleWorkPhotoContent?> GetDefectPhotoAsync(
@@ -231,7 +238,7 @@ public sealed class VehicleRepository(NpgsqlDataSource dataSource) : IVehicleRep
         CancellationToken cancellationToken) =>
         AddMediaAsync(
             "vehicle_defect_videos", "defect_id", defectId, videos,
-            VideoDirectory, cancellationToken);
+            mediaStorage.SaveVideoAsync, cancellationToken);
 
     public Task<VehicleWorkPhotoContent?> GetDefectVideoAsync(
         Guid videoId,
@@ -343,10 +350,10 @@ public sealed class VehicleRepository(NpgsqlDataSource dataSource) : IVehicleRep
             """
             INSERT INTO vehicle_works (
                 id, vehicle_id, work_date, description, engine_hours,
-                performer, note, defect_id, purchase_request_number, created_by)
+                performer, note, defect_id, created_by)
             VALUES (
                 @id, @vehicleId, CURRENT_DATE, @description, NULL,
-                '', '', @defectId, '', @createdBy)
+                '', '', @defectId, @createdBy)
             """,
             vehicleId,
             createdBy,
@@ -358,7 +365,7 @@ public sealed class VehicleRepository(NpgsqlDataSource dataSource) : IVehicleRep
         Guid defectId,
         VehicleWorkRequest request,
         Guid performedBy,
-        bool administrator,
+        bool _administrator,
         CancellationToken cancellationToken)
     {
         var id = Guid.NewGuid();
@@ -370,14 +377,13 @@ public sealed class VehicleRepository(NpgsqlDataSource dataSource) : IVehicleRep
         select.Transaction = transaction;
         select.CommandText =
             """
-            SELECT vehicle_id, assigned_to
+            SELECT vehicle_id
             FROM vehicle_defects
             WHERE id = @defectId
             FOR UPDATE
             """;
         select.Parameters.AddWithValue("defectId", defectId);
         Guid vehicleId;
-        Guid? assignedTo;
         await using (var reader = await select.ExecuteReaderAsync(cancellationToken))
         {
             if (!await reader.ReadAsync(cancellationToken))
@@ -385,46 +391,28 @@ public sealed class VehicleRepository(NpgsqlDataSource dataSource) : IVehicleRep
                 return null;
             }
             vehicleId = reader.GetGuid(0);
-            assignedTo = reader.IsDBNull(1) ? null : reader.GetGuid(1);
         }
-        if (!administrator && assignedTo != performedBy)
-        {
-            return null;
-        }
-
-        await using var completed = connection.CreateCommand();
-        completed.Transaction = transaction;
-        completed.CommandText =
-            """
-            SELECT EXISTS (
-                SELECT 1 FROM vehicle_works
-                WHERE defect_id = @defectId AND completed_at IS NOT NULL)
-            """;
-        completed.Parameters.AddWithValue("defectId", defectId);
-        if ((bool)(await completed.ExecuteScalarAsync(cancellationToken) ?? false))
-        {
-            return null;
-        }
-
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText =
             """
             INSERT INTO vehicle_works (
                 id, vehicle_id, work_date, description, engine_hours,
-                performer, note, defect_id, purchase_request_number,
+                performer, note, defect_id,
                 failure_cause, repair_status, required_parts, performed_by,
                 completed_at, created_by)
             VALUES (
-                @id, @vehicleId, CURRENT_DATE, @description, NULL,
-                '', '', @defectId, @requestNumber, @failureCause, @status,
-                @requiredParts, @performedBy, NOW(), @performedBy)
+                @id, @vehicleId, @workDate, @description, NULL,
+                '', '', @defectId, @failureCause, @status,
+                @requiredParts, @performedBy, @completedAt, @performedBy)
             """;
         command.Parameters.AddWithValue("id", id);
         command.Parameters.AddWithValue("vehicleId", vehicleId);
         command.Parameters.AddWithValue("defectId", defectId);
+        var completedAt = request.RepairDateTime ?? DateTimeOffset.UtcNow;
+        command.Parameters.AddWithValue("workDate", completedAt.Date);
+        command.Parameters.AddWithValue("completedAt", completedAt);
         command.Parameters.AddWithValue("description", request.Description);
-        command.Parameters.AddWithValue("requestNumber", string.Empty);
         command.Parameters.AddWithValue("failureCause", request.Cause);
         command.Parameters.AddWithValue("status", request.Status!);
         command.Parameters.AddWithValue(
@@ -523,7 +511,7 @@ public sealed class VehicleRepository(NpgsqlDataSource dataSource) : IVehicleRep
             "work_id",
             workId,
             photos,
-            ImageDirectory,
+            mediaStorage.SavePhotoAsync,
             cancellationToken);
 
     private async Task<IReadOnlyList<Guid>> AddPhotosAsync(
@@ -531,7 +519,7 @@ public sealed class VehicleRepository(NpgsqlDataSource dataSource) : IVehicleRep
         string parentColumn,
         Guid parentId,
         IReadOnlyList<VehicleWorkPhotoUpload> photos,
-        string directory,
+        Func<byte[], string, CancellationToken, Task<string>> saveAsync,
         CancellationToken cancellationToken)
     {
         var media = photos
@@ -539,7 +527,7 @@ public sealed class VehicleRepository(NpgsqlDataSource dataSource) : IVehicleRep
                 photo.FileName, photo.ContentType, photo.Content))
             .ToArray();
         return await AddMediaAsync(
-            table, parentColumn, parentId, media, directory, cancellationToken);
+            table, parentColumn, parentId, media, saveAsync, cancellationToken);
     }
 
     private async Task<IReadOnlyList<Guid>> AddMediaAsync(
@@ -547,10 +535,9 @@ public sealed class VehicleRepository(NpgsqlDataSource dataSource) : IVehicleRep
         string parentColumn,
         Guid parentId,
         IReadOnlyList<VehicleMediaUpload> media,
-        string directory,
+        Func<byte[], string, CancellationToken, Task<string>> saveAsync,
         CancellationToken cancellationToken)
     {
-        Directory.CreateDirectory(directory);
         var writtenPaths = new List<string>(media.Count);
         await using var connection = await dataSource.OpenConnectionAsync(
             cancellationToken);
@@ -563,8 +550,8 @@ public sealed class VehicleRepository(NpgsqlDataSource dataSource) : IVehicleRep
             {
                 var id = Guid.NewGuid();
                 var extension = GetSafeExtension(item.FileName, item.ContentType);
-                var path = Path.Combine(directory, $"{Guid.NewGuid():N}{extension}");
-                await File.WriteAllBytesAsync(path, item.Content, cancellationToken);
+                var path = await saveAsync(
+                    item.Content, $"upload{extension}", cancellationToken);
                 writtenPaths.Add(path);
                 await using var command = connection.CreateCommand();
                 command.Transaction = transaction;
@@ -668,7 +655,7 @@ public sealed class VehicleRepository(NpgsqlDataSource dataSource) : IVehicleRep
         CancellationToken cancellationToken) =>
         AddMediaAsync(
             "vehicle_work_videos", "work_id", workId, videos,
-            VideoDirectory, cancellationToken);
+            mediaStorage.SaveVideoAsync, cancellationToken);
 
     public Task<VehicleWorkPhotoContent?> GetWorkVideoAsync(
         Guid videoId,
@@ -680,49 +667,95 @@ public sealed class VehicleRepository(NpgsqlDataSource dataSource) : IVehicleRep
         CancellationToken cancellationToken) =>
         DeletePhotoAsync("vehicle_work_videos", videoId, cancellationToken);
 
+    public async Task<Guid?> AddPartsRequestAsync(
+        Guid defectId,
+        VehiclePartsRequest request,
+        Guid createdBy,
+        CancellationToken cancellationToken)
+    {
+        await using var command = dataSource.CreateCommand(
+            """
+            INSERT INTO vehicle_parts_requests (
+                id, defect_id, request_date, request_number, description,
+                required_parts, created_by)
+            SELECT @id, defects.id, @date, @number, @description,
+                   @requiredParts, @createdBy
+            FROM vehicle_defects AS defects
+            WHERE defects.id = @defectId
+              AND EXISTS (
+                  SELECT 1
+                  FROM vehicle_works
+                  WHERE defect_id = defects.id
+                    AND repair_status = 'awaiting_parts')
+            RETURNING id
+            """);
+        var id = Guid.NewGuid();
+        command.Parameters.AddWithValue("id", id);
+        command.Parameters.AddWithValue("defectId", defectId);
+        command.Parameters.AddWithValue("date", request.RequestDate);
+        command.Parameters.AddWithValue("number", request.RequestNumber);
+        command.Parameters.AddWithValue("description", request.Description);
+        command.Parameters.AddWithValue("requiredParts", request.RequiredParts ?? "");
+        command.Parameters.AddWithValue("createdBy", createdBy);
+        var result = await command.ExecuteScalarAsync(cancellationToken);
+        return result is Guid value ? value : null;
+    }
+
+    public async Task<IReadOnlyList<VehiclePartsRequestResponse>> GetPartsRequestsAsync(
+        Guid defectId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = dataSource.CreateCommand(
+            """
+            SELECT id, defect_id, request_number, request_date, description,
+                   required_parts, created_at
+            FROM vehicle_parts_requests
+            WHERE defect_id = @defectId
+            ORDER BY created_at
+            """);
+        command.Parameters.AddWithValue("defectId", defectId);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        var result = new List<VehiclePartsRequestResponse>();
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            result.Add(new VehiclePartsRequestResponse(
+                reader.GetGuid(0), reader.GetGuid(1), reader.GetString(2),
+                reader.GetFieldValue<DateOnly>(3), reader.GetString(4),
+                reader.GetString(5), reader.GetFieldValue<DateTimeOffset>(6)));
+        }
+        return result;
+    }
+
     public async Task<bool> UpdatePartsRequestAsync(
-        Guid workId,
+        Guid requestId,
         VehiclePartsRequest request,
         CancellationToken cancellationToken)
     {
         await using var command = dataSource.CreateCommand(
             """
-            UPDATE vehicle_works
-            SET purchase_request_number = @number,
-                purchase_request_date = @date,
-                purchase_request_file_name = @fileName,
-                purchase_request_content_type = @contentType,
-                purchase_request_content = @content
-            WHERE id = @workId AND repair_status = 'awaiting_parts'
+            UPDATE vehicle_parts_requests
+            SET request_date = @date,
+                request_number = @number,
+                description = @description,
+                required_parts = @requiredParts
+            WHERE id = @id
             """);
-        command.Parameters.AddWithValue("workId", workId);
-        command.Parameters.AddWithValue("number", request.RequestNumber);
+        command.Parameters.AddWithValue("id", requestId);
         command.Parameters.AddWithValue("date", request.RequestDate);
-        AddNullable(command, "fileName", NpgsqlTypes.NpgsqlDbType.Varchar, request.FileName);
-        AddNullable(command, "contentType", NpgsqlTypes.NpgsqlDbType.Varchar, request.ContentType);
-        AddNullable(command, "content", NpgsqlTypes.NpgsqlDbType.Bytea, request.Content);
-        return await command.ExecuteNonQueryAsync(cancellationToken) == 1;
+        command.Parameters.AddWithValue("number", request.RequestNumber);
+        command.Parameters.AddWithValue("description", request.Description);
+        command.Parameters.AddWithValue("requiredParts", request.RequiredParts ?? "");
+        return await command.ExecuteNonQueryAsync(cancellationToken) > 0;
     }
 
-    public async Task<VehicleRequestFileContent?> GetPartsRequestFileAsync(
-        Guid workId,
+    public async Task<bool> DeletePartsRequestAsync(
+        Guid requestId,
         CancellationToken cancellationToken)
     {
         await using var command = dataSource.CreateCommand(
-            """
-            SELECT purchase_request_file_name,
-                   purchase_request_content_type,
-                   purchase_request_content
-            FROM vehicle_works
-            WHERE id = @workId AND purchase_request_content IS NOT NULL
-            """);
-        command.Parameters.AddWithValue("workId", workId);
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        return await reader.ReadAsync(cancellationToken)
-            ? new VehicleRequestFileContent(
-                reader.GetString(0), reader.GetString(1),
-                reader.GetFieldValue<byte[]>(2))
-            : null;
+            "DELETE FROM vehicle_parts_requests WHERE id = @id");
+        command.Parameters.AddWithValue("id", requestId);
+        return await command.ExecuteNonQueryAsync(cancellationToken) > 0;
     }
 
     public async Task<bool> DeleteEntryAsync(
@@ -909,6 +942,7 @@ public sealed class VehicleRepository(NpgsqlDataSource dataSource) : IVehicleRep
                 photoReader.GetString(3),
                 photoReader.GetInt32(4)));
         }
+        await photoReader.DisposeAsync();
         await using var videoCommand = CreateRangeCommand(
             """
             SELECT videos.defect_id, videos.id, videos.file_name,
@@ -975,15 +1009,12 @@ public sealed class VehicleRepository(NpgsqlDataSource dataSource) : IVehicleRep
         await using var command = CreateRangeCommand(
             """
             SELECT works.id, works.defect_id, COALESCE(defects.node_name, ''),
-                   works.description, works.purchase_request_number,
-                   works.created_at, works.failure_cause, works.repair_status,
+                   works.description, works.created_at,
+                   works.failure_cause, works.repair_status,
                    works.required_parts, works.performed_by,
                    COALESCE(CONCAT_WS(' ', performers.last_name,
                        performers.first_name, NULLIF(performers.middle_name, '')), ''),
-                   works.completed_at, works.purchase_request_date,
-                   COALESCE(works.purchase_request_file_name, ''),
-                   COALESCE(works.purchase_request_content_type, ''),
-                   works.purchase_request_content IS NOT NULL
+                   works.completed_at
             FROM vehicle_works AS works
             LEFT JOIN vehicle_defects AS defects ON defects.id = works.defect_id
             LEFT JOIN app_users AS performers ON performers.id = works.performed_by
@@ -1001,30 +1032,35 @@ public sealed class VehicleRepository(NpgsqlDataSource dataSource) : IVehicleRep
         {
             result.Add(new VehicleWorkResponse(
                 reader.GetGuid(0),
-                reader.IsDBNull(1) ? null : reader.GetGuid(1),
+                reader.IsDBNull(1) ? null :                 reader.GetGuid(1),
                 reader.GetString(2),
                 reader.GetString(3),
-                reader.GetString(4),
-                reader.GetFieldValue<DateTimeOffset>(5),
+                reader.GetFieldValue<DateTimeOffset>(4),
                 [],
+                reader.GetString(5),
                 reader.GetString(6),
                 reader.GetString(7),
-                reader.GetString(8),
-                reader.IsDBNull(9) ? null : reader.GetGuid(9),
-                reader.GetString(10),
-                reader.IsDBNull(11)
+                reader.IsDBNull(8) ? null : reader.GetGuid(8),
+                reader.GetString(9),
+                reader.IsDBNull(10)
                     ? null
-                    : reader.GetFieldValue<DateTimeOffset>(11),
-                reader.GetString(4),
-                reader.IsDBNull(12)
-                    ? null
-                    : reader.GetFieldValue<DateOnly>(12),
-                reader.GetString(13),
-                reader.GetString(14),
-                reader.GetBoolean(15),
+                    : reader.GetFieldValue<DateTimeOffset>(10),
                 []));
         }
         await reader.DisposeAsync();
+
+        for (var index = 0; index < result.Count; index++)
+        {
+            if (result[index].DefectId is not Guid defectId)
+            {
+                continue;
+            }
+            result[index] = result[index] with
+            {
+                PartsRequests = await GetPartsRequestsAsync(
+                    defectId, cancellationToken)
+            };
+        }
 
         await using var photoCommand = CreateRangeCommand(
             """
@@ -1058,6 +1094,7 @@ public sealed class VehicleRepository(NpgsqlDataSource dataSource) : IVehicleRep
                 photoReader.GetString(3),
                 photoReader.GetInt32(4)));
         }
+        await photoReader.DisposeAsync();
         await using var videoCommand = CreateRangeCommand(
             """
             SELECT videos.work_id, videos.id, videos.file_name,
@@ -1169,7 +1206,7 @@ public sealed class VehicleRepository(NpgsqlDataSource dataSource) : IVehicleRep
         return result;
     }
 
-    private static async Task<VehicleWorkPhotoContent?> ReadMediaContentAsync(
+    private async Task<VehicleWorkPhotoContent?> ReadMediaContentAsync(
         NpgsqlDataReader reader,
         CancellationToken cancellationToken)
     {
@@ -1257,7 +1294,7 @@ public sealed class VehicleRepository(NpgsqlDataSource dataSource) : IVehicleRep
         return name.Length <= 255 ? name : name[..255];
     }
 
-    private static void DeleteFile(string path)
+    private void DeleteFile(string path)
     {
         if (!IsManagedPath(path))
         {
@@ -1280,14 +1317,14 @@ public sealed class VehicleRepository(NpgsqlDataSource dataSource) : IVehicleRep
         }
     }
 
-    private static bool IsManagedPath(string path)
+    private bool IsManagedPath(string path)
     {
         var fullPath = Path.GetFullPath(path);
         return fullPath.StartsWith(
-                   Path.GetFullPath(ImageDirectory) + Path.DirectorySeparatorChar,
+                   Path.GetFullPath(mediaStorageOptions.PhotoDirectory) + Path.DirectorySeparatorChar,
                    StringComparison.Ordinal) ||
                fullPath.StartsWith(
-                   Path.GetFullPath(VideoDirectory) + Path.DirectorySeparatorChar,
+                   Path.GetFullPath(mediaStorageOptions.VideoDirectory) + Path.DirectorySeparatorChar,
                    StringComparison.Ordinal);
     }
 

@@ -27,6 +27,10 @@ const props = defineProps({
     type: Boolean,
     required: true,
   },
+  permissions: {
+    type: Array,
+    required: true,
+  },
   selectedComponentsCount: {
     type: Number,
     required: true,
@@ -49,8 +53,19 @@ const isVehiclesExpanded = ref(false)
 const isSettingsExpanded = ref(false)
 const profile = ref(null)
 const avatarUrl = ref('')
+const canView = (permission) =>
+  props.isAdmin ||
+  String(localStorage.getItem('myapp.userRole')).toLowerCase() === 'administrator' ||
+  props.permissions.includes(permission)
 
 watch(() => [props.token, props.profileVersion], loadProfile, { immediate: true })
+watch(() => props.activePage, (page) => {
+  if (page !== 'vehicles') isVehiclesExpanded.value = false
+  if (page !== 'tables' && page !== 'selected-components') {
+    isTablesExpanded.value = false
+  }
+  if (page !== 'settings') isSettingsExpanded.value = false
+})
 onBeforeUnmount(clearAvatar)
 
 function clearAvatar() {
@@ -76,32 +91,15 @@ async function loadProfile() {
 }
 
 function toggleTables() {
-  if (props.collapsed) {
-    emit('toggle')
-    isTablesExpanded.value = true
-    return
-  }
-
   isTablesExpanded.value = !isTablesExpanded.value
 }
 
 function toggleVehicles() {
-  if (props.collapsed) {
-    emit('toggle')
-    isVehiclesExpanded.value = true
-    return
-  }
-
   isVehiclesExpanded.value = !isVehiclesExpanded.value
+  if (isVehiclesExpanded.value) emit('navigate', 'vehicles')
 }
 
 function toggleSettings() {
-  if (props.collapsed) {
-    emit('toggle')
-    isSettingsExpanded.value = true
-    return
-  }
-
   isSettingsExpanded.value = !isSettingsExpanded.value
 }
 </script>
@@ -113,24 +111,10 @@ function toggleSettings() {
         <img class="sidebar-brand-logo" :src="brandLogo" alt="" aria-hidden="true" />
         <span class="sidebar-label brand-name">ARM механик ООО "ДВС"</span>
       </div>
-      <button
-        v-if="collapsed"
-        class="icon-button"
-        type="button"
-        aria-label="Развернуть меню"
-        :aria-expanded="false"
-        @click="$emit('toggle')"
-      >
-        <span class="hamburger" aria-hidden="true">
-          <span></span>
-          <span></span>
-          <span></span>
-        </span>
-      </button>
     </div>
 
     <button
-      v-if="!collapsed"
+      v-if="false"
       class="collapse-handle"
       type="button"
       aria-label="Свернуть меню"
@@ -153,89 +137,8 @@ function toggleSettings() {
         </svg>
         <span class="sidebar-label">Главная</span>
       </button>
-      <button
-        class="nav-link"
-        :class="{ 'nav-link--active': activePage === 'maintenance' }"
-        type="button"
-        :aria-current="activePage === 'maintenance' ? 'page' : undefined"
-        @click="$emit('navigate', 'maintenance')"
-      >
-        <svg viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M4 7h16M6 12h12M8 17h8M9 4v6M15 10v7" />
-        </svg>
-        <span class="sidebar-label">ТО</span>
-      </button>
-      <button
-        class="nav-link"
-        :class="{ 'nav-link--active': activePage === 'vehicles' }"
-        type="button"
-        :aria-expanded="isVehiclesExpanded"
-        aria-controls="vehicles-submenu"
-        @click="toggleVehicles"
-      >
-        <svg viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M5 16V9l2-4h10l2 4v7M4 12h16M7 16v3M17 16v3M7.5 9h9M8 14h.01M16 14h.01" />
-        </svg>
-        <span class="sidebar-label">Техника</span>
-        <span
-          class="sidebar-label submenu-chevron"
-          :class="{ 'submenu-chevron--expanded': isVehiclesExpanded }"
-          aria-hidden="true"
-        >
-          ›
-        </span>
-      </button>
-      <div
-        v-if="!collapsed && isVehiclesExpanded"
-        id="vehicles-submenu"
-        class="nav-submenu"
-      >
-        <button
-          class="nav-submenu-link"
-          :class="{
-            'nav-submenu-link--active':
-              activePage === 'vehicles' && activeVehicleSection === 'defects',
-          }"
-          type="button"
-          @click="$emit('navigate-vehicle', 'defects')"
-        >
-          Неисправность
-        </button>
-        <button
-          class="nav-submenu-link"
-          :class="{
-            'nav-submenu-link--active':
-              activePage === 'vehicles' && activeVehicleSection === 'works',
-          }"
-          type="button"
-          @click="$emit('navigate-vehicle', 'works')"
-        >
-          Ремонт
-        </button>
-        <button
-          class="nav-submenu-link"
-          :class="{
-            'nav-submenu-link--active':
-              activePage === 'vehicles' && activeVehicleSection === 'requests',
-          }"
-          type="button"
-          @click="$emit('navigate-vehicle', 'requests')"
-        >
-          Заявка
-        </button>
-        <button
-          class="nav-submenu-link"
-          :class="{
-            'nav-submenu-link--active':
-              activePage === 'vehicles' && activeVehicleSection === 'hours',
-          }"
-          type="button"
-          @click="$emit('navigate-vehicle', 'hours')"
-        >
-          Моточасы
-        </button>
-      </div>
-      <button
+          <button
+            v-if="canView('menu.tables')"
         class="nav-link"
         :class="{ 'nav-link--active': activePage === 'tables' || activePage === 'selected-components' }"
         type="button"
@@ -256,11 +159,12 @@ function toggleSettings() {
         </span>
       </button>
       <div
-        v-if="!collapsed && isTablesExpanded"
+        v-if="canView('menu.tables') && isTablesExpanded"
         id="tables-submenu"
         class="nav-submenu"
       >
         <button
+          v-if="canView('tables.v_full_ost')"
           class="nav-submenu-link"
           :class="{ 'nav-submenu-link--active': activePage === 'tables' && activeTable === 'v_full_ost' }"
           type="button"
@@ -269,6 +173,7 @@ function toggleSettings() {
           Остатки на складе
         </button>
         <button
+          v-if="canView('tables.v_meh_ost')"
           class="nav-submenu-link"
           :class="{ 'nav-submenu-link--active': activePage === 'tables' && activeTable === 'v_meh_ost' }"
           type="button"
@@ -277,6 +182,7 @@ function toggleSettings() {
           Остатки механиков
         </button>
         <button
+          v-if="canView('tables.v_workers')"
           class="nav-submenu-link"
           :class="{ 'nav-submenu-link--active': activePage === 'tables' && activeTable === 'v_workers' }"
           type="button"
@@ -285,6 +191,7 @@ function toggleSettings() {
           Работники
         </button>
         <button
+          v-if="canView('tables.selected_components')"
           class="nav-submenu-link"
           :class="{ 'nav-submenu-link--active': activePage === 'selected-components' }"
           type="button"
@@ -297,6 +204,73 @@ function toggleSettings() {
         </button>
       </div>
       <button
+        v-if="canView('menu.vehicles')"
+        class="nav-link"
+        :class="{ 'nav-link--active': activePage === 'vehicles' }"
+        type="button"
+        :aria-expanded="isVehiclesExpanded"
+        aria-controls="transport-submenu"
+        @click="toggleVehicles"
+      >
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M5 16V9l2-4h10l2 4v7M4 12h16M7 16v3M17 16v3M7.5 9h9M8 14h.01M16 14h.01" />
+        </svg>
+        <span class="sidebar-label">Транспорт</span>
+        <span class="sidebar-label submenu-chevron" aria-hidden="true">›</span>
+      </button>
+      <div
+        v-if="canView('menu.vehicles') && isVehiclesExpanded"
+        id="transport-submenu"
+        class="nav-submenu"
+      >
+        <button
+          v-if="canView('vehicles.repair_request')"
+          class="nav-submenu-link"
+          :class="{ 'nav-submenu-link--active': activePage === 'vehicles' && activeVehicleSection === 'repairRequest' }"
+          type="button"
+          @click="$emit('navigate-vehicle', 'repairRequest')"
+        >
+          Заявка на ремонт
+        </button>
+        <button
+          v-if="canView('vehicles.works')"
+          class="nav-submenu-link"
+          :class="{ 'nav-submenu-link--active': activePage === 'vehicles' && activeVehicleSection === 'works' }"
+          type="button"
+          @click="$emit('navigate-vehicle', 'works')"
+        >
+          Ремонт
+        </button>
+        <button
+          v-if="canView('vehicles.parts_request')"
+          class="nav-submenu-link"
+          :class="{ 'nav-submenu-link--active': activePage === 'vehicles' && activeVehicleSection === 'partsRequest' }"
+          type="button"
+          @click="$emit('navigate-vehicle', 'partsRequest')"
+        >
+          Заявка на закупку ЗЧ
+        </button>
+        <button
+          v-if="canView('vehicles.hours')"
+          class="nav-submenu-link"
+          :class="{ 'nav-submenu-link--active': activePage === 'vehicles' && activeVehicleSection === 'hours' }"
+          type="button"
+          @click="$emit('navigate-vehicle', 'hours')"
+        >
+          Моточасы
+        </button>
+        <button
+          v-if="canView('vehicles.report')"
+          class="nav-submenu-link"
+          :class="{ 'nav-submenu-link--active': activePage === 'vehicles' && activeVehicleSection === 'report' }"
+          type="button"
+          @click="$emit('navigate-vehicle', 'report')"
+        >
+          Отчёт
+        </button>
+      </div>
+      <button
+        v-if="canView('menu.requirements')"
         class="nav-link"
         :class="{ 'nav-link--active': activePage === 'requirements' }"
         type="button"
@@ -307,6 +281,19 @@ function toggleSettings() {
           <path d="M6 3h9l3 3v15H6V3Zm9 0v4h4M9 11h6M9 15h6" />
         </svg>
         <span class="sidebar-label">Выписанные требования</span>
+      </button>
+      <button
+        v-if="canView('menu.maintenance')"
+        class="nav-link"
+        :class="{ 'nav-link--active': activePage === 'maintenance' }"
+        type="button"
+        :aria-current="activePage === 'maintenance' ? 'page' : undefined"
+        @click="$emit('navigate', 'maintenance')"
+      >
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M4 5h16v14H4V5Zm4 4h8M8 13h5M8 16h3" />
+        </svg>
+        <span class="sidebar-label">Техническое обслуживание</span>
       </button>
       <button
         v-if="isAdmin"
@@ -330,7 +317,7 @@ function toggleSettings() {
         </span>
       </button>
       <div
-        v-if="isAdmin && !collapsed && isSettingsExpanded"
+        v-if="isAdmin && isSettingsExpanded"
         id="settings-submenu"
         class="nav-submenu"
       >

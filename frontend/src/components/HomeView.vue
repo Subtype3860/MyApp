@@ -14,7 +14,7 @@ defineProps({
 </script>
 
 <template>
-  <main class="home-page" :class="{ 'home-page--expanded': navigationCollapsed }">
+<!--   <main class="home-page" :class="{ 'home-page--expanded': navigationCollapsed }">
     <header class="home-header">
       <div>
         <p class="eyebrow">ОБЗОР</p>
@@ -49,5 +49,5 @@ defineProps({
         <p>Всё просмотрено</p>
       </article>
     </section>
-  </main>
+  </main> -->
 </template>

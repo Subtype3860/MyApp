@@ -9,6 +9,7 @@ public sealed record UserListItem(
     Guid PositionId,
     string Position,
     string Role,
+    IReadOnlyList<string> Permissions,
     DateTime CreatedAt);
 
 public sealed record CreateUserResponse(Guid Id, string TemporaryPassword);

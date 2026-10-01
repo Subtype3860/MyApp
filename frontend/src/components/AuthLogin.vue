@@ -2,6 +2,13 @@
 import { ref } from 'vue'
 import brandLogo from '../assets/brand-logo.png'
 
+const props = defineProps({
+  sessionMessage: {
+    type: String,
+    default: '',
+  },
+})
+
 const emit = defineEmits(['authenticated'])
 
 const userNameOrEmail = ref('')
@@ -80,6 +87,9 @@ async function submitLogin() {
         />
 
         <p v-if="errorMessage" class="form-error" role="alert">{{ errorMessage }}</p>
+        <p v-if="props.sessionMessage" class="form-error" role="alert">
+          {{ props.sessionMessage }}
+        </p>
 
         <button class="primary-button" type="submit" :disabled="isSubmitting">
           {{ isSubmitting ? 'Выполняется вход…' : 'Войти' }}
