@@ -405,12 +405,28 @@ async function loadRepairDefects() {
   errorMessage.value = ''
   clearMediaThumbnails()
   try {
-    // Запросы по всей технике отправляются параллельно, а не по очереди:
-    // при последовательной загрузке страница «Ремонт» могла грузиться
-    // десятки секунд (по одному сетевому запросу на каждую единицу техники).
-    const journalResults = await Promise.allSettled(
-      vehicles.value.map((vehicle) => loadVehicleRepairDefects(vehicle)),
-    )
+    // Запросы по всей технике выполняются ограниченно-параллельно:
+    // последовательная загрузка слишком медленная, а полный залп может
+    // перегружать backend/БД и давать 500 на части техники.
+    const journalResults = new Array(vehicles.value.length)
+    let nextIndex = 0
+    const workerCount = Math.min(4, vehicles.value.length)
+    async function worker() {
+      while (nextIndex < vehicles.value.length) {
+        const index = nextIndex
+        nextIndex += 1
+        const vehicle = vehicles.value[index]
+        try {
+          journalResults[index] = {
+            status: 'fulfilled',
+            value: await loadVehicleRepairDefects(vehicle),
+          }
+        } catch (reason) {
+          journalResults[index] = { status: 'rejected', reason }
+        }
+      }
+    }
+    await Promise.all(Array.from({ length: workerCount }, worker))
     const journals = journalResults
       .filter((result) => result.status === 'fulfilled')
       .map((result) => result.value)
