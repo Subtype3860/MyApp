@@ -222,90 +222,6 @@ async function savePartsRequest(request) {
     return
   }
 
-  function startEditPartsRequest(item) {
-    editingPartsRequestId.value = item.id
-    partsRequestEditDrafts.value[item.id] = {
-      date: item.requestDate,
-      description: item.description || item.requestNumber,
-    }
-  }
-
-  function cancelEditPartsRequest() {
-    editingPartsRequestId.value = ''
-  }
-
-  async function saveEditedPartsRequest(item) {
-    const draft = partsRequestEditDrafts.value[item.id]
-    if (!draft?.date || !draft.description.trim()) {
-      errorMessage.value = 'Укажите дату и номер с описанием заявки.'
-      return
-    }
-
-    isSaving.value = true
-    errorMessage.value = ''
-    try {
-      const response = await fetch(`/api/vehicles/parts-requests/${item.id}`, {
-        method: 'PUT',
-        headers: authHeaders(true),
-        body: JSON.stringify({
-          requestDate: draft.date,
-          requestNumber: draft.description.trim().slice(0, 100),
-          description: draft.description.trim(),
-          requiredParts: item.requiredParts || '',
-        }),
-      })
-      const result = await response.json().catch(() => null)
-      if (!response.ok) {
-        const validation = result?.errors
-          ? Object.values(result.errors).flat()[0]
-          : null
-        throw new Error(
-          validation ?? result?.detail ?? result?.message ?? result?.title ??
-          (response.status === 403
-            ? 'Недостаточно прав для редактирования заявки.'
-            : 'Не удалось изменить заявку.'),
-        )
-      }
-      item.requestDate = draft.date
-      item.requestNumber = draft.description.trim().slice(0, 100)
-      item.description = draft.description.trim()
-      editingPartsRequestId.value = ''
-      successMessage.value = 'Заявка изменена.'
-    } catch (error) {
-      errorMessage.value = error.message
-    } finally {
-      isSaving.value = false
-    }
-  }
-
-  async function deletePartsRequest(request, item) {
-    if (!window.confirm('Удалить эту заявку на закупку?')) return
-    isSaving.value = true
-    errorMessage.value = ''
-    try {
-      const response = await fetch(`/api/vehicles/parts-requests/${item.id}`, {
-        method: 'DELETE',
-        headers: authHeaders(),
-      })
-      const result = await response.json().catch(() => null)
-      if (!response.ok) {
-        throw new Error(
-          result?.detail ?? result?.message ?? result?.title ??
-          (response.status === 403
-            ? 'Недостаточно прав для удаления заявки.'
-            : 'Не удалось удалить заявку.'),
-        )
-      }
-      request.partsRequests = request.partsRequests.filter(({ id }) => id !== item.id)
-      if (editingPartsRequestId.value === item.id) editingPartsRequestId.value = ''
-      successMessage.value = 'Заявка удалена.'
-    } catch (error) {
-      errorMessage.value = error.message
-    } finally {
-      isSaving.value = false
-    }
-  }
-
   isSaving.value = true
   errorMessage.value = ''
   try {
@@ -353,6 +269,90 @@ async function savePartsRequest(request) {
     ]
     draft.description = ''
     successMessage.value = 'Заявка сохранена.'
+  } catch (error) {
+    errorMessage.value = error.message
+  } finally {
+    isSaving.value = false
+  }
+}
+
+function startEditPartsRequest(item) {
+  editingPartsRequestId.value = item.id
+  partsRequestEditDrafts.value[item.id] = {
+    date: item.requestDate,
+    description: item.description || item.requestNumber,
+  }
+}
+
+function cancelEditPartsRequest() {
+  editingPartsRequestId.value = ''
+}
+
+async function saveEditedPartsRequest(item) {
+  const draft = partsRequestEditDrafts.value[item.id]
+  if (!draft?.date || !draft.description.trim()) {
+    errorMessage.value = 'Укажите дату и номер с описанием заявки.'
+    return
+  }
+
+  isSaving.value = true
+  errorMessage.value = ''
+  try {
+    const response = await fetch(`/api/vehicles/parts-requests/${item.id}`, {
+      method: 'PUT',
+      headers: authHeaders(true),
+      body: JSON.stringify({
+        requestDate: draft.date,
+        requestNumber: draft.description.trim().slice(0, 100),
+        description: draft.description.trim(),
+        requiredParts: item.requiredParts || '',
+      }),
+    })
+    const result = await response.json().catch(() => null)
+    if (!response.ok) {
+      const validation = result?.errors
+        ? Object.values(result.errors).flat()[0]
+        : null
+      throw new Error(
+        validation ?? result?.detail ?? result?.message ?? result?.title ??
+        (response.status === 403
+          ? 'Недостаточно прав для редактирования заявки.'
+          : 'Не удалось изменить заявку.'),
+      )
+    }
+    item.requestDate = draft.date
+    item.requestNumber = draft.description.trim().slice(0, 100)
+    item.description = draft.description.trim()
+    editingPartsRequestId.value = ''
+    successMessage.value = 'Заявка изменена.'
+  } catch (error) {
+    errorMessage.value = error.message
+  } finally {
+    isSaving.value = false
+  }
+}
+
+async function deletePartsRequest(request, item) {
+  if (!window.confirm('Удалить эту заявку на закупку?')) return
+  isSaving.value = true
+  errorMessage.value = ''
+  try {
+    const response = await fetch(`/api/vehicles/parts-requests/${item.id}`, {
+      method: 'DELETE',
+      headers: authHeaders(),
+    })
+    const result = await response.json().catch(() => null)
+    if (!response.ok) {
+      throw new Error(
+        result?.detail ?? result?.message ?? result?.title ??
+        (response.status === 403
+          ? 'Недостаточно прав для удаления заявки.'
+          : 'Не удалось удалить заявку.'),
+      )
+    }
+    request.partsRequests = request.partsRequests.filter(({ id }) => id !== item.id)
+    if (editingPartsRequestId.value === item.id) editingPartsRequestId.value = ''
+    successMessage.value = 'Заявка удалена.'
   } catch (error) {
     errorMessage.value = error.message
   } finally {
