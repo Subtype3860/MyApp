@@ -42,6 +42,14 @@ const mediaViewerItems = ref([])
 const mediaViewerIndex = ref(0)
 // Кэш Blob-URL миниатюр вложений по ключу `${type}:${mediaId}`.
 const mediaThumbnailUrls = ref({})
+// Идентификаторы неисправностей, для которых медиа уже подгружено или
+// подгружается — не даёт повторно загружать одну и ту же карточку.
+const loadedDefectMediaIds = new Set()
+// Сопоставление DOM-элемента карточки ремонта с её неисправностью —
+// нужно, чтобы по пересечению вьюпорта в IntersectionObserver понять,
+// какую карточку подгружать.
+const repairCardDefectByElement = new WeakMap()
+let repairCardObserver = null
 const zoomDialog = ref(null)
 const pinchStartDistance = ref(0)
 const pinchStartScale = ref(1)
@@ -101,6 +109,14 @@ const sectionTitle = computed(() => ({
 }[props.section] ?? 'Транспорт'))
 
 onMounted(async () => {
+  repairCardObserver = new IntersectionObserver((entries) => {
+    entries.forEach((entry) => {
+      if (!entry.isIntersecting) return
+      const defect = repairCardDefectByElement.get(entry.target)
+      if (defect) ensureDefectMediaLoaded(defect)
+      repairCardObserver.unobserve(entry.target)
+    })
+  }, { rootMargin: '200px' })
   await loadRepairSection()
 })
 watch(() => props.section, loadRepairSection)
@@ -108,6 +124,7 @@ onBeforeUnmount(() => {
   clearPreviews()
   clearMediaThumbnails()
   closeMediaViewer()
+  repairCardObserver?.disconnect()
   stopDrag()
 })
 
@@ -376,8 +393,8 @@ async function loadVehicles() {
 
 /**
  * Загружает журналы всей техники и собирает плоский список незавершённых
- * неисправностей для вкладки «Ремонт», после чего подгружает миниатюры
- * медиавложений.
+ * неисправностей для вкладки «Ремонт». Миниатюры медиавложений
+ * подгружаются лениво по мере появления карточек во вьюпорте.
  */
 async function loadRepairDefects() {
   if (!vehicles.value.length) {
@@ -386,18 +403,14 @@ async function loadRepairDefects() {
   }
   isLoading.value = true
   errorMessage.value = ''
+  clearMediaThumbnails()
   try {
-    const journalResults = []
-    for (const vehicle of vehicles.value) {
-      try {
-        journalResults.push({
-          status: 'fulfilled',
-          value: await loadVehicleRepairDefects(vehicle),
-        })
-      } catch (reason) {
-        journalResults.push({ status: 'rejected', reason })
-      }
-    }
+    // Запросы по всей технике отправляются параллельно, а не по очереди:
+    // при последовательной загрузке страница «Ремонт» могла грузиться
+    // десятки секунд (по одному сетевому запросу на каждую единицу техники).
+    const journalResults = await Promise.allSettled(
+      vehicles.value.map((vehicle) => loadVehicleRepairDefects(vehicle)),
+    )
     const journals = journalResults
       .filter((result) => result.status === 'fulfilled')
       .map((result) => result.value)
@@ -409,11 +422,8 @@ async function loadRepairDefects() {
       errorMessage.value =
         `Не удалось загрузить данные для ${failedVehicles.length} единиц техники. Обновите страницу.`
     }
-    try {
-      await loadMediaThumbnails(repairDefects.value)
-    } catch {
-      // Карточки ремонта остаются доступными, даже если отдельное медиа не загрузилось.
-    }
+    // Миниатюры вложений теперь подгружаются лениво, по мере появления
+    // карточек ремонта во вьюпорте (см. observeRepairCard/ensureDefectMediaLoaded).
   } catch (error) {
     errorMessage.value = error.message
   } finally {
@@ -933,16 +943,18 @@ async function fetchMediaBlob(media, type) {
 }
 
 /**
- * Подгружает и кэширует Blob-URL миниатюр всех медиавложений
- * переданного списка неисправностей.
- * @param {object[]} defects Список неисправностей.
+ * Подгружает и кэширует Blob-URL миниатюр всех медиавложений одной карточки
+ * ремонта. Вызывается лениво, когда карточка появляется во вьюпорте
+ * (см. {@link observeRepairCard}), а не сразу для всего списка — иначе
+ * при открытии вкладки «Ремонт» браузер скачивал бы полноразмерные фото
+ * и видео сразу для всей техники, что и было основной причиной долгой
+ * загрузки страницы.
+ * @param {object} defect Неисправность, для которой нужно подгрузить медиа.
  */
-async function loadMediaThumbnails(defects) {
-  clearMediaThumbnails()
-  const entries = defects.flatMap((defect) => [
-    ...defectMedia(defect),
-    ...allWorkMedia(defect),
-  ])
+async function ensureDefectMediaLoaded(defect) {
+  if (loadedDefectMediaIds.has(defect.id)) return
+  loadedDefectMediaIds.add(defect.id)
+  const entries = [...defectMedia(defect), ...allWorkMedia(defect)]
   await Promise.all(entries.map(async ({ media, type }) => {
     try {
       mediaThumbnailUrls.value[`${type}:${media.id}`] =
@@ -959,6 +971,20 @@ function clearMediaThumbnails() {
     if (url) URL.revokeObjectURL(url)
   })
   mediaThumbnailUrls.value = {}
+  loadedDefectMediaIds.clear()
+}
+
+/**
+ * Начинает наблюдение за карточкой ремонта: как только она появляется
+ * во вьюпорте, подгружает её медиавложения и прекращает наблюдение.
+ * Используется как ref-коллбэк на корневом элементе карточки в шаблоне.
+ * @param {HTMLElement|null} el Элемент карточки ремонта.
+ * @param {object} defect Неисправность, которой соответствует карточка.
+ */
+function observeRepairCard(el, defect) {
+  if (!el) return
+  repairCardDefectByElement.set(el, defect)
+  repairCardObserver?.observe(el)
 }
 
 /**
@@ -1423,7 +1449,12 @@ function formatDateTime(value) {
 
         <p v-if="isLoading" class="table-message">Загрузка неисправностей...</p>
         <div v-else class="repair-defect-cards">
-          <article v-for="defect in repairDefects" :key="defect.id" class="repair-card">
+          <article
+            v-for="defect in repairDefects"
+            :key="defect.id"
+            class="repair-card"
+            :ref="(el) => observeRepairCard(el, defect)"
+          >
             <header class="card-header">
               <h2>Ремонт: Гар. № {{ defect.vehicleGarageNumber ?? '—' }} ({{ defect.vehicleName || '—' }})</h2>
               <div class="header-actions">
