@@ -51,7 +51,7 @@ public class ComponentDocumentController : ControllerBase
             return NotFound();
         }
 
-        return File(templatePath, "application/pdf");
+        return PhysicalFile(templatePath, "application/pdf");
     }
 
     private bool TryGetUserId(out Guid userId)
