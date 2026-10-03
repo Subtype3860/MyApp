@@ -1577,13 +1577,16 @@ public sealed class VehicleRepository(
     private bool IsManagedPath(string path)
     {
         var fullPath = Path.GetFullPath(path);
-        return fullPath.StartsWith(
-                   Path.GetFullPath(mediaStorageOptions.PhotoDirectory) + Path.DirectorySeparatorChar,
-                   StringComparison.Ordinal) ||
-               fullPath.StartsWith(
-                   Path.GetFullPath(mediaStorageOptions.VideoDirectory) + Path.DirectorySeparatorChar,
-                   StringComparison.Ordinal);
+        return IsWithinDirectory(fullPath, mediaStorageOptions.PhotoDirectory) ||
+               IsWithinDirectory(fullPath, mediaStorageOptions.VideoDirectory) ||
+               IsWithinDirectory(fullPath, mediaStorageOptions.StagingPhotoDirectory) ||
+               IsWithinDirectory(fullPath, mediaStorageOptions.StagingVideoDirectory);
     }
+
+    private static bool IsWithinDirectory(string path, string directory) =>
+        path.StartsWith(
+            Path.GetFullPath(directory) + Path.DirectorySeparatorChar,
+            StringComparison.Ordinal);
 
     private static void AddNullable(
         NpgsqlCommand command,

@@ -9,13 +9,13 @@ public sealed class MediaStorageService(MediaStorageOptions options) : IMediaSto
         byte[] content,
         string fileName,
         CancellationToken cancellationToken) =>
-        SaveAsync(options.PhotoDirectory, content, fileName, cancellationToken);
+        SaveAsync(options.StagingPhotoDirectory, content, fileName, cancellationToken);
 
     public Task<string> SaveVideoAsync(
         byte[] content,
         string fileName,
         CancellationToken cancellationToken) =>
-        SaveAsync(options.VideoDirectory, content, fileName, cancellationToken);
+        SaveAsync(options.StagingVideoDirectory, content, fileName, cancellationToken);
 
     private static async Task<string> SaveAsync(
         string directory,

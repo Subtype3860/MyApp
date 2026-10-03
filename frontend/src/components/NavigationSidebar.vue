@@ -371,6 +371,17 @@ function toggleSettings() {
           class="nav-submenu-link"
           :class="{
             'nav-submenu-link--active':
+              activePage === 'settings' && activeSettings === 'media-storage',
+          }"
+          type="button"
+          @click="$emit('navigate-settings', 'media-storage')"
+        >
+          Хранение медиафайлов
+        </button>
+        <button
+          class="nav-submenu-link"
+          :class="{
+            'nav-submenu-link--active':
               activePage === 'settings' && activeSettings === 'csv-files',
           }"
           type="button"

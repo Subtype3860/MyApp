@@ -1,4 +1,5 @@
 using MyApp.API.Extensions;
+using MyApp.API.BackgroundServices;
 using MyApp.Application;
 using MyApp.Application.Security;
 using MyApp.Application.Storage;
@@ -34,12 +35,21 @@ var mediaStorageOptions = new MediaStorageOptions(
     mediaStorageSection.GetValue<string>("PhotoDirectory")
         ?? throw new InvalidOperationException("Configuration value 'MediaStorage:PhotoDirectory' is required."),
     mediaStorageSection.GetValue<string>("VideoDirectory")
-        ?? throw new InvalidOperationException("Configuration value 'MediaStorage:VideoDirectory' is required."));
+        ?? throw new InvalidOperationException("Configuration value 'MediaStorage:VideoDirectory' is required."),
+    Path.GetFullPath(
+        mediaStorageSection.GetValue<string>("StagingPhotoDirectory")
+            ?? throw new InvalidOperationException("Configuration value 'MediaStorage:StagingPhotoDirectory' is required."),
+        builder.Environment.ContentRootPath),
+    Path.GetFullPath(
+        mediaStorageSection.GetValue<string>("StagingVideoDirectory")
+            ?? throw new InvalidOperationException("Configuration value 'MediaStorage:StagingVideoDirectory' is required."),
+        builder.Environment.ContentRootPath));
 builder.Services.AddApplication();
 builder.Services.AddInfrastructure(
     connectionString,
     jwtOptions,
     mediaStorageOptions);
+builder.Services.AddHostedService<StagedMediaTransferService>();
 builder.Services.AddJwtAuthentication(builder.Configuration);
 builder.Services.AddAuthorization(options =>
 {

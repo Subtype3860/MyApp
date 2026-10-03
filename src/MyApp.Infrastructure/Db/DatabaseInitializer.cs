@@ -645,6 +645,20 @@ public sealed class DatabaseInitializer(AppDbContext db) : IDatabaseInitializer
                 ON vehicle_work_videos (work_id, created_at);
             """,
             cancellationToken);
+        await db.Database.ExecuteSqlRawAsync(
+            """
+            CREATE TABLE IF NOT EXISTS media_storage_settings (
+                id smallint PRIMARY KEY CHECK (id = 1),
+                retention_days integer NOT NULL
+                    CHECK (retention_days BETWEEN 1 AND 180),
+                updated_at timestamptz NOT NULL DEFAULT NOW()
+            );
+
+            INSERT INTO media_storage_settings (id, retention_days)
+            VALUES (1, 1)
+            ON CONFLICT (id) DO NOTHING;
+            """,
+            cancellationToken);
         var administratorProfession = await db.Professions.FirstOrDefaultAsync(
             profession => profession.Name == "Администратор",
             cancellationToken);

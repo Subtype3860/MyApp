@@ -26,6 +26,7 @@ const permissionCatalog = ref([])
 const editingUserId = ref(null)
 const editingProfessionId = ref(null)
 const professionName = ref('')
+const mediaRetentionDays = ref(1)
 const isLoading = ref(false)
 const isSubmitting = ref(false)
 const errorMessage = ref('')
@@ -250,6 +251,48 @@ async function loadProfessions() {
   }
 }
 
+async function loadMediaStorageSettings() {
+  isLoading.value = true
+  errorMessage.value = ''
+  try {
+    const response = await fetch('/api/admin/media-storage', {
+      headers: authHeaders(),
+    })
+    if (!response.ok) {
+      throw new Error(await readError(response, 'Не удалось загрузить настройки хранения медиа.'))
+    }
+    const settings = await response.json()
+    mediaRetentionDays.value = settings.retentionDays
+  } catch (error) {
+    errorMessage.value =
+      error instanceof Error ? error.message : 'Не удалось загрузить настройки хранения медиа.'
+  } finally {
+    isLoading.value = false
+  }
+}
+
+async function saveMediaStorageSettings() {
+  isSubmitting.value = true
+  errorMessage.value = ''
+  successMessage.value = ''
+  try {
+    const response = await fetch('/api/admin/media-storage', {
+      method: 'PUT',
+      headers: authHeaders(true),
+      body: JSON.stringify({ retentionDays: mediaRetentionDays.value }),
+    })
+    if (!response.ok) {
+      throw new Error(await readError(response, 'Не удалось сохранить настройки хранения медиа.'))
+    }
+    successMessage.value = 'Срок хранения медиафайлов сохранён.'
+  } catch (error) {
+    errorMessage.value =
+      error instanceof Error ? error.message : 'Не удалось сохранить настройки хранения медиа.'
+  } finally {
+    isSubmitting.value = false
+  }
+}
+
 async function ensureProfessionsLoaded() {
   if (professions.value.length === 0) {
     await loadProfessions()
@@ -336,6 +379,7 @@ function sectionTitle(section) {
     'material-groups': 'Группы материалов',
     maintenance: 'Шаблоны ТО',
     'csv-files': 'Загрузка CSV',
+    'media-storage': 'Хранение медиафайлов',
   }[section]
 }
 
@@ -356,6 +400,8 @@ watch(
       ensureProfessionsLoaded()
     } else if (section === 'professions') {
       loadProfessions()
+    } else if (section === 'media-storage') {
+      loadMediaStorageSettings()
     }
   },
   { immediate: true },
@@ -678,7 +724,43 @@ watch(
     >
       <MaintenanceTemplatesSettings :token="token" />
     </section>
-    <section v-else class="macos-glass-panel settings-panel">
+    <section
+      v-else-if="selectedSection === 'media-storage'"
+      class="macos-glass-panel settings-panel"
+    >
+      <div class="settings-section-header">
+        <div>
+          <h2>Временное хранение медиафайлов</h2>
+          <p>
+            После загрузки фото и видео хранятся на локальном диске, чтобы не ждать записи
+            на сетевое хранилище. Затем фоновая задача переносит их в постоянные папки.
+          </p>
+        </div>
+      </div>
+      <form class="profession-form" @submit.prevent="saveMediaStorageSettings">
+        <label>
+          <span>Хранить локально, дней (от 1 до 180)</span>
+          <input
+            v-model.number="mediaRetentionDays"
+            type="number"
+            min="1"
+            max="180"
+            required
+          />
+        </label>
+        <button class="primary-button" type="submit" :disabled="isSubmitting || isLoading">
+          {{ isSubmitting ? 'Сохранение...' : 'Сохранить' }}
+        </button>
+      </form>
+      <p v-if="isLoading" class="table-message">Загрузка настроек...</p>
+      <p v-if="errorMessage" class="form-message form-message--error" role="alert">
+        {{ errorMessage }}
+      </p>
+      <p v-if="successMessage" class="form-message form-message--success" role="status">
+        {{ successMessage }}
+      </p>
+    </section>
+    <section v-else-if="selectedSection === 'csv-files'" class="macos-glass-panel settings-panel">
       <CsvFilesSettings :token="token" />
     </section>
   </main>

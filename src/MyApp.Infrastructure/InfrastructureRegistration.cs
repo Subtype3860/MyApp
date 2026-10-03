@@ -25,6 +25,7 @@ public static class InfrastructureRegistration
         services.AddSingleton(jwtOptions);
         services.AddSingleton(mediaStorageOptions);
         services.AddSingleton<IMediaStorageService, MediaStorageService>();
+        services.AddSingleton<IMediaStorageAdministrationRepository, MediaStorageAdministrationRepository>();
         services.AddScoped<IUserRepository, UserRepository>();
         services.AddScoped<IProfessionRepository, ProfessionRepository>();
         services.AddScoped<ITableViewRepository, TableViewRepository>();
