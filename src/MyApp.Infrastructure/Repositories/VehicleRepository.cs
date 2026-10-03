@@ -77,6 +77,263 @@ public sealed class VehicleRepository(
             vehicle, purchases, defects, hours, works);
     }
 
+    public async Task<IReadOnlyList<VehicleJournalResponse>> GetRepairJournalsAsync(
+        CancellationToken cancellationToken)
+    {
+        var vehicles = await GetVehiclesAsync(cancellationToken);
+        if (vehicles.Count == 0)
+        {
+            return [];
+        }
+
+        var vehicleIds = vehicles.Select(vehicle => vehicle.Id).ToArray();
+        var defectsByVehicle = new Dictionary<Guid, List<VehicleDefectResponse>>();
+        var defectsById = new Dictionary<Guid, (Guid VehicleId, VehicleDefectResponse Defect)>();
+
+        await using (var command = dataSource.CreateCommand(
+            """
+            SELECT defects.vehicle_id, defects.id, defects.error_code,
+                   defects.symptoms,
+                   COALESCE(completed.repair_status,
+                       CASE WHEN defects.assigned_to IS NULL
+                           THEN 'new' ELSE 'in_progress' END),
+                   defects.created_at, defects.downtime_started_at,
+                   defects.created_by,
+                   CONCAT_WS(' ', creators.last_name, creators.first_name,
+                       NULLIF(creators.middle_name, '')),
+                   defects.assigned_to,
+                   COALESCE(CONCAT_WS(' ', assignees.last_name,
+                       assignees.first_name, NULLIF(assignees.middle_name, '')), ''),
+                   defects.repair_started_at, defects.node_name,
+                   defects.failure_reason
+            FROM vehicle_defects AS defects
+            JOIN app_users AS creators ON creators.id = defects.created_by
+            LEFT JOIN app_users AS assignees ON assignees.id = defects.assigned_to
+            LEFT JOIN LATERAL (
+                SELECT works.repair_status
+                FROM vehicle_works AS works
+                WHERE works.defect_id = defects.id
+                  AND works.completed_at IS NOT NULL
+                ORDER BY works.completed_at DESC
+                LIMIT 1
+            ) AS completed ON TRUE
+            WHERE defects.vehicle_id = ANY(@vehicleIds)
+            ORDER BY defects.created_at DESC
+            """))
+        {
+            command.Parameters.AddWithValue("vehicleIds", vehicleIds);
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                var vehicleId = reader.GetGuid(0);
+                var defect = new VehicleDefectResponse(
+                    reader.GetGuid(1),
+                    reader.GetString(2),
+                    reader.GetString(3),
+                    reader.GetString(4),
+                    reader.GetFieldValue<DateTimeOffset>(5),
+                    reader.GetFieldValue<DateTimeOffset>(6),
+                    reader.GetGuid(7),
+                    reader.GetString(8),
+                    reader.IsDBNull(9) ? null : reader.GetGuid(9),
+                    reader.GetString(10),
+                    reader.IsDBNull(11)
+                        ? null
+                        : reader.GetFieldValue<DateTimeOffset>(11),
+                    [],
+                    [],
+                    reader.GetString(12),
+                    reader.GetString(13));
+                defectsById.Add(defect.Id, (vehicleId, defect));
+                if (!defectsByVehicle.TryGetValue(vehicleId, out var defects))
+                {
+                    defects = [];
+                    defectsByVehicle.Add(vehicleId, defects);
+                }
+                defects.Add(defect);
+            }
+        }
+
+        if (defectsById.Count > 0)
+        {
+            var defectIds = defectsById.Keys.ToArray();
+            var photosByDefect = new Dictionary<Guid, List<VehicleWorkPhotoResponse>>();
+            await using (var command = dataSource.CreateCommand(
+                """
+                SELECT defect_id, id, file_name, content_type,
+                       COALESCE(NULLIF(size, 0), OCTET_LENGTH(content), 0)
+                FROM vehicle_defect_photos
+                WHERE defect_id = ANY(@defectIds)
+                ORDER BY created_at, id
+                """))
+            {
+                command.Parameters.AddWithValue("defectIds", defectIds);
+                await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+                while (await reader.ReadAsync(cancellationToken))
+                {
+                    var defectId = reader.GetGuid(0);
+                    if (!photosByDefect.TryGetValue(defectId, out var photos))
+                    {
+                        photos = [];
+                        photosByDefect.Add(defectId, photos);
+                    }
+                    photos.Add(new(
+                        reader.GetGuid(1),
+                        reader.GetString(2),
+                        reader.GetString(3),
+                        reader.GetInt32(4)));
+                }
+            }
+
+            var videosByDefect = new Dictionary<Guid, List<VehicleMediaResponse>>();
+            await using (var command = dataSource.CreateCommand(
+                """
+                SELECT defect_id, id, file_name, content_type, size
+                FROM vehicle_defect_videos
+                WHERE defect_id = ANY(@defectIds)
+                ORDER BY created_at, id
+                """))
+            {
+                command.Parameters.AddWithValue("defectIds", defectIds);
+                await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+                videosByDefect = await ReadMediaByParentAsync(reader, cancellationToken);
+            }
+
+            foreach (var (defectId, (vehicleId, defect)) in defectsById.ToArray())
+            {
+                defectsById[defectId] = (vehicleId, defect with
+                {
+                    Photos = photosByDefect.GetValueOrDefault(defectId) ?? [],
+                    Videos = videosByDefect.GetValueOrDefault(defectId) ?? []
+                });
+            }
+            foreach (var vehicleId in defectsByVehicle.Keys.ToArray())
+            {
+                defectsByVehicle[vehicleId] = defectsByVehicle[vehicleId]
+                    .Select(defect => defectsById[defect.Id].Defect)
+                    .ToList();
+            }
+        }
+
+        var worksByVehicle = new Dictionary<Guid, List<VehicleWorkResponse>>();
+        var worksById = new Dictionary<Guid, (Guid VehicleId, VehicleWorkResponse Work)>();
+        await using (var command = dataSource.CreateCommand(
+            """
+            SELECT works.vehicle_id, works.id, works.defect_id,
+                   COALESCE(defects.node_name, ''), works.description,
+                   works.created_at, works.failure_cause, works.repair_status,
+                   works.required_parts, works.performed_by,
+                   COALESCE(CONCAT_WS(' ', performers.last_name,
+                       performers.first_name, NULLIF(performers.middle_name, '')), ''),
+                   works.completed_at
+            FROM vehicle_works AS works
+            LEFT JOIN vehicle_defects AS defects ON defects.id = works.defect_id
+            LEFT JOIN app_users AS performers ON performers.id = works.performed_by
+            WHERE works.vehicle_id = ANY(@vehicleIds)
+            ORDER BY works.created_at DESC
+            """))
+        {
+            command.Parameters.AddWithValue("vehicleIds", vehicleIds);
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                var vehicleId = reader.GetGuid(0);
+                var work = new VehicleWorkResponse(
+                    reader.GetGuid(1),
+                    reader.IsDBNull(2) ? null : reader.GetGuid(2),
+                    reader.GetString(3),
+                    reader.GetString(4),
+                    reader.GetFieldValue<DateTimeOffset>(5),
+                    [],
+                    reader.GetString(6),
+                    reader.GetString(7),
+                    reader.GetString(8),
+                    reader.IsDBNull(9) ? null : reader.GetGuid(9),
+                    reader.GetString(10),
+                    reader.IsDBNull(11)
+                        ? null
+                        : reader.GetFieldValue<DateTimeOffset>(11),
+                    [],
+                    []);
+                worksById.Add(work.Id, (vehicleId, work));
+                if (!worksByVehicle.TryGetValue(vehicleId, out var works))
+                {
+                    works = [];
+                    worksByVehicle.Add(vehicleId, works);
+                }
+                works.Add(work);
+            }
+        }
+
+        if (worksById.Count > 0)
+        {
+            var workIds = worksById.Keys.ToArray();
+            var photosByWork = new Dictionary<Guid, List<VehicleWorkPhotoResponse>>();
+            await using (var command = dataSource.CreateCommand(
+                """
+                SELECT work_id, id, file_name, content_type,
+                       COALESCE(NULLIF(size, 0), OCTET_LENGTH(content), 0)
+                FROM vehicle_work_photos
+                WHERE work_id = ANY(@workIds)
+                ORDER BY created_at, id
+                """))
+            {
+                command.Parameters.AddWithValue("workIds", workIds);
+                await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+                while (await reader.ReadAsync(cancellationToken))
+                {
+                    var workId = reader.GetGuid(0);
+                    if (!photosByWork.TryGetValue(workId, out var photos))
+                    {
+                        photos = [];
+                        photosByWork.Add(workId, photos);
+                    }
+                    photos.Add(new(
+                        reader.GetGuid(1),
+                        reader.GetString(2),
+                        reader.GetString(3),
+                        reader.GetInt32(4)));
+                }
+            }
+
+            var videosByWork = new Dictionary<Guid, List<VehicleMediaResponse>>();
+            await using (var command = dataSource.CreateCommand(
+                """
+                SELECT work_id, id, file_name, content_type, size
+                FROM vehicle_work_videos
+                WHERE work_id = ANY(@workIds)
+                ORDER BY created_at, id
+                """))
+            {
+                command.Parameters.AddWithValue("workIds", workIds);
+                await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+                videosByWork = await ReadMediaByParentAsync(reader, cancellationToken);
+            }
+
+            foreach (var (workId, (vehicleId, work)) in worksById.ToArray())
+            {
+                worksById[workId] = (vehicleId, work with
+                {
+                    Photos = photosByWork.GetValueOrDefault(workId) ?? [],
+                    Videos = videosByWork.GetValueOrDefault(workId) ?? []
+                });
+            }
+            foreach (var vehicleId in worksByVehicle.Keys.ToArray())
+            {
+                worksByVehicle[vehicleId] = worksByVehicle[vehicleId]
+                    .Select(work => worksById[work.Id].Work)
+                    .ToList();
+            }
+        }
+
+        return vehicles.Select(vehicle => new VehicleJournalResponse(
+            vehicle,
+            [],
+            defectsByVehicle.GetValueOrDefault(vehicle.Id) ?? [],
+            [],
+            worksByVehicle.GetValueOrDefault(vehicle.Id) ?? [])).ToArray();
+    }
+
     public async Task<bool> VehicleExistsAsync(
         Guid vehicleId,
         CancellationToken cancellationToken)

@@ -76,6 +76,10 @@ public sealed class VehicleService(
         CancellationToken cancellationToken) =>
         repository.GetJournalAsync(vehicleId, from, to, cancellationToken);
 
+    public Task<IReadOnlyList<VehicleJournalResponse>> GetRepairJournalsAsync(
+        CancellationToken cancellationToken) =>
+        repository.GetRepairJournalsAsync(cancellationToken);
+
     public Task<ServiceResult<Guid>> AddPurchaseAsync(
         Guid vehicleId,
         VehiclePurchaseRequest request,

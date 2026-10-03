@@ -405,39 +405,30 @@ async function loadRepairDefects() {
   errorMessage.value = ''
   clearMediaThumbnails()
   try {
-    // Запросы по всей технике выполняются ограниченно-параллельно:
-    // последовательная загрузка слишком медленная, а полный залп может
-    // перегружать backend/БД и давать 500 на части техники.
-    const journalResults = new Array(vehicles.value.length)
-    let nextIndex = 0
-    const workerCount = Math.min(4, vehicles.value.length)
-    async function worker() {
-      while (nextIndex < vehicles.value.length) {
-        const index = nextIndex
-        nextIndex += 1
-        const vehicle = vehicles.value[index]
-        try {
-          journalResults[index] = {
-            status: 'fulfilled',
-            value: await loadVehicleRepairDefects(vehicle),
-          }
-        } catch (reason) {
-          journalResults[index] = { status: 'rejected', reason }
-        }
-      }
+    const response = await fetch('/api/vehicles/repair-journal', {
+      headers: authHeaders(),
+    })
+    if (!response.ok) {
+      throw new Error(
+        response.status === 401
+          ? 'Сессия истекла. Войдите в систему повторно.'
+          : 'Не удалось загрузить данные ремонта. Обновите страницу.',
+      )
     }
-    await Promise.all(Array.from({ length: workerCount }, worker))
-    const journals = journalResults
-      .filter((result) => result.status === 'fulfilled')
-      .map((result) => result.value)
-    const failedVehicles = journalResults
-      .map((result, index) => result.status === 'rejected' ? vehicles.value[index] : null)
-      .filter(Boolean)
-    repairDefects.value = journals.flat()
-    if (failedVehicles.length) {
-      errorMessage.value =
-        `Не удалось загрузить данные для ${failedVehicles.length} единиц техники. Обновите страницу.`
-    }
+    const journals = await response.json()
+    repairDefects.value = journals.flatMap((journal) =>
+      (journal.defects ?? [])
+        .filter((defect) => !isCompletedStatus(defect.status))
+        .map((defect) => ({
+          ...defect,
+          repairWorks: (journal.works ?? []).filter((work) => work.defectId === defect.id),
+          repairStatus: repairStatus(defect.status),
+          vehicleName: journal.vehicle.modelName,
+          vehicleGarageNumber: journal.vehicle.garageNumber,
+          vehicleStateNumber: journal.vehicle.stateNumber,
+          vehicleId: journal.vehicle.id,
+        })),
+    )
     // Миниатюры вложений теперь подгружаются лениво, по мере появления
     // карточек ремонта во вьюпорте (см. observeRepairCard/ensureDefectMediaLoaded).
   } catch (error) {
@@ -445,42 +436,6 @@ async function loadRepairDefects() {
   } finally {
     isLoading.value = false
   }
-}
-
-async function loadVehicleRepairDefects(vehicle) {
-  let lastError
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    try {
-      const response = await fetch(
-        `/api/vehicles/${vehicle.id}/journal`,
-        { headers: authHeaders() },
-      )
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`)
-      }
-      const result = await response.json()
-      return (result.defects ?? [])
-        .filter((defect) => !isCompletedStatus(defect.status))
-        .map((defect) => ({
-          ...defect,
-          repairWorks: (result.works ?? []).filter((work) => work.defectId === defect.id),
-          repairStatus: repairStatus(defect.status),
-          vehicleName: vehicle.modelName,
-          vehicleGarageNumber: vehicle.garageNumber,
-          vehicleStateNumber: vehicle.stateNumber,
-          vehicleId: vehicle.id,
-        }))
-    } catch (error) {
-      lastError = error
-      if (attempt === 0) {
-        await new Promise((resolve) => setTimeout(resolve, 250))
-      }
-    }
-  }
-  throw new Error(
-    `Не удалось загрузить журнал техники «${vehicle.modelName || vehicle.id}».`,
-    { cause: lastError },
-  )
 }
 
 /**

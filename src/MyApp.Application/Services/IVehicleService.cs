@@ -28,6 +28,10 @@ public interface IVehicleService
         DateOnly? to,
         CancellationToken cancellationToken);
 
+    /// <summary>Returns repair journals for all vehicles in one batch.</summary>
+    Task<IReadOnlyList<VehicleJournalResponse>> GetRepairJournalsAsync(
+        CancellationToken cancellationToken);
+
     /// <summary>Регистрирует заявку на закупку материалов для техники.</summary>
     /// <param name="vehicleId">Идентификатор техники.</param>
     /// <param name="request">Данные заявки на закупку.</param>

@@ -46,6 +46,16 @@ public class VehicleController : ControllerBase
         return journal is null ? NotFound() : Ok(journal);
     }
 
+    /// <summary>Returns repair data for all vehicles using batched queries.</summary>
+    [HttpGet("repair-journal")]
+    public async Task<IActionResult> GetRepairJournals(
+        [FromServices] IVehicleService service,
+        CancellationToken cancellationToken)
+    {
+        var journals = await service.GetRepairJournalsAsync(cancellationToken);
+        return Ok(journals);
+    }
+
     /// <summary>Добавляет запись о закупке техники в журнал.</summary>
     [HttpPost("{vehicleId:guid}/purchases")]
     public async Task<IActionResult> AddPurchase(

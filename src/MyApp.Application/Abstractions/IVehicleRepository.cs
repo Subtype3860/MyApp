@@ -19,6 +19,12 @@ public interface IVehicleRepository
         DateOnly? to,
         CancellationToken cancellationToken);
 
+    /// <summary>
+    /// Returns repair journals for all vehicles using batched queries.
+    /// </summary>
+    Task<IReadOnlyList<VehicleJournalResponse>> GetRepairJournalsAsync(
+        CancellationToken cancellationToken);
+
     /// <summary>Проверяет существование единицы техники.</summary>
     Task<bool> VehicleExistsAsync(Guid vehicleId, CancellationToken cancellationToken);
 
