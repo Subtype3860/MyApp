@@ -3,7 +3,6 @@ using Microsoft.EntityFrameworkCore;
 using MyApp.Application.Abstractions;
 using MyApp.Application.DTO;
 using MyApp.Application.Storage;
-using MyApp.Domain.Entities;
 using MyApp.Infrastructure.Db;
 using MyApp.Infrastructure.Db.Entities;
 
@@ -779,9 +778,7 @@ public sealed class VehicleRepository(
                 .Select(defect => defect.AssignedTo!.Value))
             .Distinct()
             .ToArray();
-        var users = await dbContext.Users.AsNoTracking()
-            .Where(user => userIds.Contains(user.Id))
-            .ToDictionaryAsync(user => user.Id, cancellationToken);
+        var userNames = await GetUserNamesAsync(userIds, cancellationToken);
         var defectIds = defects.Select(defect => defect.Id).ToArray();
         var latestCompletedWorks = await dbContext.VehicleWorks.AsNoTracking()
             .Where(work =>
@@ -806,11 +803,13 @@ public sealed class VehicleRepository(
             .Select(photo => new
             {
                 photo.DefectId,
-                Response = new VehicleWorkPhotoResponse(
-                    photo.Id,
-                    photo.FileName,
-                    photo.ContentType,
-                    GetMediaSize(photo.Size, photo.Content))
+                photo.Id,
+                photo.FileName,
+                photo.ContentType,
+                photo.Size,
+                ContentLength = photo.Content == null
+                    ? 0L
+                    : (long)photo.Content.Length
             })
             .ToListAsync(cancellationToken);
         var videos = await dbContext.VehicleDefectVideos.AsNoTracking()
@@ -828,7 +827,11 @@ public sealed class VehicleRepository(
             .ToDictionary(
                 group => group.Key,
                 group => (IReadOnlyList<VehicleWorkPhotoResponse>)group
-                    .Select(item => item.Response)
+                    .Select(item => new VehicleWorkPhotoResponse(
+                        item.Id,
+                        item.FileName,
+                        item.ContentType,
+                        item.Size == 0 ? item.ContentLength : item.Size))
                     .ToArray());
         var videosByDefect = videos.GroupBy(video => video.DefectId)
             .ToDictionary(
@@ -839,12 +842,12 @@ public sealed class VehicleRepository(
 
         return defects.Select(defect =>
         {
-            var createdByName = users.TryGetValue(defect.CreatedBy, out var creator)
-                ? FormatUserName(creator)
+            var createdByName = userNames.TryGetValue(defect.CreatedBy, out var creator)
+                ? creator
                 : string.Empty;
             var assignedToName = defect.AssignedTo is Guid assignedId &&
-                users.TryGetValue(assignedId, out var assignee)
-                    ? FormatUserName(assignee)
+                userNames.TryGetValue(assignedId, out var assignee)
+                    ? assignee
                     : string.Empty;
             var status = latestByDefect.TryGetValue(defect.Id, out var completed)
                 ? completed.RepairStatus
@@ -912,9 +915,7 @@ public sealed class VehicleRepository(
             .Select(work => work.PerformedBy!.Value)
             .Distinct()
             .ToArray();
-        var users = await dbContext.Users.AsNoTracking()
-            .Where(user => userIds.Contains(user.Id))
-            .ToDictionaryAsync(user => user.Id, cancellationToken);
+        var userNames = await GetUserNamesAsync(userIds, cancellationToken);
         var defectIds = works.Where(work => work.DefectId.HasValue)
             .Select(work => work.DefectId!.Value)
             .Distinct()
@@ -931,11 +932,13 @@ public sealed class VehicleRepository(
             .Select(photo => new
             {
                 photo.WorkId,
-                Response = new VehicleWorkPhotoResponse(
-                    photo.Id,
-                    photo.FileName,
-                    photo.ContentType,
-                    GetMediaSize(photo.Size, photo.Content))
+                photo.Id,
+                photo.FileName,
+                photo.ContentType,
+                photo.Size,
+                ContentLength = photo.Content == null
+                    ? 0L
+                    : (long)photo.Content.Length
             })
             .ToListAsync(cancellationToken);
         var videos = await dbContext.VehicleWorkVideos.AsNoTracking()
@@ -971,7 +974,11 @@ public sealed class VehicleRepository(
             .ToDictionary(
                 group => group.Key,
                 group => (IReadOnlyList<VehicleWorkPhotoResponse>)group
-                    .Select(item => item.Response)
+                    .Select(item => new VehicleWorkPhotoResponse(
+                        item.Id,
+                        item.FileName,
+                        item.ContentType,
+                        item.Size == 0 ? item.ContentLength : item.Size))
                     .ToArray());
         var videosByWork = videos.GroupBy(video => video.WorkId)
             .ToDictionary(
@@ -989,8 +996,8 @@ public sealed class VehicleRepository(
         return works.Select(work =>
         {
             var performerName = work.PerformedBy is Guid performerId &&
-                users.TryGetValue(performerId, out var performer)
-                    ? FormatUserName(performer)
+                userNames.TryGetValue(performerId, out var performer)
+                    ? performer
                     : string.Empty;
             var defectNodeName = work.DefectId is Guid workDefectId &&
                 defectNames.TryGetValue(workDefectId, out var nodeName)
@@ -1364,13 +1371,38 @@ public sealed class VehicleRepository(
             Path.GetFullPath(directory) + Path.DirectorySeparatorChar,
             StringComparison.Ordinal);
 
-    private static long GetMediaSize(long size, byte[]? content) =>
-        size == 0 ? content?.LongLength ?? 0 : size;
+    private async Task<IReadOnlyDictionary<Guid, string>> GetUserNamesAsync(
+        Guid[] userIds,
+        CancellationToken cancellationToken)
+    {
+        if (userIds.Length == 0)
+        {
+            return new Dictionary<Guid, string>();
+        }
 
-    private static string FormatUserName(User user) =>
+        var users = await dbContext.Users.AsNoTracking()
+            .Where(user => userIds.Contains(user.Id))
+            .Select(user => new
+            {
+                user.Id,
+                user.LastName,
+                user.FirstName,
+                user.MiddleName
+            })
+            .ToListAsync(cancellationToken);
+        return users.ToDictionary(
+            user => user.Id,
+            user => FormatUserName(
+                user.LastName, user.FirstName, user.MiddleName));
+    }
+
+    private static string FormatUserName(
+        string lastName,
+        string firstName,
+        string middleName) =>
         string.Join(
             ' ',
-            new[] { user.LastName, user.FirstName, user.MiddleName }
+            new[] { lastName, firstName, middleName }
                 .Where(part => !string.IsNullOrEmpty(part)));
 
     private static string GetSafeExtension(string fileName, string contentType)

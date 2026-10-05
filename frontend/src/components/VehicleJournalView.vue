@@ -365,7 +365,6 @@ async function loadRepairDefects() {
   }
   isLoading.value = true
   errorMessage.value = ''
-  clearMediaThumbnails()
   try {
     const response = await fetch('/api/vehicles/repair-journal', {
       headers: authHeaders(),
@@ -378,19 +377,27 @@ async function loadRepairDefects() {
       )
     }
     const journals = await response.json()
-    repairDefects.value = journals.flatMap((journal) =>
-      (journal.defects ?? [])
+    repairDefects.value = journals.flatMap((journal) => {
+      const worksByDefect = new Map()
+      for (const work of journal.works ?? []) {
+        if (!work.defectId) continue
+        const works = worksByDefect.get(work.defectId) ?? []
+        works.push(work)
+        worksByDefect.set(work.defectId, works)
+      }
+
+      return (journal.defects ?? [])
         .filter((defect) => !isCompletedStatus(defect.status))
         .map((defect) => ({
           ...defect,
-          repairWorks: (journal.works ?? []).filter((work) => work.defectId === defect.id),
+          repairWorks: worksByDefect.get(defect.id) ?? [],
           repairStatus: repairStatus(defect.status),
           vehicleName: journal.vehicle.modelName,
           vehicleGarageNumber: journal.vehicle.garageNumber,
           vehicleStateNumber: journal.vehicle.stateNumber,
           vehicleId: journal.vehicle.id,
-        })),
-    )
+        }))
+    })
   } catch (error) {
     errorMessage.value = error.message
   } finally {
@@ -525,7 +532,8 @@ function repairDraft(defect) {
  * @returns {boolean}
  */
 function isRepairMediaFile(file) {
-  return file.type.startsWith('image/') || file.type.startsWith('video/')
+  return ['image/jpeg', 'image/png', 'image/webp'].includes(file.type) ||
+    ['video/mp4', 'video/webm', 'video/quicktime'].includes(file.type)
 }
 
 /**
@@ -535,23 +543,40 @@ function isRepairMediaFile(file) {
  * @param {object} defect Неисправность, к которой относится загрузка.
  * @param {DragEvent|Event} event Событие drop либо изменения `<input>`.
  */
-function uploadRepairFiles(defect, event) {
+async function uploadRepairFiles(defect, event) {
   const files = Array.from(event.dataTransfer?.files ?? event.target?.files ?? [])
-    .filter(isRepairMediaFile)
   if (event.target) event.target.value = ''
   if (!files.length) {
     errorMessage.value = 'Выберите фото или видео для загрузки.'
     return
   }
 
-  const draft = repairDraft(defect)
-  draft.files.push(...files)
-  draft.previews.push(...files.map((file) => ({
-    file,
-    url: URL.createObjectURL(file),
-    type: file.type.startsWith('video/') ? 'video' : 'image',
-  })))
-  errorMessage.value = ''
+  const invalidFile = files.find((file) => !isRepairMediaFile(file))
+  if (invalidFile) {
+    errorMessage.value = `Файл «${invalidFile.name}» имеет неподдерживаемый формат.`
+    return
+  }
+
+  try {
+    const processedFiles = await Promise.all(files.map((file) =>
+      file.type.startsWith('image/') ? convertImageToWebp(file) : file))
+    const oversizedImage = processedFiles.find((file) =>
+      file.type === 'image/webp' && file.size > 8 * 1024 * 1024)
+    if (oversizedImage) {
+      throw new Error(`Фото «${oversizedImage.name}» после конвертации превышает 8 МБ.`)
+    }
+
+    const draft = repairDraft(defect)
+    draft.files.push(...processedFiles)
+    draft.previews.push(...processedFiles.map((file) => ({
+      file,
+      url: URL.createObjectURL(file),
+      type: file.type.startsWith('video/') ? 'video' : 'image',
+    })))
+    errorMessage.value = ''
+  } catch (error) {
+    errorMessage.value = error.message || 'Не удалось подготовить файлы к загрузке.'
+  }
 }
 
 async function completeRepair(defect) {
@@ -701,7 +726,7 @@ async function loadJournal() {
  * @param {Event} event Событие изменения `<input type="file">`.
  * @param {'photo'|'video'} type Тип выбираемых файлов.
  */
-function selectFiles(event, type) {
+async function selectFiles(event, type) {
   const files = Array.from(event.target.files ?? [])
   event.target.value = ''
   const validation = type === 'photo'
@@ -712,10 +737,20 @@ function selectFiles(event, type) {
     return
   }
   if (type === 'photo') {
-    clearPhotoPreviews()
-    photos.value = files
-    photoPreviews.value = files.map((file) => URL.createObjectURL(file))
-    photoIndex.value = 0
+    try {
+      const webpFiles = await Promise.all(files.map(convertImageToWebp))
+      const oversizedImage = webpFiles.find((file) => file.size > 8 * 1024 * 1024)
+      if (oversizedImage) {
+        throw new Error(`Фото «${oversizedImage.name}» после конвертации превышает 8 МБ.`)
+      }
+      clearPhotoPreviews()
+      photos.value = webpFiles
+      photoPreviews.value = webpFiles.map((file) => URL.createObjectURL(file))
+      photoIndex.value = 0
+      errorMessage.value = ''
+    } catch (error) {
+      errorMessage.value = error.message || 'Не удалось преобразовать фото в WebP.'
+    }
   } else {
     clearVideoPreviews()
     videos.value = files
@@ -734,11 +769,48 @@ function validatePhotos(files) {
   if (files.length > 10) return 'Можно выбрать не более 10 фотографий.'
   if (files.some((file) =>
     !['image/jpeg', 'image/png', 'image/webp'].includes(file.type) ||
-    file.size > 8 * 1024 * 1024
+    file.size > 32 * 1024 * 1024
   )) {
-    return 'Разрешены JPEG, PNG и WebP размером не более 8 МБ.'
+    return 'Разрешены JPEG, PNG и WebP размером не более 32 МБ до конвертации.'
   }
   return ''
+}
+
+async function convertImageToWebp(file) {
+  let bitmap
+  try {
+    if (file.size > 32 * 1024 * 1024) {
+      throw new Error(`Фото «${file.name}» превышает 32 МБ до конвертации.`)
+    }
+    bitmap = await createImageBitmap(file)
+    const canvas = document.createElement('canvas')
+    canvas.width = bitmap.width
+    canvas.height = bitmap.height
+    const context = canvas.getContext('2d')
+    if (!context) throw new Error('Браузер не смог обработать изображение.')
+    context.drawImage(bitmap, 0, 0)
+
+    const blob = await new Promise((resolve, reject) => {
+      canvas.toBlob(
+        (result) => result
+          ? resolve(result)
+          : reject(new Error(`Не удалось преобразовать фото «${file.name}».`)),
+        'image/webp',
+        0.8,
+      )
+    })
+    if (blob.type !== 'image/webp') {
+      throw new Error('Браузер не поддерживает преобразование изображений в WebP.')
+    }
+
+    const webpName = `${file.name.replace(/\.[^.]+$/, '')}.webp`
+    return new File([blob], webpName, {
+      type: 'image/webp',
+      lastModified: file.lastModified,
+    })
+  } finally {
+    bitmap?.close()
+  }
 }
 
 /**
