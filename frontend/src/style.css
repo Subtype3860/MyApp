@@ -1837,8 +1837,11 @@ button {
 }
 
 .repair-card-media {
-  min-height: 104px;
+  display: flex;
+  flex-wrap: wrap;
+  min-height: 0;
   margin-bottom: 18px;
+  gap: 8px;
 }
 
 .repair-stage-button {
@@ -1962,46 +1965,6 @@ button {
   white-space: pre-wrap;
 }
 
-.repair-media-swiper {
-  width: 180px;
-  height: 104px;
-  border-radius: 8px;
-  overflow: hidden;
-}
-
-.repair-media-slide {
-  display: flex;
-  width: 100%;
-  height: 100%;
-  align-items: center;
-  justify-content: center;
-  background: #111;
-  cursor: zoom-in;
-}
-
-.repair-media-slide img,
-.repair-media-slide video {
-  display: block;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.repair-media-swiper .swiper-button-prev,
-.repair-media-swiper .swiper-button-next {
-  color: #fff;
-  transform: scale(.55);
-}
-
-.repair-media-swiper .swiper-pagination-bullet {
-  background: #fff;
-  opacity: .8;
-}
-
-.repair-media-swiper .swiper-pagination-bullet-active {
-  background: var(--accent);
-}
-
 .vehicle-defect-vehicle {
   display: grid;
   gap: 3px;
@@ -2012,41 +1975,13 @@ button {
   font-size: 12px;
 }
 
-.repair-defect-media button {
-  width: 72px;
-  height: 58px;
-  padding: 3px;
-  border: 1px solid var(--border);
-  border-radius: 7px;
-  background: var(--bg-surface);
-  overflow: hidden;
-  cursor: pointer;
-}
-
-.repair-media-thumb img,
-.repair-media-thumb video {
-  display: block;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.repair-media-thumb-placeholder {
-  display: grid;
-  width: 100%;
-  height: 100%;
-  place-items: center;
-  color: var(--text-secondary);
-  font-size: 11px;
-}
-
 .repair-media-viewer {
   position: relative;
   display: grid;
   box-sizing: border-box;
   width: min(1000px, 94vw);
   max-width: 100%;
-  max-height: 92vh;
+  max-height: 86vh;
   padding: 16px;
   gap: 12px;
   border-radius: 12px;
@@ -2093,8 +2028,8 @@ button {
   display: flex;
   width: 100%;
   min-width: 0;
-  min-height: 280px;
-  max-height: calc(92vh - 110px);
+  min-height: min(280px, 40vh);
+  max-height: 80vh;
   align-items: center;
   justify-content: center;
   overflow: hidden;
@@ -2105,7 +2040,7 @@ button {
   display: block;
   width: auto;
   max-width: 100%;
-  max-height: 100%;
+  max-height: 80vh;
   object-fit: contain;
   background: #000;
 }
@@ -2140,40 +2075,17 @@ button {
   right: 8px;
 }
 
-.repair-media-viewer-thumbs {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.repair-media-viewer-thumbs button {
-  width: 62px;
-  height: 48px;
-  padding: 2px;
-  border: 1px solid var(--border);
-  border-radius: 7px;
-  background: var(--bg-surface);
-  overflow: hidden;
-  cursor: pointer;
-  font-size: 11px;
-}
-
-.repair-media-viewer-thumbs img,
-.repair-media-viewer-thumbs video {
-  display: block;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.repair-media-viewer-thumb span {
-  color: var(--text-secondary);
-}
-
-.repair-media-viewer-thumbs button.active {
-  border-color: var(--accent);
+.repair-media-loading,
+.repair-media-error {
+  position: absolute;
+  padding: 12px 16px;
+  border-radius: 8px;
   color: #fff;
-  background: var(--accent);
+  background: rgba(0, 0, 0, .72);
+}
+
+.repair-media-error {
+  background: var(--system-red);
 }
 
 .repair-media-viewer > button {
@@ -2286,7 +2198,7 @@ button {
   width: min(1000px, 94vw);
   max-width: none;
   height: auto;
-  max-height: 92vh;
+  max-height: 86vh;
   padding: 0;
   border: 0;
   background: transparent;
@@ -2299,6 +2211,17 @@ button {
 
 .repair-media-dialog::backdrop {
   background: rgba(0, 0, 0, .85);
+}
+
+@media (max-width: 600px) {
+  .repair-media-viewer {
+    width: 96vw;
+    padding: 12px;
+  }
+
+  .repair-media-viewer-content {
+    min-height: 180px;
+  }
 }
 
 .repair-zoom img {

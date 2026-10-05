@@ -1,16 +1,17 @@
 using MyApp.Application.Abstractions;
 using MyApp.Application.Storage;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 
 namespace MyApp.API.BackgroundServices;
 
 public sealed class StagedMediaTransferService(
-    IMediaStorageAdministrationRepository repository,
+    IServiceScopeFactory scopeFactory,
     MediaStorageOptions options,
     ILogger<StagedMediaTransferService> logger) : BackgroundService
 {
     private const int BatchSize = 100;
-    private static readonly TimeSpan ScanInterval = TimeSpan.FromMinutes(5);
+    private static readonly TimeSpan ScanInterval = TimeSpan.FromHours(25);
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -38,6 +39,9 @@ public sealed class StagedMediaTransferService(
     private async Task TransferExpiredFilesAsync(
         CancellationToken cancellationToken)
     {
+        await using var scope = scopeFactory.CreateAsyncScope();
+        var repository = scope.ServiceProvider
+            .GetRequiredService<IMediaStorageAdministrationRepository>();
         var retentionDays = await repository.GetRetentionDaysAsync(cancellationToken);
         while (true)
         {
@@ -47,7 +51,10 @@ public sealed class StagedMediaTransferService(
             {
                 try
                 {
-                    await TransferFileAsync(file, cancellationToken);
+                    await TransferFileAsync(
+                        repository,
+                        file,
+                        cancellationToken);
                 }
                 catch (OperationCanceledException) when (
                     cancellationToken.IsCancellationRequested)
@@ -72,6 +79,7 @@ public sealed class StagedMediaTransferService(
     }
 
     private async Task TransferFileAsync(
+        IMediaStorageAdministrationRepository repository,
         StagedMediaFile file,
         CancellationToken cancellationToken)
     {

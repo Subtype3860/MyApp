@@ -88,7 +88,7 @@ public interface IVehicleRepository
         Guid defectId, IReadOnlyList<VehicleMediaUpload> videos,
         CancellationToken cancellationToken);
     /// <summary>Возвращает содержимое видео неисправности по идентификатору.</summary>
-    Task<VehicleWorkPhotoContent?> GetDefectVideoAsync(
+    Task<VehicleMediaStream?> GetDefectVideoStreamAsync(
         Guid videoId, CancellationToken cancellationToken);
     /// <summary>Удаляет видео неисправности.</summary>
     Task<bool> DeleteDefectVideoAsync(Guid videoId, CancellationToken cancellationToken);
@@ -160,7 +160,7 @@ public interface IVehicleRepository
         Guid workId, IReadOnlyList<VehicleMediaUpload> videos,
         CancellationToken cancellationToken);
     /// <summary>Возвращает содержимое видео ремонтных работ по идентификатору.</summary>
-    Task<VehicleWorkPhotoContent?> GetWorkVideoAsync(
+    Task<VehicleMediaStream?> GetWorkVideoStreamAsync(
         Guid videoId, CancellationToken cancellationToken);
     /// <summary>Удаляет видео ремонтных работ.</summary>
     Task<bool> DeleteWorkVideoAsync(Guid videoId, CancellationToken cancellationToken);

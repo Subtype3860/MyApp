@@ -1,37 +1,37 @@
+using Microsoft.EntityFrameworkCore;
 using MyApp.Application.Abstractions;
 using MyApp.Application.Storage;
-using Npgsql;
+using MyApp.Infrastructure.Db;
 
 namespace MyApp.Infrastructure.Repositories;
 
 public sealed class MediaStorageAdministrationRepository(
-    NpgsqlDataSource dataSource,
+    AppDbContext db,
     MediaStorageOptions storageOptions) : IMediaStorageAdministrationRepository
 {
+    private const short SettingsId = 1;
+
     public async Task<int> GetRetentionDaysAsync(
-        CancellationToken cancellationToken)
-    {
-        await using var command = dataSource.CreateCommand(
-            "SELECT retention_days FROM media_storage_settings WHERE id = 1");
-        var result = await command.ExecuteScalarAsync(cancellationToken);
-        return result is int days
-            ? days
-            : throw new InvalidOperationException(
-                "Media storage retention settings are missing.");
-    }
+        CancellationToken cancellationToken) =>
+        await db.MediaStorageSettings
+            .Where(settings => settings.Id == SettingsId)
+            .Select(settings => (int?)settings.RetentionDays)
+            .FirstOrDefaultAsync(cancellationToken)
+        ?? throw new InvalidOperationException(
+            "Media storage retention settings are missing.");
 
     public async Task SetRetentionDaysAsync(
         int retentionDays,
         CancellationToken cancellationToken)
     {
-        await using var command = dataSource.CreateCommand(
-            """
-            UPDATE media_storage_settings
-            SET retention_days = @retentionDays, updated_at = NOW()
-            WHERE id = 1
-            """);
-        command.Parameters.AddWithValue("retentionDays", retentionDays);
-        if (await command.ExecuteNonQueryAsync(cancellationToken) != 1)
+        var updated = await db.MediaStorageSettings
+            .Where(settings => settings.Id == SettingsId)
+            .ExecuteUpdateAsync(
+                setters => setters
+                    .SetProperty(settings => settings.RetentionDays, retentionDays)
+                    .SetProperty(settings => settings.UpdatedAt, DateTimeOffset.UtcNow),
+                cancellationToken);
+        if (updated != 1)
         {
             throw new InvalidOperationException(
                 "Media storage retention settings are missing.");
@@ -43,52 +43,83 @@ public sealed class MediaStorageAdministrationRepository(
         int batchSize,
         CancellationToken cancellationToken)
     {
-        await using var command = dataSource.CreateCommand(
-            """
-            SELECT table_name, id, storage_path, size
-            FROM (
-                SELECT 'vehicle_defect_photos' AS table_name, id, storage_path, size, created_at
-                FROM vehicle_defect_photos
-                WHERE LEFT(storage_path, LENGTH(@stagingPhoto)) = @stagingPhoto
-                UNION ALL
-                SELECT 'vehicle_work_photos', id, storage_path, size, created_at
-                FROM vehicle_work_photos
-                WHERE LEFT(storage_path, LENGTH(@stagingPhoto)) = @stagingPhoto
-                UNION ALL
-                SELECT 'vehicle_defect_videos', id, storage_path, size, created_at
-                FROM vehicle_defect_videos
-                WHERE LEFT(storage_path, LENGTH(@stagingVideo)) = @stagingVideo
-                UNION ALL
-                SELECT 'vehicle_work_videos', id, storage_path, size, created_at
-                FROM vehicle_work_videos
-                WHERE LEFT(storage_path, LENGTH(@stagingVideo)) = @stagingVideo
-            ) AS staged
-            WHERE created_at <= NOW() - make_interval(days => @retentionDays)
-            ORDER BY created_at
-            LIMIT @batchSize
-            """);
-        command.Parameters.AddWithValue(
-            "stagingPhoto",
-            Path.GetFullPath(storageOptions.StagingPhotoDirectory) +
-                Path.DirectorySeparatorChar);
-        command.Parameters.AddWithValue(
-            "stagingVideo",
-            Path.GetFullPath(storageOptions.StagingVideoDirectory) +
-                Path.DirectorySeparatorChar);
-        command.Parameters.AddWithValue("retentionDays", retentionDays);
-        command.Parameters.AddWithValue("batchSize", batchSize);
+        var stagingPhotoPrefix = Path.GetFullPath(
+            storageOptions.StagingPhotoDirectory) + Path.DirectorySeparatorChar;
+        var stagingVideoPrefix = Path.GetFullPath(
+            storageOptions.StagingVideoDirectory) + Path.DirectorySeparatorChar;
+        var cutoff = DateTimeOffset.UtcNow.AddDays(-retentionDays);
 
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        var files = new List<StagedMediaFile>();
-        while (await reader.ReadAsync(cancellationToken))
-        {
-            files.Add(new StagedMediaFile(
-                reader.GetString(0),
-                reader.GetGuid(1),
-                reader.GetString(2),
-                reader.GetInt64(3)));
-        }
-        return files;
+        var defectPhotos = await db.VehicleDefectPhotos
+            .AsNoTracking()
+            .Where(file =>
+                file.StoragePath != null &&
+                file.StoragePath.StartsWith(stagingPhotoPrefix) &&
+                file.CreatedAt <= cutoff)
+            .OrderBy(file => file.CreatedAt)
+            .Take(batchSize)
+            .Select(file => new StagedMediaCandidate(
+                "vehicle_defect_photos",
+                file.Id,
+                file.StoragePath!,
+                file.Size,
+                file.CreatedAt))
+            .ToArrayAsync(cancellationToken);
+        var workPhotos = await db.VehicleWorkPhotos
+            .AsNoTracking()
+            .Where(file =>
+                file.StoragePath != null &&
+                file.StoragePath.StartsWith(stagingPhotoPrefix) &&
+                file.CreatedAt <= cutoff)
+            .OrderBy(file => file.CreatedAt)
+            .Take(batchSize)
+            .Select(file => new StagedMediaCandidate(
+                "vehicle_work_photos",
+                file.Id,
+                file.StoragePath!,
+                file.Size,
+                file.CreatedAt))
+            .ToArrayAsync(cancellationToken);
+        var defectVideos = await db.VehicleDefectVideos
+            .AsNoTracking()
+            .Where(file =>
+                file.StoragePath.StartsWith(stagingVideoPrefix) &&
+                file.CreatedAt <= cutoff)
+            .OrderBy(file => file.CreatedAt)
+            .Take(batchSize)
+            .Select(file => new StagedMediaCandidate(
+                "vehicle_defect_videos",
+                file.Id,
+                file.StoragePath,
+                file.Size,
+                file.CreatedAt))
+            .ToArrayAsync(cancellationToken);
+        var workVideos = await db.VehicleWorkVideos
+            .AsNoTracking()
+            .Where(file =>
+                file.StoragePath.StartsWith(stagingVideoPrefix) &&
+                file.CreatedAt <= cutoff)
+            .OrderBy(file => file.CreatedAt)
+            .Take(batchSize)
+            .Select(file => new StagedMediaCandidate(
+                "vehicle_work_videos",
+                file.Id,
+                file.StoragePath,
+                file.Size,
+                file.CreatedAt))
+            .ToArrayAsync(cancellationToken);
+
+        return defectPhotos
+            .Concat(workPhotos)
+            .Concat(defectVideos)
+            .Concat(workVideos)
+            .OrderBy(file => file.CreatedAt)
+            .Take(batchSize)
+            .Select(file => new StagedMediaFile(
+                file.TableName,
+                file.Id,
+                file.StoragePath,
+                file.Size))
+            .ToArray();
     }
 
     public async Task<bool> UpdateStoragePathAsync(
@@ -96,21 +127,54 @@ public sealed class MediaStorageAdministrationRepository(
         string destinationPath,
         CancellationToken cancellationToken)
     {
-        var table = file.TableName switch
+        var updated = file.TableName switch
         {
-            "vehicle_defect_photos" => "vehicle_defect_photos",
-            "vehicle_work_photos" => "vehicle_work_photos",
-            "vehicle_defect_videos" => "vehicle_defect_videos",
-            "vehicle_work_videos" => "vehicle_work_videos",
+            "vehicle_defect_photos" => await db.VehicleDefectPhotos
+                    .Where(row =>
+                        row.Id == file.Id &&
+                        row.StoragePath == file.StoragePath)
+                    .ExecuteUpdateAsync(
+                        setters => setters.SetProperty(
+                            row => row.StoragePath,
+                            destinationPath),
+                        cancellationToken),
+            "vehicle_work_photos" => await db.VehicleWorkPhotos
+                    .Where(row =>
+                        row.Id == file.Id &&
+                        row.StoragePath == file.StoragePath)
+                    .ExecuteUpdateAsync(
+                        setters => setters.SetProperty(
+                            row => row.StoragePath,
+                            destinationPath),
+                        cancellationToken),
+            "vehicle_defect_videos" => await db.VehicleDefectVideos
+                    .Where(row =>
+                        row.Id == file.Id &&
+                        row.StoragePath == file.StoragePath)
+                    .ExecuteUpdateAsync(
+                        setters => setters.SetProperty(
+                            row => row.StoragePath,
+                            destinationPath),
+                        cancellationToken),
+            "vehicle_work_videos" => await db.VehicleWorkVideos
+                    .Where(row =>
+                        row.Id == file.Id &&
+                        row.StoragePath == file.StoragePath)
+                    .ExecuteUpdateAsync(
+                        setters => setters.SetProperty(
+                            row => row.StoragePath,
+                            destinationPath),
+                        cancellationToken),
             _ => throw new ArgumentException(
                 "Unexpected media table name.", nameof(file))
         };
-        await using var command = dataSource.CreateCommand(
-            $"UPDATE {table} SET storage_path = @destinationPath " +
-            "WHERE id = @id AND storage_path = @sourcePath");
-        command.Parameters.AddWithValue("destinationPath", destinationPath);
-        command.Parameters.AddWithValue("id", file.Id);
-        command.Parameters.AddWithValue("sourcePath", file.StoragePath);
-        return await command.ExecuteNonQueryAsync(cancellationToken) == 1;
+        return updated == 1;
     }
+
+    private sealed record StagedMediaCandidate(
+        string TableName,
+        Guid Id,
+        string StoragePath,
+        long Size,
+        DateTimeOffset CreatedAt);
 }

@@ -1,11 +1,7 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import UserAvatar from './UserAvatar.vue'
-import { Swiper, SwiperSlide } from 'swiper/vue'
-import { Navigation, Pagination } from 'swiper/modules'
-import 'swiper/css'
-import 'swiper/css/navigation'
-import 'swiper/css/pagination'
+import RepairMediaViewer from './RepairMediaViewer.vue'
 
 /**
  * Компонент раздела «Транспорт»: журнал техники, заявки на ремонт,
@@ -34,25 +30,10 @@ const repairDefects = ref([])
 const repairDrafts = ref({})
 const selectedRepairWorkIds = ref({})
 
-// --- Полноэкранный просмотрщик медиавложений неисправности (dialog + Swiper) ---
-const mediaViewerUrl = ref('')
-const mediaViewerName = ref('')
-const mediaViewerType = ref('image')
+// --- Полноэкранный просмотрщик медиафайлов ---
+const mediaViewerOpen = ref(false)
 const mediaViewerItems = ref([])
-const mediaViewerIndex = ref(0)
-// Кэш Blob-URL миниатюр вложений по ключу `${type}:${mediaId}`.
-const mediaThumbnailUrls = ref({})
-// Идентификаторы неисправностей, для которых медиа уже подгружено или
-// подгружается — не даёт повторно загружать одну и ту же карточку.
-const loadedDefectMediaIds = new Set()
-// Сопоставление DOM-элемента карточки ремонта с её неисправностью —
-// нужно, чтобы по пересечению вьюпорта в IntersectionObserver понять,
-// какую карточку подгружать.
-const repairCardDefectByElement = new WeakMap()
-let repairCardObserver = null
-const zoomDialog = ref(null)
-const pinchStartDistance = ref(0)
-const pinchStartScale = ref(1)
+const mediaViewerType = ref('image')
 
 // --- Форма заявки на ремонт ---
 const problemDescription = ref('')
@@ -109,22 +90,12 @@ const sectionTitle = computed(() => ({
 }[props.section] ?? 'Транспорт'))
 
 onMounted(async () => {
-  repairCardObserver = new IntersectionObserver((entries) => {
-    entries.forEach((entry) => {
-      if (!entry.isIntersecting) return
-      const defect = repairCardDefectByElement.get(entry.target)
-      if (defect) ensureDefectMediaLoaded(defect)
-      repairCardObserver.unobserve(entry.target)
-    })
-  }, { rootMargin: '200px' })
   await loadRepairSection()
 })
 watch(() => props.section, loadRepairSection)
 onBeforeUnmount(() => {
   clearPreviews()
-  clearMediaThumbnails()
   closeMediaViewer()
-  repairCardObserver?.disconnect()
   stopDrag()
 })
 
@@ -140,28 +111,19 @@ function authHeaders(json = false) {
   }
 }
 
-function workMedia(defect) {
+function workMedia(defect, type) {
   const work = selectedRepairWork(defect)
-  return workMediaForWorks(work ? [work] : [])
+  return workMediaForWorks(work ? [work] : [], type)
 }
 
-function allWorkMedia(defect) {
-  return workMediaForWorks(defect.repairWorks ?? [])
-}
-
-function workMediaForWorks(works) {
-  return works.flatMap((work) => [
-    ...(work.photos ?? []).map((media) => ({
-      media: { ...media, source: 'work' },
-      type: 'image',
-      src: mediaThumbnail({ ...media, source: 'work' }, 'image'),
-    })),
-    ...(work.videos ?? []).map((media) => ({
-      media: { ...media, source: 'work' },
-      type: 'video',
-      src: mediaThumbnail({ ...media, source: 'work' }, 'video'),
-    })),
-  ])
+function workMediaForWorks(works, type) {
+  return works.flatMap((work) =>
+    (type === 'video' ? work.videos ?? [] : work.photos ?? [])
+      .map((media) => ({
+        media: { ...media, source: 'work' },
+        type,
+      })),
+  )
 }
 
 /**
@@ -429,8 +391,6 @@ async function loadRepairDefects() {
           vehicleId: journal.vehicle.id,
         })),
     )
-    // Миниатюры вложений теперь подгружаются лениво, по мере появления
-    // карточек ремонта во вьюпорте (см. observeRepairCard/ensureDefectMediaLoaded).
   } catch (error) {
     errorMessage.value = error.message
   } finally {
@@ -867,218 +827,28 @@ async function uploadFiles(category, entryId, type, files) {
   }
 }
 
-/**
- * Формирует общий список медиавложений (фото и видео) неисправности
- * с миниатюрами для отображения в Swiper-карусели.
- * @param {object} defect Неисправность.
- * @returns {{media: object, type: 'image'|'video', src: string}[]}
- */
-function defectMedia(defect) {
-  return [
-    ...(defect.photos ?? []).map((media) => ({
-      media,
-      type: 'image',
-      src: mediaThumbnail(media, 'image'),
-    })),
-    ...(defect.videos ?? []).map((media) => ({
-      media,
-      type: 'video',
-      src: mediaThumbnail(media, 'video'),
-    })),
-  ]
+function defectMedia(defect, type) {
+  return (type === 'video' ? defect.videos ?? [] : defect.photos ?? [])
+    .map((media) => ({ media, type }))
 }
 
-/**
- * Возвращает сегмент API-маршрута для получения медиафайла нужного типа.
- * @param {'image'|'video'} type
- * @returns {string}
- */
-function mediaRoute(type, media) {
-  const work = media?.source === 'work'
-  if (work) return type === 'video' ? 'work-videos' : 'work-photos'
-  return type === 'video' ? 'defect-videos' : 'defect-photos'
-}
-
-/**
- * Загружает бинарные данные медиавложения с сервера.
- * @param {object} media Медиавложение с идентификатором `id`.
- * @param {'image'|'video'} type Тип вложения.
- * @returns {Promise<Blob>}
- */
-async function fetchMediaBlob(media, type) {
-  const response = await fetch(`/api/vehicles/${mediaRoute(type, media)}/${media.id}`, {
-    headers: authHeaders(),
-  })
-  if (!response.ok) throw new Error('Не удалось открыть вложение.')
-  return response.blob()
-}
-
-/**
- * Подгружает и кэширует Blob-URL миниатюр всех медиавложений одной карточки
- * ремонта. Вызывается лениво, когда карточка появляется во вьюпорте
- * (см. {@link observeRepairCard}), а не сразу для всего списка — иначе
- * при открытии вкладки «Ремонт» браузер скачивал бы полноразмерные фото
- * и видео сразу для всей техники, что и было основной причиной долгой
- * загрузки страницы.
- * @param {object} defect Неисправность, для которой нужно подгрузить медиа.
- */
-async function ensureDefectMediaLoaded(defect) {
-  if (loadedDefectMediaIds.has(defect.id)) return
-  loadedDefectMediaIds.add(defect.id)
-  const entries = [...defectMedia(defect), ...allWorkMedia(defect)]
-  await Promise.all(entries.map(async ({ media, type }) => {
-    try {
-      mediaThumbnailUrls.value[`${type}:${media.id}`] =
-        URL.createObjectURL(await fetchMediaBlob(media, type))
-    } catch {
-      mediaThumbnailUrls.value[`${type}:${media.id}`] = ''
-    }
-  }))
-}
-
-/** Освобождает все закэшированные Blob-URL миниатюр вложений. */
-function clearMediaThumbnails() {
-  Object.values(mediaThumbnailUrls.value).forEach((url) => {
-    if (url) URL.revokeObjectURL(url)
-  })
-  mediaThumbnailUrls.value = {}
-  loadedDefectMediaIds.clear()
-}
-
-/**
- * Начинает наблюдение за карточкой ремонта: как только она появляется
- * во вьюпорте, подгружает её медиавложения и прекращает наблюдение.
- * Используется как ref-коллбэк на корневом элементе карточки в шаблоне.
- * @param {HTMLElement|null} el Элемент карточки ремонта.
- * @param {object} defect Неисправность, которой соответствует карточка.
- */
-function observeRepairCard(el, defect) {
-  if (!el) return
-  repairCardDefectByElement.set(el, defect)
-  repairCardObserver?.observe(el)
-}
-
-/**
- * Возвращает закэшированный Blob-URL миниатюры вложения.
- * @param {object} media Медиавложение.
- * @param {'image'|'video'} type Тип вложения.
- * @returns {string}
- */
-function mediaThumbnail(media, type) {
-  return mediaThumbnailUrls.value[`${type}:${media.id}`] || ''
-}
-
-/**
- * Открывает полноэкранный просмотрщик медиавложений ремонта.
- * @param {object} media Вложение, которое нужно открыть первым.
- * @param {'image'|'video'} type Тип вложения.
- * @param {{media: object, type: string}[]} [items] Список вложений для навигации (карусель).
- * @param {number} [index] Индекс открываемого вложения в `items`.
- */
-async function openRepairMedia(media, type, items = [{ media, type }], index = 0) {
-  closeMediaViewer()
+function openRepairMedia(items, type) {
+  if (!items.length) return
   mediaViewerItems.value = items
-  mediaViewerIndex.value = index
-  await loadRepairMedia(media, type)
-  if (mediaViewerUrl.value) zoomDialog.value?.showModal()
+  mediaViewerType.value = type
+  mediaViewerOpen.value = true
 }
 
-/**
- * Загружает медиавложение в просмотрщик и сбрасывает состояние зума.
- * @param {object} media Вложение.
- * @param {'image'|'video'} type Тип вложения.
- */
-async function loadRepairMedia(media, type) {
-  try {
-    mediaViewerUrl.value = URL.createObjectURL(await fetchMediaBlob(media, type))
-    mediaViewerName.value = media.fileName
-    mediaViewerType.value = type
-    zoomScale.value = 1
-    zoomX.value = 0
-    zoomY.value = 0
-  } catch (error) {
-    errorMessage.value = error.message
-  }
+function openRepairMediaCollection(defect, type, source = 'defect') {
+  const items = source === 'work'
+    ? workMedia(defect, type)
+    : defectMedia(defect, type)
+  return openRepairMedia(items, type)
 }
 
-/**
- * Переключает текущее медиавложение в просмотрщике вперёд/назад по кругу.
- * @param {number} step Смещение (+1 — следующее, -1 — предыдущее).
- */
-async function changeRepairMedia(step) {
-  if (!mediaViewerItems.value.length) return
-  mediaViewerIndex.value =
-    (mediaViewerIndex.value + step + mediaViewerItems.value.length) %
-    mediaViewerItems.value.length
-  const item = mediaViewerItems.value[mediaViewerIndex.value]
-  await loadRepairMedia(item.media, item.type)
-}
-
-/** Закрывает полноэкранный просмотрщик медиавложений и сбрасывает его состояние. */
 function closeMediaViewer() {
-  if (zoomDialog.value?.open) zoomDialog.value.close()
-  if (mediaViewerUrl.value) URL.revokeObjectURL(mediaViewerUrl.value)
-  mediaViewerUrl.value = ''
-  mediaViewerName.value = ''
-  mediaViewerType.value = 'image'
+  mediaViewerOpen.value = false
   mediaViewerItems.value = []
-  mediaViewerIndex.value = 0
-  pinchStartDistance.value = 0
-  zoomScale.value = 1
-  zoomX.value = 0
-  zoomY.value = 0
-}
-
-/** Переключает масштаб медиавложения в просмотрщике по одиночному клику/тапу. */
-function toggleMediaZoom() {
-  zoomScale.value = zoomScale.value === 1 ? 2.5 : 1
-  if (zoomScale.value === 1) {
-    zoomX.value = 0
-    zoomY.value = 0
-  }
-}
-
-/**
- * Вычисляет расстояние между двумя точками касания (для pinch-zoom).
- * @param {TouchList} touches
- * @returns {number}
- */
-function touchDistance(touches) {
-  const [first, second] = touches
-  return Math.hypot(second.clientX - first.clientX, second.clientY - first.clientY)
-}
-
-/**
- * Начинает pinch-zoom жест: запоминает начальное расстояние между пальцами и масштаб.
- * @param {TouchEvent} event
- */
-function startMediaTouch(event) {
-  if (event.touches.length !== 2) return
-  pinchStartDistance.value = touchDistance(event.touches)
-  pinchStartScale.value = zoomScale.value
-}
-
-/**
- * Обновляет масштаб при движении пальцев во время pinch-zoom.
- * @param {TouchEvent} event
- */
-function moveMediaTouch(event) {
-  if (event.touches.length !== 2 || !pinchStartDistance.value) return
-  const scale = pinchStartScale.value *
-    (touchDistance(event.touches) / pinchStartDistance.value)
-  zoomScale.value = Math.min(Math.max(scale, 1), 4)
-  if (zoomScale.value === 1) {
-    zoomX.value = 0
-    zoomY.value = 0
-  }
-}
-
-/**
- * Завершает pinch-zoom жест, когда остаётся меньше двух точек касания.
- * @param {TouchEvent} event
- */
-function endMediaTouch(event) {
-  if (event.touches.length < 2) pinchStartDistance.value = 0
 }
 
 /** Освобождает Blob-URL предпросмотров фото формы заявки на ремонт. */
@@ -1424,7 +1194,6 @@ function formatDateTime(value) {
             v-for="defect in repairDefects"
             :key="defect.id"
             class="repair-card"
-            :ref="(el) => observeRepairCard(el, defect)"
           >
             <header class="card-header">
               <h2>Ремонт: Гар. № {{ defect.vehicleGarageNumber ?? '—' }} ({{ defect.vehicleName || '—' }})</h2>
@@ -1522,80 +1291,48 @@ function formatDateTime(value) {
               <div class="column right">
                 <h3>ФОТО И ВИДЕО НЕИСПРАВНОСТИ</h3>
                 <div class="repair-card-media">
-                  <span v-if="!defect.photos.length && !defect.videos.length">Нет вложений</span>
-                  <Swiper
-                    v-else
-                    :modules="[Navigation, Pagination]"
-                    navigation
-                    pagination
-                    class="repair-media-swiper"
+                  <span v-if="!defect.photos.length && !defect.videos.length">
+                    Нет вложений
+                  </span>
+                  <button
+                    v-if="defect.photos.length"
+                    class="repair-card-button repair-card-button--secondary"
+                    type="button"
+                    @click="openRepairMediaCollection(defect, 'image')"
                   >
-                    <SwiperSlide
-                      v-for="(item, index) in defectMedia(defect)"
-                      :key="item.media.id"
-                    >
-                      <div
-                        class="repair-media-slide"
-                        @click="openRepairMedia(item.media, item.type, defectMedia(defect), index)"
-                      >
-                        <img
-                          v-if="item.type === 'image' && item.src"
-                          :src="item.src"
-                          :alt="item.media.fileName || 'Фото неисправности'"
-                        />
-                        <video
-                          v-else-if="item.type === 'video' && item.src"
-                          :src="item.src"
-                          muted
-                          preload="metadata"
-                          aria-label="Видео неисправности"
-                        ></video>
-                        <span v-else class="repair-media-thumb-placeholder">
-                          {{ item.type === 'video' ? 'Видео' : 'Фото' }}
-                        </span>
-                      </div>
-                    </SwiperSlide>
-                  </Swiper>
+                    Просмотр фото ({{ defect.photos.length }})
+                  </button>
+                  <button
+                    v-if="defect.videos.length"
+                    class="repair-card-button repair-card-button--secondary"
+                    type="button"
+                    @click="openRepairMediaCollection(defect, 'video')"
+                  >
+                    Просмотр видео ({{ defect.videos.length }})
+                  </button>
                 </div>
 
                 <h3>ФОТО И ВИДЕО РЕМОНТНЫХ РАБОТ</h3>
                 <div class="repair-card-media">
-                  <span v-if="!workMedia(defect).length">
+                  <span v-if="!workMedia(defect, 'image').length && !workMedia(defect, 'video').length">
                     Нет вложений
                   </span>
-                  <Swiper
-                    v-else
-                    :modules="[Navigation, Pagination]"
-                    navigation
-                    pagination
-                    class="repair-media-swiper"
+                  <button
+                    v-if="workMedia(defect, 'image').length"
+                    class="repair-card-button repair-card-button--secondary"
+                    type="button"
+                    @click="openRepairMediaCollection(defect, 'image', 'work')"
                   >
-                    <SwiperSlide
-                      v-for="(item, index) in workMedia(defect)"
-                      :key="`work-${item.media.id}`"
-                    >
-                      <div
-                        class="repair-media-slide"
-                        @click="openRepairMedia(item.media, item.type, workMedia(defect), index)"
-                      >
-                        <img
-                          v-if="item.type === 'image' && item.src"
-                          :src="item.src"
-                          :alt="item.media.fileName || 'Фото ремонтных работ'"
-                        />
-                        <video
-                          v-else-if="item.type === 'video' && item.src"
-                          :src="item.src"
-                          muted
-                          preload="metadata"
-                          aria-label="Видео ремонтных работ"
-                        ></video>
-                        <span v-else class="repair-media-thumb-placeholder">
-                          {{ item.type === 'video' ? 'Видео' : 'Фото' }}
-                        </span>
-                      </div>
-                    </SwiperSlide>
-                  </Swiper>
+                    Просмотр фото ({{ workMedia(defect, 'image').length }})
+                  </button>
+                  <button
+                    v-if="workMedia(defect, 'video').length"
+                    class="repair-card-button repair-card-button--secondary"
+                    type="button"
+                    @click="openRepairMediaCollection(defect, 'video', 'work')"
+                  >
+                    Просмотр видео ({{ workMedia(defect, 'video').length }})
+                  </button>
                 </div>
                 <div v-if="selectedRepairWork(defect)" class="repair-work-report">
                   <h3>ОПИСАНИЕ ВЫПОЛНЕННЫХ РАБОТ</h3>
@@ -1624,75 +1361,12 @@ function formatDateTime(value) {
       />
       <button type="button" @click="closeZoom">×</button>
     </div>
-    <dialog ref="zoomDialog" class="repair-zoom repair-media-dialog" @click.self="closeMediaViewer">
-      <div v-if="mediaViewerUrl" class="repair-media-viewer">
-          <div class="repair-media-viewer-header">
-            <strong>{{ mediaViewerName }}</strong>
-            <span v-if="mediaViewerItems.length">
-              {{ mediaViewerIndex + 1 }} / {{ mediaViewerItems.length }}
-            </span>
-          </div>
-          <div class="repair-media-viewer-content">
-            <button
-              v-if="mediaViewerItems.length > 1"
-              class="repair-media-nav repair-media-nav--prev"
-              type="button"
-              aria-label="Предыдущее вложение"
-              @click="changeRepairMedia(-1)"
-            >
-              ‹
-            </button>
-            <video
-              v-if="mediaViewerType === 'video'"
-              :src="mediaViewerUrl"
-              controls
-            ></video>
-            <img
-              v-else
-              :src="mediaViewerUrl"
-              :alt="mediaViewerName"
-              :style="{ transform: `translate(${zoomX}px, ${zoomY}px) scale(${zoomScale})` }"
-              @dblclick="toggleMediaZoom"
-              @touchstart="startMediaTouch"
-              @touchmove.prevent="moveMediaTouch"
-              @touchend="endMediaTouch"
-            />
-            <button
-              v-if="mediaViewerItems.length > 1"
-              class="repair-media-nav repair-media-nav--next"
-              type="button"
-              aria-label="Следующее вложение"
-              @click="changeRepairMedia(1)"
-            >
-              ›
-            </button>
-          </div>
-          <div class="repair-media-viewer-thumbs">
-            <button
-              v-for="(item, index) in mediaViewerItems"
-              :key="item.media.id"
-              class="repair-media-viewer-thumb"
-              type="button"
-              :class="{ active: index === mediaViewerIndex }"
-              @click="changeRepairMedia(index - mediaViewerIndex)"
-            >
-              <img
-                v-if="mediaThumbnail(item.media, item.type) && item.type === 'image'"
-                :src="mediaThumbnail(item.media, item.type)"
-                :alt="item.media.fileName || `Фото ${index + 1}`"
-              />
-              <video
-                v-else-if="mediaThumbnail(item.media, item.type)"
-                :src="mediaThumbnail(item.media, item.type)"
-                muted
-                preload="metadata"
-                aria-hidden="true"
-              ></video>
-              <span v-else>{{ item.type === 'video' ? 'Видео' : 'Фото' }} {{ index + 1 }}</span>
-            </button>
-          </div>
-        <button class="repair-media-viewer-close" type="button" @click="closeMediaViewer">×</button>
-      </div>
-    </dialog>
+    <RepairMediaViewer
+      :open="mediaViewerOpen"
+      :items="mediaViewerItems"
+      :media-type="mediaViewerType"
+      :token="token"
+      @close="closeMediaViewer"
+    />
   </main>
 </template>

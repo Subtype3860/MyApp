@@ -1,13 +1,17 @@
+using System.Data.Common;
+using System.Globalization;
 using System.Text.Json;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 using MyApp.Application.Abstractions;
 using MyApp.Application.DTO;
-using Npgsql;
-using NpgsqlTypes;
+using MyApp.Infrastructure.Db;
+using MyApp.Infrastructure.Db.Entities;
 
 namespace MyApp.Infrastructure.Repositories;
 
 public sealed class RequirementJournalRepository(
-    NpgsqlDataSource dataSource) : IRequirementJournalRepository
+    AppDbContext db) : IRequirementJournalRepository
 {
     private static readonly JsonSerializerOptions JsonOptions =
         new(JsonSerializerDefaults.Web);
@@ -19,91 +23,157 @@ public sealed class RequirementJournalRepository(
         ComponentDocumentRequest request,
         CancellationToken cancellationToken)
     {
+        await using var transaction = await db.Database.BeginTransactionAsync(
+            cancellationToken);
         var requirementId = Guid.NewGuid();
-        await using var connection = await dataSource.OpenConnectionAsync(
+        await db.ComponentRequirements.AddAsync(
+            new ComponentRequirementRecord
+            {
+                Id = requirementId,
+                CreatedBy = userId,
+                AuthorName = authorName,
+                IssuerName = issuerName,
+                VehicleNumber = request.VehicleNumber,
+                SourceTable = request.SourceTable,
+                FormData = JsonSerializer.Serialize(request, JsonOptions)
+            },
             cancellationToken);
-        await using var transaction = await connection.BeginTransactionAsync(
-            cancellationToken);
-
-        await using (var headerCommand = connection.CreateCommand())
-        {
-            headerCommand.Transaction = transaction;
-            headerCommand.CommandText =
-                """
-                INSERT INTO component_requirements (
-                    id,
-                    created_by,
-                    author_name,
-                    issuer_name,
-                    vehicle_number,
-                    source_table,
-                    form_data)
-                VALUES (
-                    @id,
-                    @createdBy,
-                    @authorName,
-                    @issuerName,
-                    @vehicleNumber,
-                    @sourceTable,
-                    @formData)
-                """;
-            headerCommand.Parameters.AddWithValue("id", requirementId);
-            headerCommand.Parameters.AddWithValue("createdBy", userId);
-            headerCommand.Parameters.AddWithValue("authorName", authorName);
-            headerCommand.Parameters.AddWithValue("issuerName", issuerName);
-            headerCommand.Parameters.AddWithValue(
-                "vehicleNumber",
-                request.VehicleNumber);
-            headerCommand.Parameters.AddWithValue(
-                "sourceTable",
-                request.SourceTable);
-            headerCommand.Parameters.AddWithValue(
-                "formData",
-                NpgsqlDbType.Jsonb,
-                JsonSerializer.Serialize(request, JsonOptions));
-            await headerCommand.ExecuteNonQueryAsync(cancellationToken);
-        }
 
         for (var index = 0; index < request.Items.Count; index++)
         {
             var item = request.Items[index];
+            db.ComponentRequirementItems.Add(new ComponentRequirementItemRecord
+            {
+                RequirementId = requirementId,
+                Position = index + 1,
+                Name = item.Name,
+                Unit = item.Unit,
+                Quantity = item.Quantity
+            });
+        }
+
+        await db.SaveChangesAsync(cancellationToken);
+        foreach (var item in request.Items)
+        {
             await UpdateCsvAsync(
-                connection,
-                transaction,
                 request.SourceTable,
                 item,
                 cancellationToken);
-            await using var itemCommand = connection.CreateCommand();
-            itemCommand.Transaction = transaction;
-            itemCommand.CommandText =
-                """
-                INSERT INTO component_requirement_items (
-                    requirement_id,
-                    position,
-                    name,
-                    unit,
-                    quantity)
-                VALUES (
-                    @requirementId,
-                    @position,
-                    @name,
-                    @unit,
-                    @quantity)
-                """;
-            itemCommand.Parameters.AddWithValue("requirementId", requirementId);
-            itemCommand.Parameters.AddWithValue("position", index + 1);
-            itemCommand.Parameters.AddWithValue("name", item.Name);
-            itemCommand.Parameters.AddWithValue("unit", item.Unit);
-            itemCommand.Parameters.AddWithValue("quantity", item.Quantity);
-            await itemCommand.ExecuteNonQueryAsync(cancellationToken);
         }
 
         await transaction.CommitAsync(cancellationToken);
     }
 
-    private static async Task UpdateCsvAsync(
-        NpgsqlConnection connection,
-        NpgsqlTransaction transaction,
+    public async Task<IReadOnlyList<RequirementJournalEntry>> GetRecentAsync(
+        CancellationToken cancellationToken)
+    {
+        var requirements = await db.ComponentRequirements
+            .AsNoTracking()
+            .OrderByDescending(requirement => requirement.CreatedAt)
+            .Take(200)
+            .Select(requirement => new {
+                requirement.Id,
+                requirement.CreatedAt,
+                requirement.AuthorName,
+                requirement.IssuerName,
+                requirement.VehicleNumber
+            })
+            .ToArrayAsync(cancellationToken);
+        var requirementIds = requirements
+            .Select(requirement => requirement.Id)
+            .ToArray();
+        var items = await db.ComponentRequirementItems
+            .AsNoTracking()
+            .Where(item => requirementIds.Contains(item.RequirementId))
+            .OrderBy(item => item.Position)
+            .Select(item => new {
+                item.RequirementId,
+                item.Name,
+                item.Unit,
+                item.Quantity
+            })
+            .ToArrayAsync(cancellationToken);
+        var itemsByRequirement = items
+            .GroupBy(item => item.RequirementId)
+            .ToDictionary(
+                group => group.Key,
+                group => (IReadOnlyList<ComponentDocumentItem>)group
+                    .Select(item => new ComponentDocumentItem(
+                        item.Name,
+                        item.Unit,
+                        item.Quantity,
+                        item.Quantity))
+                    .ToArray());
+
+        return requirements
+            .Select(requirement => new RequirementJournalEntry(
+                requirement.Id,
+                requirement.CreatedAt,
+                requirement.AuthorName,
+                requirement.IssuerName,
+                requirement.VehicleNumber,
+                itemsByRequirement.GetValueOrDefault(
+                    requirement.Id,
+                    Array.Empty<ComponentDocumentItem>())))
+            .ToArray();
+    }
+
+    public async Task<ComponentDocumentRequest?> GetDocumentRequestAsync(
+        Guid id,
+        CancellationToken cancellationToken)
+    {
+        var formData = await db.ComponentRequirements
+            .AsNoTracking()
+            .Where(requirement => requirement.Id == id)
+            .Select(requirement => requirement.FormData)
+            .FirstOrDefaultAsync(cancellationToken);
+        return formData is null
+            ? null
+            : JsonSerializer.Deserialize<ComponentDocumentRequest>(
+                formData,
+                JsonOptions);
+    }
+
+    public async Task<bool> DeleteAsync(
+        Guid id,
+        CancellationToken cancellationToken)
+    {
+        await using var transaction = await db.Database.BeginTransactionAsync(
+            cancellationToken);
+        var requirement = await db.ComponentRequirements
+            .AsNoTracking()
+            .FirstOrDefaultAsync(row => row.Id == id, cancellationToken);
+        if (requirement is null)
+        {
+            return false;
+        }
+
+        var items = await db.ComponentRequirementItems
+            .AsNoTracking()
+            .Where(item => item.RequirementId == id)
+            .OrderBy(item => item.Position)
+            .Select(item => new ComponentDocumentItem(
+                item.Name,
+                item.Unit,
+                item.Quantity,
+                0))
+            .ToArrayAsync(cancellationToken);
+        foreach (var item in items)
+        {
+            await RestoreCsvAsync(
+                requirement.SourceTable,
+                item,
+                cancellationToken);
+        }
+
+        var deleted = await db.ComponentRequirements
+            .Where(row => row.Id == id)
+            .ExecuteDeleteAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return deleted > 0;
+    }
+
+    private async Task UpdateCsvAsync(
         string sourceTable,
         ComponentDocumentItem item,
         CancellationToken cancellationToken)
@@ -118,178 +188,15 @@ public sealed class RequirementJournalRepository(
         var newValue = Math.Max(
             item.AvailableQuantity - item.Quantity,
             0);
-
-        await using var command = connection.CreateCommand();
-        command.Transaction = transaction;
-        command.CommandText =
-            "SELECT edit_csv_tab(@fileName, @searchText, @newValue)";
-        command.Parameters.AddWithValue("fileName", fileName);
-        command.Parameters.AddWithValue("searchText", item.Name);
-        command.Parameters.AddWithValue("newValue", newValue);
-        var result = Convert.ToString(
-            await command.ExecuteScalarAsync(cancellationToken));
-        if (string.IsNullOrWhiteSpace(result) ||
-            !result.StartsWith("Успешно обновлено!", StringComparison.Ordinal))
-        {
-            throw new InvalidOperationException(
-                result ?? "Функция edit_csv_tab не вернула результат.");
-        }
-    }
-
-    public async Task<IReadOnlyList<RequirementJournalEntry>> GetRecentAsync(
-        CancellationToken cancellationToken)
-    {
-        await using var command = dataSource.CreateCommand(
-            """
-            WITH recent AS (
-                SELECT id, created_at, author_name, issuer_name, vehicle_number
-                FROM component_requirements
-                ORDER BY created_at DESC
-                LIMIT 200
-            )
-            SELECT
-                recent.id,
-                recent.created_at,
-                recent.author_name,
-                recent.issuer_name,
-                recent.vehicle_number,
-                items.name,
-                items.unit,
-                items.quantity
-            FROM recent
-            LEFT JOIN component_requirement_items AS items
-                ON items.requirement_id = recent.id
-            ORDER BY recent.created_at DESC, items.position
-            """);
-
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        var entries = new List<RequirementJournalEntry>();
-        var entryIndexes = new Dictionary<Guid, int>();
-        var entryItems = new Dictionary<Guid, List<ComponentDocumentItem>>();
-
-        while (await reader.ReadAsync(cancellationToken))
-        {
-            var id = reader.GetGuid(0);
-            if (!entryIndexes.ContainsKey(id))
-            {
-                entryIndexes[id] = entries.Count;
-                entryItems[id] = [];
-                entries.Add(new RequirementJournalEntry(
-                    id,
-                    reader.GetFieldValue<DateTimeOffset>(1),
-                    reader.GetString(2),
-                    reader.GetString(3),
-                    reader.GetString(4),
-                    entryItems[id]));
-            }
-
-            if (!reader.IsDBNull(5))
-            {
-                entryItems[id].Add(new ComponentDocumentItem(
-                    reader.GetString(5),
-                    reader.GetString(6),
-                    reader.GetDecimal(7),
-                    reader.GetDecimal(7)));
-            }
-        }
-
-        return entries;
-    }
-
-    public async Task<ComponentDocumentRequest?> GetDocumentRequestAsync(
-        Guid id,
-        CancellationToken cancellationToken)
-    {
-        await using var command = dataSource.CreateCommand(
-            """
-            SELECT form_data
-            FROM component_requirements
-            WHERE id = @id
-            """);
-        command.Parameters.AddWithValue("id", id);
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        if (!await reader.ReadAsync(cancellationToken) || reader.IsDBNull(0))
-        {
-            return null;
-        }
-
-        return JsonSerializer.Deserialize<ComponentDocumentRequest>(
-            reader.GetString(0),
-            JsonOptions);
-    }
-
-    public async Task<bool> DeleteAsync(
-        Guid id,
-        CancellationToken cancellationToken)
-    {
-        await using var connection = await dataSource.OpenConnectionAsync(
+        var result = await ExecuteCsvFunctionAsync(
+            fileName,
+            item.Name,
+            newValue,
             cancellationToken);
-        await using var transaction = await connection.BeginTransactionAsync(
-            cancellationToken);
-
-        string sourceTable;
-        await using (var sourceCommand = connection.CreateCommand())
-        {
-            sourceCommand.Transaction = transaction;
-            sourceCommand.CommandText =
-                "SELECT source_table FROM component_requirements WHERE id = @id";
-            sourceCommand.Parameters.AddWithValue("id", id);
-            var source = await sourceCommand.ExecuteScalarAsync(cancellationToken);
-            if (source is null)
-            {
-                return false;
-            }
-
-            sourceTable = Convert.ToString(source) ?? string.Empty;
-        }
-
-        var items = new List<ComponentDocumentItem>();
-        await using (var itemsCommand = connection.CreateCommand())
-        {
-            itemsCommand.Transaction = transaction;
-            itemsCommand.CommandText =
-                """
-                SELECT name, unit, quantity
-                FROM component_requirement_items
-                WHERE requirement_id = @id
-                ORDER BY position
-                """;
-            itemsCommand.Parameters.AddWithValue("id", id);
-            await using var reader = await itemsCommand.ExecuteReaderAsync(
-                cancellationToken);
-            while (await reader.ReadAsync(cancellationToken))
-            {
-                items.Add(new ComponentDocumentItem(
-                    reader.GetString(0),
-                    reader.GetString(1),
-                    reader.GetDecimal(2),
-                    0));
-            }
-        }
-
-        foreach (var item in items)
-        {
-            await RestoreCsvAsync(
-                connection,
-                transaction,
-                sourceTable,
-                item,
-                cancellationToken);
-        }
-
-        await using var deleteCommand = connection.CreateCommand();
-        deleteCommand.Transaction = transaction;
-        deleteCommand.CommandText =
-            "DELETE FROM component_requirements WHERE id = @id";
-        deleteCommand.Parameters.AddWithValue("id", id);
-        var deleted = await deleteCommand.ExecuteNonQueryAsync(cancellationToken) > 0;
-        await transaction.CommitAsync(cancellationToken);
-        return deleted;
+        EnsureCsvUpdateSucceeded(result);
     }
 
-    private static async Task RestoreCsvAsync(
-        NpgsqlConnection connection,
-        NpgsqlTransaction transaction,
+    private async Task RestoreCsvAsync(
         string sourceTable,
         ComponentDocumentItem item,
         CancellationToken cancellationToken)
@@ -302,92 +209,100 @@ public sealed class RequirementJournalRepository(
                 "Для требования не указан источник остатков.")
         };
         var currentQuantity = await GetCurrentQuantityAsync(
-            connection,
-            transaction,
             sourceTable,
             item.Name,
             cancellationToken);
-        var newValue = currentQuantity + item.Quantity;
+        var result = await ExecuteCsvFunctionAsync(
+            fileName,
+            item.Name,
+            currentQuantity + item.Quantity,
+            cancellationToken);
+        EnsureCsvUpdateSucceeded(result);
+    }
 
+    private async Task<decimal> GetCurrentQuantityAsync(
+        string sourceTable,
+        string itemName,
+        CancellationToken cancellationToken)
+    {
+        var normalizedName = itemName.Trim();
+        var quantity = sourceTable switch
+        {
+            "v_full_ost" => await db.FullStocks
+                .Where(row => row.Name.Trim() == normalizedName)
+                .Select(row => row.Quantity)
+                .FirstOrDefaultAsync(cancellationToken),
+            "v_meh_ost" => await db.MechanicalStocks
+                .Where(row => row.Name.Trim() == normalizedName)
+                .Select(row => row.Quantity)
+                .FirstOrDefaultAsync(cancellationToken),
+            "full_ost" => await db.FullStockLegacy
+                .Where(row => row.Name.Trim() == normalizedName)
+                .Select(row => row.Amount)
+                .FirstOrDefaultAsync(cancellationToken),
+            "meh_ost" => await db.MechanicalStockLegacy
+                .Where(row => row.Name.Trim() == normalizedName)
+                .Select(row => row.Amount)
+                .FirstOrDefaultAsync(cancellationToken),
+            _ => throw new InvalidOperationException(
+                "Для требования не указан источник остатков.")
+        };
+
+        if (quantity is null)
+        {
+            throw new InvalidOperationException(
+                $"Компонент «{itemName.Trim()}» не найден в остатках.");
+        }
+
+        if (decimal.TryParse(
+                quantity.Replace(',', '.'),
+                NumberStyles.Number,
+                CultureInfo.InvariantCulture,
+                out var parsedQuantity))
+        {
+            return parsedQuantity;
+        }
+
+        throw new InvalidOperationException(
+            $"Некорректный остаток для компонента «{itemName.Trim()}»: {quantity}.");
+    }
+
+    private async Task<string?> ExecuteCsvFunctionAsync(
+        string fileName,
+        string itemName,
+        decimal quantity,
+        CancellationToken cancellationToken)
+    {
+        var connection = db.Database.GetDbConnection();
         await using var command = connection.CreateCommand();
-        command.Transaction = transaction;
+        command.Transaction = db.Database.CurrentTransaction?.GetDbTransaction();
         command.CommandText =
             "SELECT edit_csv_tab(@fileName, @searchText, @newValue)";
-        command.Parameters.AddWithValue("fileName", fileName);
-        command.Parameters.AddWithValue("searchText", item.Name);
-        command.Parameters.AddWithValue("newValue", newValue);
-        var result = Convert.ToString(
-            await command.ExecuteScalarAsync(cancellationToken));
+        AddParameter(command, "fileName", fileName);
+        AddParameter(command, "searchText", itemName);
+        AddParameter(command, "newValue", quantity);
+        var result = await command.ExecuteScalarAsync(cancellationToken);
+        return Convert.ToString(result, CultureInfo.InvariantCulture);
+    }
+
+    private static void AddParameter(
+        DbCommand command,
+        string name,
+        object value)
+    {
+        var parameter = command.CreateParameter();
+        parameter.ParameterName = name;
+        parameter.Value = value;
+        command.Parameters.Add(parameter);
+    }
+
+    private static void EnsureCsvUpdateSucceeded(string? result)
+    {
         if (string.IsNullOrWhiteSpace(result) ||
             !result.StartsWith("Успешно обновлено!", StringComparison.Ordinal))
         {
             throw new InvalidOperationException(
                 result ?? "Функция edit_csv_tab не вернула результат.");
         }
-    }
-
-    private static async Task<decimal> GetCurrentQuantityAsync(
-        NpgsqlConnection connection,
-        NpgsqlTransaction transaction,
-        string sourceTable,
-        string itemName,
-        CancellationToken cancellationToken)
-    {
-        if (sourceTable is not (
-                "v_full_ost" or
-                "v_meh_ost" or
-                "full_ost" or
-                "meh_ost"))
-        {
-            throw new InvalidOperationException(
-                "Для требования не указан источник остатков.");
-        }
-
-        await using var command = connection.CreateCommand();
-        command.Transaction = transaction;
-        command.CommandText = sourceTable switch
-        {
-            "v_full_ost" or "v_meh_ost" =>
-                $"""
-                SELECT "Количество"
-                FROM {sourceTable}
-                WHERE BTRIM("Наименование") = BTRIM(@name)
-                LIMIT 1
-                """,
-            _ =>
-                $"""
-                SELECT amount
-                FROM {sourceTable}
-                WHERE BTRIM(name) = BTRIM(@name)
-                LIMIT 1
-                """
-        };
-        command.Parameters.AddWithValue("name", itemName);
-        var result = await command.ExecuteScalarAsync(cancellationToken);
-        if (result is null || result is DBNull)
-        {
-            throw new InvalidOperationException(
-                $"Компонент «{itemName.Trim()}» не найден в остатках.");
-        }
-
-        if (result is decimal decimalValue)
-        {
-            return decimalValue;
-        }
-
-        var text = Convert.ToString(
-            result,
-            System.Globalization.CultureInfo.InvariantCulture);
-        if (decimal.TryParse(
-                text?.Replace(',', '.'),
-                System.Globalization.NumberStyles.Number,
-                System.Globalization.CultureInfo.InvariantCulture,
-                out var quantity))
-        {
-            return quantity;
-        }
-
-        throw new InvalidOperationException(
-            $"Некорректный остаток для компонента «{itemName.Trim()}»: {text}.");
     }
 }

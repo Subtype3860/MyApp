@@ -196,10 +196,10 @@ public sealed class VehicleService(
             repository.AddDefectVideosAsync,
             cancellationToken);
 
-    public Task<VehicleWorkPhotoContent?> GetDefectVideoAsync(
+    public Task<VehicleMediaStream?> GetDefectVideoStreamAsync(
         Guid videoId,
         CancellationToken cancellationToken) =>
-        repository.GetDefectVideoAsync(videoId, cancellationToken);
+        repository.GetDefectVideoStreamAsync(videoId, cancellationToken);
 
     public Task<ServiceResult<bool>> DeleteDefectVideoAsync(
         Guid videoId,
@@ -418,10 +418,10 @@ public sealed class VehicleService(
             repository.AddWorkVideosAsync,
             cancellationToken);
 
-    public Task<VehicleWorkPhotoContent?> GetWorkVideoAsync(
+    public Task<VehicleMediaStream?> GetWorkVideoStreamAsync(
         Guid videoId,
         CancellationToken cancellationToken) =>
-        repository.GetWorkVideoAsync(videoId, cancellationToken);
+        repository.GetWorkVideoStreamAsync(videoId, cancellationToken);
 
     public Task<ServiceResult<bool>> DeleteWorkVideoAsync(
         Guid videoId,

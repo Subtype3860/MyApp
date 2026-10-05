@@ -1,11 +1,13 @@
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
+using System.Security.Cryptography;
 using System.Text;
 using MyApp.Application.DTO;
 using MyApp.Application.Services;
 using MyApp.Application.Security;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Caching.Memory;
 
 namespace MyApp.API.Controllers;
 
@@ -167,8 +169,23 @@ public class VehicleController : ControllerBase
         [FromServices] IVehicleService service,
         CancellationToken cancellationToken)
     {
-        var video = await service.GetDefectVideoAsync(videoId, cancellationToken);
-        return video is null ? NotFound() : File(video.Content, video.ContentType, video.FileName, enableRangeProcessing: true);
+        var video = await service.GetDefectVideoStreamAsync(
+            videoId,
+            cancellationToken);
+        return video is null
+            ? NotFound()
+            : File(video.Content, video.ContentType, enableRangeProcessing: true);
+    }
+
+    [HttpPost("defect-videos/{videoId:guid}/stream-ticket")]
+    public IActionResult CreateDefectVideoStreamTicket(
+        Guid videoId,
+        [FromServices] IMemoryCache cache)
+    {
+        var ticket = CreateVideoStreamTicket(
+            cache,
+            new VideoStreamTicket(videoId, IsWorkVideo: false));
+        return Ok(new { url = $"/api/vehicles/video-stream/{ticket}" });
     }
 
     /// <summary>Удаляет видео неисправности.</summary>
@@ -375,8 +392,58 @@ public class VehicleController : ControllerBase
         [FromServices] IVehicleService service,
         CancellationToken cancellationToken)
     {
-        var video = await service.GetWorkVideoAsync(videoId, cancellationToken);
-        return video is null ? NotFound() : File(video.Content, video.ContentType, video.FileName, enableRangeProcessing: true);
+        var video = await service.GetWorkVideoStreamAsync(
+            videoId,
+            cancellationToken);
+        return video is null
+            ? NotFound()
+            : File(video.Content, video.ContentType, enableRangeProcessing: true);
+    }
+
+    [HttpPost("work-videos/{videoId:guid}/stream-ticket")]
+    public IActionResult CreateWorkVideoStreamTicket(
+        Guid videoId,
+        [FromServices] IMemoryCache cache)
+    {
+        var ticket = CreateVideoStreamTicket(
+            cache,
+            new VideoStreamTicket(videoId, IsWorkVideo: true));
+        return Ok(new { url = $"/api/vehicles/video-stream/{ticket}" });
+    }
+
+    [HttpGet("video-stream/{ticket}")]
+    [AllowAnonymous]
+    public async Task<IActionResult> StreamVideo(
+        string ticket,
+        [FromServices] IMemoryCache cache,
+        [FromServices] IVehicleService service,
+        CancellationToken cancellationToken)
+    {
+        if (!cache.TryGetValue<VideoStreamTicket>(
+                GetVideoStreamTicketKey(ticket),
+                out var streamTicket) ||
+            streamTicket is null)
+        {
+            return NotFound();
+        }
+
+        var video = streamTicket.IsWorkVideo
+            ? await service.GetWorkVideoStreamAsync(
+                streamTicket.VideoId,
+                cancellationToken)
+            : await service.GetDefectVideoStreamAsync(
+                streamTicket.VideoId,
+                cancellationToken);
+        if (video is null)
+        {
+            return NotFound();
+        }
+
+        Response.Headers.CacheControl = "private, no-store";
+        return File(
+            video.Content,
+            video.ContentType,
+            enableRangeProcessing: true);
     }
 
     /// <summary>Удаляет видео ремонтных работ.</summary>
@@ -492,4 +559,21 @@ public class VehicleController : ControllerBase
     /// <summary>Формирует ответ <c>400 Bad Request</c> с сообщением об ошибке файла.</summary>
     private IActionResult InvalidFile(string message) =>
         BadRequest(new ValidationProblemDetails(new Dictionary<string, string[]> { ["file"] = [message] }));
+
+    private static string CreateVideoStreamTicket(
+        IMemoryCache cache,
+        VideoStreamTicket ticket)
+    {
+        var token = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
+        cache.Set(
+            GetVideoStreamTicketKey(token),
+            ticket,
+            TimeSpan.FromHours(1));
+        return token;
+    }
+
+    private static string GetVideoStreamTicketKey(string ticket) =>
+        $"vehicle-video-stream:{ticket}";
+
+    private sealed record VideoStreamTicket(Guid VideoId, bool IsWorkVideo);
 }

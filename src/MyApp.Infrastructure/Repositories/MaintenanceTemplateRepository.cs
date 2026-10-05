@@ -1,95 +1,83 @@
+using System.Globalization;
+using Microsoft.EntityFrameworkCore;
 using MyApp.Application.Abstractions;
 using MyApp.Application.DTO;
-using Npgsql;
+using MyApp.Infrastructure.Db;
+using MyApp.Infrastructure.Db.Entities;
 
 namespace MyApp.Infrastructure.Repositories;
 
 public sealed class MaintenanceTemplateRepository(
-    NpgsqlDataSource dataSource) : IMaintenanceTemplateRepository
+    AppDbContext db) : IMaintenanceTemplateRepository
 {
     public async Task<IReadOnlyList<MaintenanceEquipmentResponse>> GetAllAsync(
         CancellationToken cancellationToken)
     {
-        await using var command = dataSource.CreateCommand(
-            """
-            SELECT
-                equipment.id,
-                equipment.name,
-                intervals.id,
-                intervals.name,
-                items.id,
-                items.material_name,
-                items.quantity,
-                COALESCE(stock."Ед.изм."::text, ''),
-                COALESCE(stock."Количество"::numeric, 0)
-            FROM maintenance_equipment AS equipment
-            LEFT JOIN maintenance_intervals AS intervals
-                ON intervals.equipment_id = equipment.id
-            LEFT JOIN maintenance_interval_items AS items
-                ON items.interval_id = intervals.id
-            LEFT JOIN LATERAL (
-                SELECT source."Ед.изм.", source."Количество"
-                FROM v_full_ost AS source
-                WHERE BTRIM(source."Наименование") =
-                      BTRIM(items.material_name)
-                LIMIT 1
-            ) AS stock ON TRUE
-            ORDER BY
-                equipment.sort_order,
-                equipment.name,
-                intervals.sort_order,
-                intervals.name,
-                items.sort_order,
-                items.material_name
-            """);
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        var equipment = new List<MutableEquipment>();
-        var equipmentById = new Dictionary<Guid, MutableEquipment>();
-        var intervalsById = new Dictionary<Guid, MutableInterval>();
-
-        while (await reader.ReadAsync(cancellationToken))
-        {
-            var equipmentId = reader.GetGuid(0);
-            if (!equipmentById.TryGetValue(equipmentId, out var equipmentEntry))
-            {
-                equipmentEntry = new MutableEquipment(
-                    equipmentId, reader.GetString(1), []);
-                equipmentById[equipmentId] = equipmentEntry;
-                equipment.Add(equipmentEntry);
-            }
-            if (reader.IsDBNull(2))
-            {
-                continue;
-            }
-
-            var intervalId = reader.GetGuid(2);
-            if (!intervalsById.TryGetValue(intervalId, out var intervalEntry))
-            {
-                intervalEntry = new MutableInterval(
-                    intervalId, reader.GetString(3), []);
-                intervalsById[intervalId] = intervalEntry;
-                equipmentEntry.Intervals.Add(intervalEntry);
-            }
-            if (reader.IsDBNull(4))
-            {
-                continue;
-            }
-
-            intervalEntry.Items.Add(new MaintenanceItemResponse(
-                reader.GetGuid(4),
-                reader.GetString(5),
-                reader.GetString(7),
-                reader.GetDecimal(6),
-                reader.GetDecimal(8)));
-        }
+        var equipment = await db.MaintenanceEquipment
+            .AsNoTracking()
+            .OrderBy(row => row.SortOrder)
+            .ThenBy(row => row.Name)
+            .ToArrayAsync(cancellationToken);
+        var equipmentIds = equipment.Select(row => row.Id).ToArray();
+        var intervals = await db.MaintenanceIntervals
+            .AsNoTracking()
+            .Where(row => equipmentIds.Contains(row.EquipmentId))
+            .OrderBy(row => row.SortOrder)
+            .ThenBy(row => row.Name)
+            .ToArrayAsync(cancellationToken);
+        var intervalIds = intervals.Select(row => row.Id).ToArray();
+        var items = await db.MaintenanceIntervalItems
+            .AsNoTracking()
+            .Where(row => intervalIds.Contains(row.IntervalId))
+            .OrderBy(row => row.SortOrder)
+            .ThenBy(row => row.MaterialName)
+            .ToArrayAsync(cancellationToken);
+        var materialNames = items
+            .Select(item => item.MaterialName.Trim())
+            .Distinct()
+            .ToArray();
+        var stocks = materialNames.Length == 0
+            ? []
+            : await db.FullStocks
+                .AsNoTracking()
+                .Where(stock => materialNames.Contains(stock.Name.Trim()))
+                .Select(stock => new {
+                    Name = stock.Name.Trim(),
+                    stock.Unit,
+                    stock.Quantity
+                })
+                .ToArrayAsync(cancellationToken);
+        var stockByName = stocks
+            .GroupBy(stock => stock.Name)
+            .ToDictionary(group => group.Key, group => group.First());
+        var itemsByInterval = items
+            .GroupBy(item => item.IntervalId)
+            .ToDictionary(group => group.Key, group => group.ToArray());
+        var intervalsByEquipment = intervals
+            .GroupBy(interval => interval.EquipmentId)
+            .ToDictionary(group => group.Key, group => group.ToArray());
 
         return equipment
-            .Select(entry => new MaintenanceEquipmentResponse(
-                entry.Id,
-                entry.Name,
-                entry.Intervals
+            .Select(row => new MaintenanceEquipmentResponse(
+                row.Id,
+                row.Name,
+                intervalsByEquipment.GetValueOrDefault(row.Id, [])
                     .Select(interval => new MaintenanceIntervalResponse(
-                        interval.Id, interval.Name, interval.Items))
+                        interval.Id,
+                        interval.Name,
+                        itemsByInterval.GetValueOrDefault(interval.Id, [])
+                            .Select(item => {
+                                stockByName.TryGetValue(
+                                    item.MaterialName.Trim(),
+                                    out var stock);
+                                return new MaintenanceItemResponse(
+                                    item.Id,
+                                    item.MaterialName,
+                                    stock?.Unit ?? string.Empty,
+                                    item.Quantity,
+                                    ParseQuantity(stock?.Quantity, item.MaterialName));
+                            })
+                            .ToArray()))
                     .ToArray()))
             .ToArray();
     }
@@ -97,270 +85,206 @@ public sealed class MaintenanceTemplateRepository(
     public Task<bool> EquipmentExistsAsync(
         Guid id,
         CancellationToken cancellationToken) =>
-        ExistsAsync(
-            "SELECT EXISTS (SELECT 1 FROM maintenance_equipment WHERE id = @id)",
-            ("id", id),
+        db.MaintenanceEquipment.AnyAsync(
+            equipment => equipment.Id == id,
             cancellationToken);
 
     public Task<bool> IntervalExistsAsync(
         Guid id,
         CancellationToken cancellationToken) =>
-        ExistsAsync(
-            "SELECT EXISTS (SELECT 1 FROM maintenance_intervals WHERE id = @id)",
-            ("id", id),
+        db.MaintenanceIntervals.AnyAsync(
+            interval => interval.Id == id,
             cancellationToken);
 
     public Task<bool> EquipmentNameExistsAsync(
         string name,
         Guid? exceptId,
-        CancellationToken cancellationToken) =>
-        ExistsAsync(
-            """
-            SELECT EXISTS (
-                SELECT 1 FROM maintenance_equipment
-                WHERE LOWER(BTRIM(name)) = LOWER(BTRIM(@name))
-                  AND id <> @exceptId)
-            """,
-            ("name", name),
-            ("exceptId", exceptId ?? Guid.Empty),
+        CancellationToken cancellationToken)
+    {
+        var normalizedName = name.Trim().ToLower();
+        return db.MaintenanceEquipment.AnyAsync(
+            equipment =>
+                equipment.Name.Trim().ToLower() == normalizedName &&
+                (!exceptId.HasValue || equipment.Id != exceptId.Value),
             cancellationToken);
+    }
 
     public Task<bool> IntervalNameExistsAsync(
         Guid equipmentId,
         string name,
         Guid? exceptId,
-        CancellationToken cancellationToken) =>
-        ExistsAsync(
-            """
-            SELECT EXISTS (
-                SELECT 1 FROM maintenance_intervals
-                WHERE equipment_id = @equipmentId
-                  AND LOWER(BTRIM(name)) = LOWER(BTRIM(@name))
-                  AND id <> @exceptId)
-            """,
-            ("equipmentId", equipmentId),
-            ("name", name),
-            ("exceptId", exceptId ?? Guid.Empty),
+        CancellationToken cancellationToken)
+    {
+        var normalizedName = name.Trim().ToLower();
+        return db.MaintenanceIntervals.AnyAsync(
+            interval =>
+                interval.EquipmentId == equipmentId &&
+                interval.Name.Trim().ToLower() == normalizedName &&
+                (!exceptId.HasValue || interval.Id != exceptId.Value),
             cancellationToken);
+    }
 
     public Task<bool> MaterialExistsAsync(
         string materialName,
-        CancellationToken cancellationToken) =>
-        ExistsAsync(
-            """
-            SELECT EXISTS (
-                SELECT 1 FROM v_full_ost
-                WHERE BTRIM("Наименование") = BTRIM(@materialName))
-            """,
-            ("materialName", materialName),
+        CancellationToken cancellationToken)
+    {
+        var normalizedName = materialName.Trim();
+        return db.FullStocks.AnyAsync(
+            stock => stock.Name.Trim() == normalizedName,
             cancellationToken);
+    }
 
     public Task<bool> ItemExistsAsync(
         Guid intervalId,
         string materialName,
-        CancellationToken cancellationToken) =>
-        ExistsAsync(
-            """
-            SELECT EXISTS (
-                SELECT 1 FROM maintenance_interval_items
-                WHERE interval_id = @intervalId
-                  AND BTRIM(material_name) = BTRIM(@materialName))
-            """,
-            ("intervalId", intervalId),
-            ("materialName", materialName),
+        CancellationToken cancellationToken)
+    {
+        var normalizedName = materialName.Trim();
+        return db.MaintenanceIntervalItems.AnyAsync(
+            item =>
+                item.IntervalId == intervalId &&
+                item.MaterialName.Trim() == normalizedName,
             cancellationToken);
+    }
 
-    public Task<Guid> CreateEquipmentAsync(
+    public async Task<Guid> CreateEquipmentAsync(
         string name,
-        CancellationToken cancellationToken) =>
-        InsertAsync(
-            """
-            INSERT INTO maintenance_equipment (id, name, sort_order)
-            VALUES (@id, @name,
-                COALESCE((SELECT MAX(sort_order) + 1 FROM maintenance_equipment), 0))
-            """,
-            cancellationToken,
-            ("name", name));
+        CancellationToken cancellationToken)
+    {
+        var sortOrder = await db.MaintenanceEquipment
+            .Select(equipment => (int?)equipment.SortOrder)
+            .MaxAsync(cancellationToken) ?? -1;
+        var equipment = new MaintenanceEquipmentRecord
+        {
+            Id = Guid.NewGuid(),
+            Name = name,
+            SortOrder = sortOrder + 1
+        };
+        await db.MaintenanceEquipment.AddAsync(equipment, cancellationToken);
+        await db.SaveChangesAsync(cancellationToken);
+        return equipment.Id;
+    }
 
-    public Task<Guid> CreateIntervalAsync(
+    public async Task<Guid> CreateIntervalAsync(
         Guid equipmentId,
         string name,
-        CancellationToken cancellationToken) =>
-        InsertAsync(
-            """
-            INSERT INTO maintenance_intervals (
-                id, equipment_id, name, sort_order)
-            VALUES (
-                @id, @equipmentId, @name,
-                COALESCE((
-                    SELECT MAX(sort_order) + 1
-                    FROM maintenance_intervals
-                    WHERE equipment_id = @equipmentId), 0))
-            """,
-            cancellationToken,
-            ("equipmentId", equipmentId),
-            ("name", name));
+        CancellationToken cancellationToken)
+    {
+        var sortOrder = await db.MaintenanceIntervals
+            .Where(interval => interval.EquipmentId == equipmentId)
+            .Select(interval => (int?)interval.SortOrder)
+            .MaxAsync(cancellationToken) ?? -1;
+        var interval = new MaintenanceIntervalRecord
+        {
+            Id = Guid.NewGuid(),
+            EquipmentId = equipmentId,
+            Name = name,
+            SortOrder = sortOrder + 1
+        };
+        await db.MaintenanceIntervals.AddAsync(interval, cancellationToken);
+        await db.SaveChangesAsync(cancellationToken);
+        return interval.Id;
+    }
 
-    public Task<Guid> AddItemAsync(
+    public async Task<Guid> AddItemAsync(
         Guid intervalId,
         string materialName,
         decimal quantity,
-        CancellationToken cancellationToken) =>
-        InsertAsync(
-            """
-            INSERT INTO maintenance_interval_items (
-                id, interval_id, material_name, quantity, sort_order)
-            VALUES (
-                @id, @intervalId, @materialName, @quantity,
-                COALESCE((
-                    SELECT MAX(sort_order) + 1
-                    FROM maintenance_interval_items
-                    WHERE interval_id = @intervalId), 0))
-            """,
-            cancellationToken,
-            ("intervalId", intervalId),
-            ("materialName", materialName),
-            ("quantity", quantity));
+        CancellationToken cancellationToken)
+    {
+        var sortOrder = await db.MaintenanceIntervalItems
+            .Where(item => item.IntervalId == intervalId)
+            .Select(item => (int?)item.SortOrder)
+            .MaxAsync(cancellationToken) ?? -1;
+        var item = new MaintenanceIntervalItemRecord
+        {
+            Id = Guid.NewGuid(),
+            IntervalId = intervalId,
+            MaterialName = materialName,
+            Quantity = quantity,
+            SortOrder = sortOrder + 1
+        };
+        await db.MaintenanceIntervalItems.AddAsync(item, cancellationToken);
+        await db.SaveChangesAsync(cancellationToken);
+        return item.Id;
+    }
 
-    public Task<bool> RenameEquipmentAsync(
+    public async Task<bool> RenameEquipmentAsync(
         Guid id,
         string name,
         CancellationToken cancellationToken) =>
-        ExecuteAsync(
-            "UPDATE maintenance_equipment SET name = @name WHERE id = @id",
-            cancellationToken,
-            ("id", id),
-            ("name", name));
+        await db.MaintenanceEquipment
+            .Where(equipment => equipment.Id == id)
+            .ExecuteUpdateAsync(
+                setters => setters.SetProperty(equipment => equipment.Name, name),
+                cancellationToken) > 0;
 
-    public Task<bool> RenameIntervalAsync(
+    public async Task<bool> RenameIntervalAsync(
         Guid id,
         string name,
-        CancellationToken cancellationToken) =>
-        ExecuteAsync(
-            """
-            UPDATE maintenance_intervals AS current
-            SET name = @name
-            WHERE current.id = @id
-              AND NOT EXISTS (
-                  SELECT 1 FROM maintenance_intervals AS duplicate
-                  WHERE duplicate.equipment_id = current.equipment_id
-                    AND duplicate.id <> current.id
-                    AND LOWER(BTRIM(duplicate.name)) =
-                        LOWER(BTRIM(@name)))
-            """,
-            cancellationToken,
-            ("id", id),
-            ("name", name));
+        CancellationToken cancellationToken)
+    {
+        var normalizedName = name.Trim().ToLower();
+        return await db.MaintenanceIntervals
+            .Where(current =>
+                current.Id == id &&
+                !db.MaintenanceIntervals.Any(duplicate =>
+                    duplicate.EquipmentId == current.EquipmentId &&
+                    duplicate.Id != current.Id &&
+                    duplicate.Name.Trim().ToLower() == normalizedName))
+            .ExecuteUpdateAsync(
+                setters => setters.SetProperty(interval => interval.Name, name),
+                cancellationToken) > 0;
+    }
 
-    public Task<bool> UpdateItemAsync(
+    public async Task<bool> UpdateItemAsync(
         Guid id,
         decimal quantity,
         CancellationToken cancellationToken) =>
-        ExecuteAsync(
-            """
-            UPDATE maintenance_interval_items
-            SET quantity = @quantity
-            WHERE id = @id
-            """,
-            cancellationToken,
-            ("id", id),
-            ("quantity", quantity));
+        await db.MaintenanceIntervalItems
+            .Where(item => item.Id == id)
+            .ExecuteUpdateAsync(
+                setters => setters.SetProperty(item => item.Quantity, quantity),
+                cancellationToken) > 0;
 
-    public Task<bool> DeleteEquipmentAsync(
+    public async Task<bool> DeleteEquipmentAsync(
         Guid id,
         CancellationToken cancellationToken) =>
-        DeleteAsync("maintenance_equipment", id, cancellationToken);
+        await db.MaintenanceEquipment
+            .Where(equipment => equipment.Id == id)
+            .ExecuteDeleteAsync(cancellationToken) > 0;
 
-    public Task<bool> DeleteIntervalAsync(
+    public async Task<bool> DeleteIntervalAsync(
         Guid id,
         CancellationToken cancellationToken) =>
-        DeleteAsync("maintenance_intervals", id, cancellationToken);
+        await db.MaintenanceIntervals
+            .Where(interval => interval.Id == id)
+            .ExecuteDeleteAsync(cancellationToken) > 0;
 
-    public Task<bool> DeleteItemAsync(
+    public async Task<bool> DeleteItemAsync(
         Guid id,
         CancellationToken cancellationToken) =>
-        DeleteAsync("maintenance_interval_items", id, cancellationToken);
+        await db.MaintenanceIntervalItems
+            .Where(item => item.Id == id)
+            .ExecuteDeleteAsync(cancellationToken) > 0;
 
-    private async Task<bool> ExistsAsync(
-        string sql,
-        (string Name, object? Value) parameter,
-        CancellationToken cancellationToken) =>
-        await ExistsAsync(sql, [parameter], cancellationToken);
-
-    private async Task<bool> ExistsAsync(
-        string sql,
-        (string Name, object? Value) first,
-        (string Name, object? Value) second,
-        CancellationToken cancellationToken) =>
-        await ExistsAsync(sql, [first, second], cancellationToken);
-
-    private async Task<bool> ExistsAsync(
-        string sql,
-        (string Name, object? Value) first,
-        (string Name, object? Value) second,
-        (string Name, object? Value) third,
-        CancellationToken cancellationToken) =>
-        await ExistsAsync(sql, [first, second, third], cancellationToken);
-
-    private async Task<bool> ExistsAsync(
-        string sql,
-        IReadOnlyList<(string Name, object? Value)> parameters,
-        CancellationToken cancellationToken)
+    private static decimal ParseQuantity(string? value, string materialName)
     {
-        await using var command = dataSource.CreateCommand(sql);
-        AddParameters(command, parameters);
-        return (bool)(await command.ExecuteScalarAsync(cancellationToken) ?? false);
-    }
-
-    private async Task<Guid> InsertAsync(
-        string sql,
-        CancellationToken cancellationToken,
-        params (string Name, object? Value)[] parameters)
-    {
-        var id = Guid.NewGuid();
-        await using var command = dataSource.CreateCommand(sql);
-        command.Parameters.AddWithValue("id", id);
-        AddParameters(command, parameters);
-        await command.ExecuteNonQueryAsync(cancellationToken);
-        return id;
-    }
-
-    private async Task<bool> ExecuteAsync(
-        string sql,
-        CancellationToken cancellationToken,
-        params (string Name, object? Value)[] parameters)
-    {
-        await using var command = dataSource.CreateCommand(sql);
-        AddParameters(command, parameters);
-        return await command.ExecuteNonQueryAsync(cancellationToken) > 0;
-    }
-
-    private Task<bool> DeleteAsync(
-        string table,
-        Guid id,
-        CancellationToken cancellationToken) =>
-        ExecuteAsync(
-            $"DELETE FROM {table} WHERE id = @id",
-            cancellationToken,
-            ("id", id));
-
-    private static void AddParameters(
-        NpgsqlCommand command,
-        IEnumerable<(string Name, object? Value)> parameters)
-    {
-        foreach (var (name, value) in parameters)
+        if (string.IsNullOrWhiteSpace(value))
         {
-            command.Parameters.AddWithValue(name, value ?? DBNull.Value);
+            return 0;
         }
+
+        if (decimal.TryParse(
+                value,
+                NumberStyles.Number,
+                CultureInfo.InvariantCulture,
+                out var quantity))
+        {
+            return quantity;
+        }
+
+        throw new InvalidOperationException(
+            $"Некорректный остаток для компонента «{materialName.Trim()}»: {value}.");
     }
-
-    private sealed record MutableEquipment(
-        Guid Id,
-        string Name,
-        List<MutableInterval> Intervals);
-
-    private sealed record MutableInterval(
-        Guid Id,
-        string Name,
-        List<MaintenanceItemResponse> Items);
 }

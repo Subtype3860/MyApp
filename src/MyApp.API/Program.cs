@@ -63,6 +63,7 @@ builder.Services.AddAuthorization(options =>
         policy.RequireClaim("permission", Permissions.MaintenanceView));
 });
 builder.Services.AddControllers();
+builder.Services.AddMemoryCache();
 
 var app = builder.Build();
 

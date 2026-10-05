@@ -1,38 +1,39 @@
+using System.Text.RegularExpressions;
+using Microsoft.EntityFrameworkCore;
 using MyApp.Application.Abstractions;
 using MyApp.Application.DTO;
-using Npgsql;
+using MyApp.Infrastructure.Db;
 
 namespace MyApp.Infrastructure.Repositories;
 
-public sealed class ResponsibleEmployeeRepository(
-    NpgsqlDataSource dataSource) : IResponsibleEmployeeRepository
+public sealed partial class ResponsibleEmployeeRepository(
+    AppDbContext db) : IResponsibleEmployeeRepository
 {
     public async Task<IReadOnlyList<ResponsibleEmployeeResponse>> GetByProfessionAsync(
         string profession,
         CancellationToken cancellationToken)
     {
-        await using var command = dataSource.CreateCommand(
-            """
-            SELECT "FullName", "Profession"
-            FROM employees
-            WHERE LOWER(BTRIM("Profession")) = LOWER(@profession)
-            ORDER BY "FullName"
-            """);
-        command.Parameters.AddWithValue("profession", profession);
+        var employees = await db.Employees
+            .AsNoTracking()
+            .Where(employee =>
+                employee.Profession.Trim().ToLower() == profession.Trim().ToLower())
+            .OrderBy(employee => employee.FullName)
+            .Select(employee => new {
+                employee.FullName,
+                employee.Profession
+            })
+            .ToArrayAsync(cancellationToken);
 
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        var employees = new List<ResponsibleEmployeeResponse>();
-        while (await reader.ReadAsync(cancellationToken))
-        {
-            var name = ParseFullName(reader.GetString(0));
-            employees.Add(new ResponsibleEmployeeResponse(
-                name.FirstName,
-                name.Patronymic,
-                name.LastName,
-                reader.GetString(1)));
-        }
-
-        return employees;
+        return employees
+            .Select(employee => {
+                var name = ParseFullName(employee.FullName);
+                return new ResponsibleEmployeeResponse(
+                    name.FirstName,
+                    name.Patronymic,
+                    name.LastName,
+                    employee.Profession);
+            })
+            .ToArray();
     }
 
     public async Task<bool> ExistsAsync(
@@ -40,32 +41,24 @@ public sealed class ResponsibleEmployeeRepository(
         string profession,
         CancellationToken cancellationToken)
     {
-        await using var command = dataSource.CreateCommand(
-            """
-            SELECT EXISTS (
-                SELECT 1
-                FROM employees
-                WHERE LOWER(BTRIM("Profession")) = LOWER(@profession)
-                  AND REGEXP_REPLACE(
-                        BTRIM("FullName"),
-                        '\s+',
-                        ' ',
-                        'g') = @fullName
-            )
-            """);
-        command.Parameters.AddWithValue("profession", profession);
-        command.Parameters.AddWithValue(
-            "fullName",
-            string.Join(
-                ' ',
-                new[]
-                {
-                    employee.LastName,
-                    employee.FirstName,
-                    employee.Patronymic
-                }.Where(value => !string.IsNullOrWhiteSpace(value))
-                 .Select(value => value.Trim())));
-        return (bool)(await command.ExecuteScalarAsync(cancellationToken) ?? false);
+        var fullName = string.Join(
+            ' ',
+            new[]
+            {
+                employee.LastName,
+                employee.FirstName,
+                employee.Patronymic
+            }.Where(value => !string.IsNullOrWhiteSpace(value))
+             .Select(value => value.Trim()));
+        var candidates = await db.Employees
+            .AsNoTracking()
+            .Where(candidate =>
+                candidate.Profession.Trim().ToLower() == profession.Trim().ToLower())
+            .Select(candidate => candidate.FullName)
+            .ToArrayAsync(cancellationToken);
+
+        return candidates.Any(candidate =>
+            NormalizeWhitespace(candidate) == fullName);
     }
 
     private static EmployeeName ParseFullName(string fullName)
@@ -85,6 +78,12 @@ public sealed class ResponsibleEmployeeRepository(
             parts.Length > 2 ? string.Join(' ', parts.Skip(2)) : string.Empty,
             parts[0]);
     }
+
+    private static string NormalizeWhitespace(string value) =>
+        WhitespaceRegex().Replace(value.Trim(), " ");
+
+    [GeneratedRegex(@"\s+")]
+    private static partial Regex WhitespaceRegex();
 
     private sealed record EmployeeName(
         string FirstName,

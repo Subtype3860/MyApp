@@ -90,7 +90,7 @@ public interface IVehicleService
         CancellationToken cancellationToken);
 
     /// <summary>Возвращает содержимое видеозаписи неисправности по её идентификатору.</summary>
-    Task<VehicleWorkPhotoContent?> GetDefectVideoAsync(
+    Task<VehicleMediaStream?> GetDefectVideoStreamAsync(
         Guid videoId, CancellationToken cancellationToken);
 
     /// <summary>Удаляет видеозапись неисправности.</summary>
@@ -172,7 +172,7 @@ public interface IVehicleService
         CancellationToken cancellationToken);
 
     /// <summary>Возвращает содержимое видеозаписи ремонтных работ по её идентификатору.</summary>
-    Task<VehicleWorkPhotoContent?> GetWorkVideoAsync(
+    Task<VehicleMediaStream?> GetWorkVideoStreamAsync(
         Guid videoId, CancellationToken cancellationToken);
 
     /// <summary>Удаляет видеозапись ремонтных работ.</summary>

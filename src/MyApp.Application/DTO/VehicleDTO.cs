@@ -135,6 +135,12 @@ public sealed record VehicleWorkPhotoContent(
     byte[] Content,
     string? StoragePath = null);
 
+/// <summary>Поток содержимого видео для передачи клиенту без буферизации файла целиком.</summary>
+public sealed record VehicleMediaStream(
+    string FileName,
+    string ContentType,
+    Stream Content);
+
 /// <summary>Метаданные загруженного видео (без содержимого файла).</summary>
 public sealed record VehicleMediaResponse(
     Guid Id,

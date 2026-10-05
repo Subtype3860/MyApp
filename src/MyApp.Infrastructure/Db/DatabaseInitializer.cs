@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using MyApp.Application.Abstractions;
 using MyApp.Application.Security;
 using MyApp.Domain.Entities;
+using MyApp.Infrastructure.Db.Entities;
 
 namespace MyApp.Infrastructure.Db;
 
@@ -88,51 +89,9 @@ public sealed class DatabaseInitializer(AppDbContext db) : IDatabaseInitializer
             CREATE UNIQUE INDEX IF NOT EXISTS ux_maintenance_items_material
                 ON maintenance_interval_items (
                     interval_id, BTRIM(material_name));
-
-            INSERT INTO maintenance_equipment (id, name, sort_order)
-            SELECT gen_random_uuid(), defaults.name, defaults.sort_order
-            FROM (VALUES
-                ('Экскаваторы', 0),
-                ('Самосвалы', 1)
-            ) AS defaults(name, sort_order)
-            WHERE NOT EXISTS (
-                SELECT 1 FROM maintenance_equipment AS existing
-                WHERE LOWER(BTRIM(existing.name)) =
-                      LOWER(BTRIM(defaults.name)));
-
-            INSERT INTO maintenance_intervals (
-                id, equipment_id, name, sort_order)
-            SELECT
-                gen_random_uuid(),
-                equipment.id,
-                defaults.name,
-                defaults.sort_order
-            FROM maintenance_equipment AS equipment
-            JOIN (VALUES
-                ('Экскаваторы', 'ТО-100', 0),
-                ('Экскаваторы', 'ТО-250', 1),
-                ('Экскаваторы', 'ТО-500', 2),
-                ('Экскаваторы', 'ТО-1000', 3),
-                ('Экскаваторы', 'ТО-2000', 4),
-                ('Экскаваторы', 'ТО-4000', 5),
-                ('Самосвалы', 'ТО-100', 0),
-                ('Самосвалы', 'ТО-350', 1),
-                ('Самосвалы', 'ТО-500', 2),
-                ('Самосвалы', 'ТО-700', 3),
-                ('Самосвалы', 'ТО-1000', 4),
-                ('Самосвалы', 'ТО-2000', 5),
-                ('Самосвалы', 'ТО-4000', 6)
-            ) AS defaults(equipment_name, name, sort_order)
-                ON LOWER(BTRIM(equipment.name)) =
-                   LOWER(BTRIM(defaults.equipment_name))
-            WHERE NOT EXISTS (
-                SELECT 1
-                FROM maintenance_intervals AS existing
-                WHERE existing.equipment_id = equipment.id
-                  AND LOWER(BTRIM(existing.name)) =
-                      LOWER(BTRIM(defaults.name)));
             """,
             cancellationToken);
+        await EnsureMaintenanceDefaultsAsync(cancellationToken);
         await db.Database.ExecuteSqlRawAsync(
             """
             CREATE TABLE IF NOT EXISTS app_users (
@@ -653,12 +612,21 @@ public sealed class DatabaseInitializer(AppDbContext db) : IDatabaseInitializer
                     CHECK (retention_days BETWEEN 1 AND 180),
                 updated_at timestamptz NOT NULL DEFAULT NOW()
             );
-
-            INSERT INTO media_storage_settings (id, retention_days)
-            VALUES (1, 1)
-            ON CONFLICT (id) DO NOTHING;
             """,
             cancellationToken);
+        if (!await db.MediaStorageSettings.AnyAsync(
+                settings => settings.Id == 1,
+                cancellationToken))
+        {
+            db.MediaStorageSettings.Add(new MediaStorageSettingsRecord
+            {
+                Id = 1,
+                RetentionDays = 1,
+                UpdatedAt = DateTimeOffset.UtcNow
+            });
+            await db.SaveChangesAsync(cancellationToken);
+        }
+
         var administratorProfession = await db.Professions.FirstOrDefaultAsync(
             profession => profession.Name == "Администратор",
             cancellationToken);
@@ -696,6 +664,87 @@ public sealed class DatabaseInitializer(AppDbContext db) : IDatabaseInitializer
             Permissions = string.Join(',', Permissions.All),
             CreatedAt = DateTime.UtcNow
         });
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
+    private async Task EnsureMaintenanceDefaultsAsync(
+        CancellationToken cancellationToken)
+    {
+        var equipmentDefaults = new[]
+        {
+            (Name: "Экскаваторы", SortOrder: 0),
+            (Name: "Самосвалы", SortOrder: 1)
+        };
+        var equipment = await db.MaintenanceEquipment
+            .ToListAsync(cancellationToken);
+        foreach (var (name, sortOrder) in equipmentDefaults)
+        {
+            if (equipment.Any(existing =>
+                    string.Equals(
+                        existing.Name.Trim(),
+                        name.Trim(),
+                        StringComparison.OrdinalIgnoreCase)))
+            {
+                continue;
+            }
+
+            var created = new MaintenanceEquipmentRecord
+            {
+                Id = Guid.NewGuid(),
+                Name = name,
+                SortOrder = sortOrder
+            };
+            equipment.Add(created);
+            db.MaintenanceEquipment.Add(created);
+        }
+        await db.SaveChangesAsync(cancellationToken);
+
+        var intervalDefaults = new[]
+        {
+            (Equipment: "Экскаваторы", Name: "ТО-100", SortOrder: 0),
+            (Equipment: "Экскаваторы", Name: "ТО-250", SortOrder: 1),
+            (Equipment: "Экскаваторы", Name: "ТО-500", SortOrder: 2),
+            (Equipment: "Экскаваторы", Name: "ТО-1000", SortOrder: 3),
+            (Equipment: "Экскаваторы", Name: "ТО-2000", SortOrder: 4),
+            (Equipment: "Экскаваторы", Name: "ТО-4000", SortOrder: 5),
+            (Equipment: "Самосвалы", Name: "ТО-100", SortOrder: 0),
+            (Equipment: "Самосвалы", Name: "ТО-350", SortOrder: 1),
+            (Equipment: "Самосвалы", Name: "ТО-500", SortOrder: 2),
+            (Equipment: "Самосвалы", Name: "ТО-700", SortOrder: 3),
+            (Equipment: "Самосвалы", Name: "ТО-1000", SortOrder: 4),
+            (Equipment: "Самосвалы", Name: "ТО-2000", SortOrder: 5),
+            (Equipment: "Самосвалы", Name: "ТО-4000", SortOrder: 6)
+        };
+        var existingIntervals = await db.MaintenanceIntervals
+            .ToListAsync(cancellationToken);
+        foreach (var (equipmentName, name, sortOrder) in intervalDefaults)
+        {
+            var equipmentRow = equipment.FirstOrDefault(existing =>
+                string.Equals(
+                    existing.Name.Trim(),
+                    equipmentName,
+                    StringComparison.OrdinalIgnoreCase));
+            if (equipmentRow is null ||
+                existingIntervals.Any(existing =>
+                    existing.EquipmentId == equipmentRow.Id &&
+                    string.Equals(
+                        existing.Name.Trim(),
+                        name,
+                        StringComparison.OrdinalIgnoreCase)))
+            {
+                continue;
+            }
+
+            var created = new MaintenanceIntervalRecord
+            {
+                Id = Guid.NewGuid(),
+                EquipmentId = equipmentRow.Id,
+                Name = name,
+                SortOrder = sortOrder
+            };
+            existingIntervals.Add(created);
+            db.MaintenanceIntervals.Add(created);
+        }
         await db.SaveChangesAsync(cancellationToken);
     }
 }
