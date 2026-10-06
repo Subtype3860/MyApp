@@ -687,26 +687,59 @@ async function downloadPartsRequest(work) {
 
 async function deleteDefect(defect) {
   const confirmed = window.confirm(
-    'Удалить неисправность? Связанные ремонты, фотографии и видео также будут удалены.',
+    'Удалить заявку на ремонт? Связанные работы, фотографии и видео также будут удалены.',
   )
   if (!confirmed) return
   isSaving.value = true
   errorMessage.value = ''
   successMessage.value = ''
   try {
-    const response = await fetch(`/api/vehicles/defects/${defect.id}`, {
+    const route = isAdministrator.value
+      ? `/api/vehicles/defects/${defect.id}/history`
+      : `/api/vehicles/defects/${defect.id}`
+    const response = await fetch(route, {
       method: 'DELETE',
       headers: authHeaders(),
     })
     if (!response.ok) {
       throw new Error(
         response.status === 404
-          ? 'Неисправность не найдена или у вас нет прав на её удаление.'
-          : 'Не удалось удалить неисправность.',
+          ? 'Заявка на ремонт не найдена или у вас нет прав на её удаление.'
+          : 'Не удалось удалить заявку на ремонт.',
       )
     }
     closePhoto()
-    successMessage.value = 'Неисправность и связанные медиафайлы удалены.'
+    successMessage.value = 'Заявка, связанные работы и медиафайлы удалены.'
+    await loadJournal()
+  } catch (error) {
+    errorMessage.value = error.message
+  } finally {
+    isSaving.value = false
+  }
+}
+
+async function deleteWork(work) {
+  if (!window.confirm('Удалить эту работу и все её фотографии и видео?')) return
+  isSaving.value = true
+  errorMessage.value = ''
+  successMessage.value = ''
+  try {
+    const response = await fetch(
+      `/api/vehicles/works/${work.id}/history`,
+      {
+        method: 'DELETE',
+        headers: authHeaders(),
+      },
+    )
+    if (!response.ok) {
+      throw new Error(
+        response.status === 404
+          ? 'Работа не найдена или у вас нет прав на её удаление.'
+          : 'Не удалось удалить работу.',
+      )
+    }
+    closePhoto()
+    successMessage.value = 'Работа и связанные медиафайлы удалены.'
     await loadJournal()
   } catch (error) {
     errorMessage.value = error.message
@@ -1214,7 +1247,7 @@ function printReport() {
                 </tbody>
               </table>
               <table v-else class="vehicle-journal-table vehicle-repairs-table">
-                <thead><tr><th>Этап ремонта</th><th>Задание</th><th>Причина и работы</th><th>Статус / запчасти</th><th>Медиа</th></tr></thead>
+                <thead><tr><th>Этап ремонта</th><th>Задание</th><th>Причина и работы</th><th>Статус / запчасти</th><th>Медиа</th><th v-if="isAdministrator" class="vehicle-screen-only"></th></tr></thead>
                 <tbody>
                   <tr
                     v-for="item in currentEntries"
@@ -1271,6 +1304,16 @@ function printReport() {
                           </button>
                         </span>
                       </div>
+                    </td>
+                    <td v-if="isAdministrator" class="vehicle-screen-only vehicle-row-action">
+                      <button
+                        class="table-action-button table-action-button--danger"
+                        type="button"
+                        :disabled="isSaving"
+                        @click="deleteWork(item)"
+                      >
+                        Удалить
+                      </button>
                     </td>
                   </tr>
                 </tbody>

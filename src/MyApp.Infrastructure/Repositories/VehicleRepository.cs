@@ -767,6 +767,11 @@ public sealed class VehicleRepository(NpgsqlDataSource dataSource) : IVehicleRep
             "works" => await GetWorkMediaPathsAsync(id, cancellationToken),
             _ => []
         };
+        if (paths.Any(path => !IsManagedPath(path)))
+        {
+            throw new InvalidOperationException(
+                "A repair media file is outside the managed storage directories.");
+        }
         await using var command = dataSource.CreateCommand(
             $"DELETE FROM {table} WHERE id = @id");
         command.Parameters.AddWithValue("id", id);
@@ -775,7 +780,7 @@ public sealed class VehicleRepository(NpgsqlDataSource dataSource) : IVehicleRep
         {
             foreach (var path in paths)
             {
-                DeleteFile(path);
+                DeleteManagedFile(path);
             }
         }
         return deleted;
@@ -1295,6 +1300,19 @@ public sealed class VehicleRepository(NpgsqlDataSource dataSource) : IVehicleRep
         catch (UnauthorizedAccessException)
         {
             // A later maintenance pass can remove an inaccessible orphan.
+        }
+    }
+
+    private static void DeleteManagedFile(string path)
+    {
+        if (!IsManagedPath(path))
+        {
+            throw new InvalidOperationException(
+                "A repair media file is outside the managed storage directories.");
+        }
+        if (File.Exists(path))
+        {
+            File.Delete(path);
         }
     }
 

@@ -458,6 +458,38 @@ public static class VehicleEndpoints
                     enableRangeProcessing: true);
         });
 
+        group.MapDelete("/defects/{defectId:guid}/history", async (
+            Guid defectId,
+            ClaimsPrincipal principal,
+            IVehicleService service,
+            CancellationToken cancellationToken) =>
+        {
+            if (!TryGetUserId(principal, out var userId))
+            {
+                return Results.Unauthorized();
+            }
+            return await service.DeleteEntryAsync(
+                    "defects", defectId, userId, cancellationToken)
+                ? Results.NoContent()
+                : Results.NotFound();
+        }).RequireAuthorization(policy => policy.RequireRole("administrator"));
+
+        group.MapDelete("/works/{workId:guid}/history", async (
+            Guid workId,
+            ClaimsPrincipal principal,
+            IVehicleService service,
+            CancellationToken cancellationToken) =>
+        {
+            if (!TryGetUserId(principal, out var userId))
+            {
+                return Results.Unauthorized();
+            }
+            return await service.DeleteEntryAsync(
+                    "works", workId, userId, cancellationToken)
+                ? Results.NoContent()
+                : Results.NotFound();
+        }).RequireAuthorization(policy => policy.RequireRole("administrator"));
+
         group.MapDelete("/{category}/{id:guid}", async (
             string category,
             Guid id,
