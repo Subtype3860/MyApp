@@ -242,6 +242,15 @@ function toggleSettings() {
           Ремонт
         </button>
         <button
+          v-if="canView('vehicles.works')"
+          class="nav-submenu-link"
+          :class="{ 'nav-submenu-link--active': activePage === 'vehicles' && activeVehicleSection === 'repairHistory' }"
+          type="button"
+          @click="$emit('navigate-vehicle', 'repairHistory')"
+        >
+          История ремонта
+        </button>
+        <button
           v-if="canView('vehicles.parts_request')"
           class="nav-submenu-link"
           :class="{ 'nav-submenu-link--active': activePage === 'vehicles' && activeVehicleSection === 'partsRequest' }"

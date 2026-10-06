@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import UserAvatar from './UserAvatar.vue'
+import RepairHistory from './RepairHistory.vue'
 import RepairMediaViewer from './RepairMediaViewer.vue'
 
 /**
@@ -84,6 +85,7 @@ function partsRequestHistory(request) {
 const sectionTitle = computed(() => ({
   repairRequest: 'Заявки на ремонт',
   works: 'Ремонт',
+  repairHistory: 'История ремонта',
   partsRequest: 'Заявка на закупку ЗЧ',
   hours: 'Моточасы',
   report: 'Отчёт',
@@ -131,6 +133,10 @@ function workMediaForWorks(works, type) {
  * Сначала загружается техника, затем её журналы и неисправности.
  */
 async function loadRepairSection() {
+  if (props.section === 'repairHistory') {
+    return
+  }
+
   if (!vehicles.value.length) {
     await loadVehicles()
   }
@@ -353,6 +359,84 @@ async function loadVehicles() {
   }
 }
 
+async function searchVehicleHistory(plateNumber, signal) {
+  const requestOptions = {
+    headers: authHeaders(),
+    ...(signal ? { signal } : {}),
+  }
+  const vehiclesResponse = await fetch('/api/vehicles', requestOptions)
+  if (!vehiclesResponse.ok) {
+    throw new Error('Vehicle lookup failed.')
+  }
+
+  const normalizeNumber = (value) =>
+    String(value ?? '').replace(/[\s-]+/g, '').toLocaleUpperCase('ru-RU')
+  const query = normalizeNumber(plateNumber)
+  const vehicle = (await vehiclesResponse.json()).find((candidate) =>
+    normalizeNumber(candidate.stateNumber) === query ||
+    normalizeNumber(candidate.garageNumber) === query,
+  )
+  if (!vehicle) return null
+
+  const journalResponse = await fetch(
+    `/api/vehicles/${vehicle.id}/journal`,
+    requestOptions,
+  )
+  if (!journalResponse.ok) {
+    throw new Error('Vehicle history lookup failed.')
+  }
+  const journal = await journalResponse.json()
+  const worksByDefect = new Map()
+  for (const work of journal.works ?? []) {
+    if (!work.defectId) continue
+    const works = worksByDefect.get(work.defectId) ?? []
+    works.push({
+      id: work.id,
+      date: work.completedAt || work.createdAt,
+      dateLabel: formatDateTime(work.completedAt || work.createdAt),
+      name: work.description || work.cause || 'Ремонтная работа',
+      status:
+        work.completedAt || isCompletedStatus(work.status)
+          ? 'completed'
+          : 'in_progress',
+      performer: work.performerName,
+      photos: (work.photos ?? []).map((photo) => ({
+        ...photo,
+        source: 'work',
+      })),
+      videos: (work.videos ?? []).map((video) => ({
+        ...video,
+        source: 'work',
+      })),
+    })
+    worksByDefect.set(work.defectId, works)
+  }
+
+  const requests = (journal.defects ?? []).map((defect) => {
+    const requestDate = defect.createdAt || defect.downtimeStartedAt
+    const works = (worksByDefect.get(defect.id) ?? [])
+      .sort((left, right) => new Date(left.date ?? 0) - new Date(right.date ?? 0))
+
+    return {
+      id: defect.id,
+      date: requestDate,
+      dateLabel: formatDateTime(requestDate),
+      description: defect.symptoms || defect.failureReason,
+      photos: (defect.photos ?? []).map((photo) => ({
+        ...photo,
+        source: 'defect',
+      })),
+      videos: (defect.videos ?? []).map((video) => ({
+        ...video,
+        source: 'defect',
+      })),
+      works,
+    }
+  })
+
+  return { vehicle: journal.vehicle ?? vehicle, requests }
+}
+
 /**
  * Загружает журналы всей техники и собирает плоский список незавершённых
  * неисправностей для вкладки «Ремонт». Миниатюры медиавложений
@@ -434,7 +518,14 @@ function isCompletedStatus(status) {
 function repairStatus(status) {
   const normalized = String(status ?? '').trim().toLowerCase()
   if (!normalized) return 'done'
-  if (['repaired', 'done', 'completed', 'исправна'].includes(normalized)) return 'done'
+  if ([
+    'repaired',
+    'done',
+    'completed',
+    'исправна',
+    'исправна (готово)',
+    'завершено',
+  ].includes(normalized)) return 'done'
   if (['awaiting_parts', 'waiting', 'ожидание запчастей'].includes(normalized)) return 'waiting'
   if (['in_progress', 'in progress', 'repair', 'faulty', 'ремонт'].includes(normalized)) return 'repair'
   return 'queue'
@@ -1060,6 +1151,12 @@ function formatDateTime(value) {
     </header>
 
     <section class="vehicle-content">
+      <RepairHistory
+        v-if="props.section === 'repairHistory'"
+        :token="token"
+        :search-vehicle-history="searchVehicleHistory"
+      />
+
       <form
         v-if="props.section === 'repairRequest'"
         class="vehicle-search"
@@ -1297,6 +1394,7 @@ function formatDateTime(value) {
                       • {{ item.date }}
                     </button>
                     <button
+                      v-if="props.section === 'works'"
                       class="repair-stage-delete"
                       type="button"
                       :disabled="isSaving"
@@ -1308,7 +1406,7 @@ function formatDateTime(value) {
                   </li>
                 </ul>
                 <p v-else class="repair-card-muted">История пока отсутствует.</p>
-                <div class="add-history">
+                <div v-if="props.section === 'works'" class="add-history">
                   <textarea
                     v-model="repairDraft(defect).description"
                     rows="3"
@@ -1317,6 +1415,7 @@ function formatDateTime(value) {
                 </div>
 
                 <label
+                  v-if="props.section === 'works'"
                   class="upload-zone"
                   @dragover.prevent
                   @drop.prevent="uploadRepairFiles(defect, $event)"
@@ -1329,35 +1428,40 @@ function formatDateTime(value) {
                   />
                   ⬆ Перетащите файлы сюда<br />или нажмите для выбора
                 </label>
-                <div v-if="repairDraft(defect).previews.length" class="repair-card-file-list">
+                <div
+                  v-if="props.section === 'works' && repairDraft(defect).previews.length"
+                  class="repair-card-file-list"
+                >
                   <span v-for="item in repairDraft(defect).previews" :key="item.url">
                     {{ item.file.name }}
                   </span>
                 </div>
 
-                <h3>СТАТУС РЕМОНТА</h3>
-                <div class="status-options">
-                  <label>
-                    <input v-model="repairDraft(defect).status" type="radio" value="repair" />
-                    На ремонте
-                  </label>
-                  <label>
-                    <input v-model="repairDraft(defect).status" type="radio" value="waiting" />
-                    Ожидает запчасти
-                  </label>
-                  <label>
-                    <input v-model="repairDraft(defect).status" type="radio" value="done" />
-                    Исправна (Готово)
-                  </label>
-                </div>
-                <button
-                  class="repair-card-button repair-card-button--secondary"
-                  type="button"
-                  :disabled="isSaving"
-                  @click="completeRepair(defect)"
-                >
-                  ВЫПОЛНЕНИЕ
-                </button>
+                <template v-if="props.section === 'works'">
+                  <h3>СТАТУС РЕМОНТА</h3>
+                  <div class="status-options">
+                    <label>
+                      <input v-model="repairDraft(defect).status" type="radio" value="repair" />
+                      На ремонте
+                    </label>
+                    <label>
+                      <input v-model="repairDraft(defect).status" type="radio" value="waiting" />
+                      Ожидает запчасти
+                    </label>
+                    <label>
+                      <input v-model="repairDraft(defect).status" type="radio" value="done" />
+                      Исправна (Готово)
+                    </label>
+                  </div>
+                  <button
+                    class="repair-card-button repair-card-button--secondary"
+                    type="button"
+                    :disabled="isSaving"
+                    @click="completeRepair(defect)"
+                  >
+                    ВЫПОЛНЕНИЕ
+                  </button>
+                </template>
               </div>
 
               <div class="column right">
@@ -1417,7 +1521,7 @@ function formatDateTime(value) {
             </section>
           </article>
           <p v-if="!repairDefects.length" class="vehicle-empty">
-                    Неисправностей нет.
+            Неисправностей нет.
           </p>
         </div>
       </section>
