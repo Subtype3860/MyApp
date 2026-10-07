@@ -125,15 +125,11 @@ const columnLabels = {
 }
 
 function getWorkerKey(row) {
-  return JSON.stringify([row.LastName, row.FirstName, row.Patronymic ?? ''])
+  return row.EmployeeId
 }
 
 function getWorkerQuery(row) {
-  return new URLSearchParams({
-    lastName: row.LastName,
-    firstName: row.FirstName,
-    patronymic: row.Patronymic ?? '',
-  })
+  return new URLSearchParams({ employeeId: row.EmployeeId })
 }
 
 function clearSignatureUrls() {
@@ -142,6 +138,8 @@ function clearSignatureUrls() {
 }
 
 async function loadSignature(row) {
+  if (!row.EmployeeId) return
+
   const key = getWorkerKey(row)
   const currentUrl = signatureUrls.value.get(key)
   if (currentUrl) {
@@ -615,8 +613,13 @@ watch(
                       :src="signatureUrls.get(getWorkerKey(row))"
                       alt="Роспись работника"
                     />
-                    <span v-else class="signature-placeholder">Нет</span>
-                    <label class="signature-upload-button">
+                    <span v-else class="signature-placeholder">
+                      {{ row.EmployeeId ? 'Нет' : 'ID не найден' }}
+                    </span>
+                    <label
+                      v-if="row.EmployeeId"
+                      class="signature-upload-button"
+                    >
                       {{ row.Роспись ? 'Заменить' : 'Добавить' }}
                       <input
                         type="file"
@@ -625,7 +628,7 @@ watch(
                       />
                     </label>
                     <button
-                      v-if="row.Роспись"
+                      v-if="row.Роспись && row.EmployeeId"
                       class="signature-delete-button"
                       type="button"
                       @click="deleteSignature(row)"

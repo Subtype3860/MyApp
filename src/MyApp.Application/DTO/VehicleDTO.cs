@@ -115,7 +115,7 @@ public sealed record VehicleWorkPhotoUpload(
 public sealed record VehicleWorkPhotoContent(
     string FileName,
     string ContentType,
-    byte[] Content,
+    Stream Content,
     string? StoragePath = null);
 
 public sealed record VehicleMediaResponse(

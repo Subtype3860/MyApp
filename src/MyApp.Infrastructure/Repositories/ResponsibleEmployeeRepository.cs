@@ -14,7 +14,7 @@ public sealed class ResponsibleEmployeeRepository(
         await using var command = dataSource.CreateCommand(
             """
             SELECT "FullName", "Profession"
-            FROM employees
+            FROM v_employee
             WHERE LOWER(BTRIM("Profession")) = LOWER(@profession)
             ORDER BY "FullName"
             """);
@@ -44,7 +44,7 @@ public sealed class ResponsibleEmployeeRepository(
             """
             SELECT EXISTS (
                 SELECT 1
-                FROM employees
+                FROM v_employee
                 WHERE LOWER(BTRIM("Profession")) = LOWER(@profession)
                   AND REGEXP_REPLACE(
                         BTRIM("FullName"),

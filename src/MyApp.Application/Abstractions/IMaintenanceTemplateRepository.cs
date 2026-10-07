@@ -22,6 +22,11 @@ public interface IMaintenanceTemplateRepository
         Guid? exceptId,
         CancellationToken cancellationToken);
 
+    Task<bool> IntervalNameConflictExistsAsync(
+        Guid intervalId,
+        string name,
+        CancellationToken cancellationToken);
+
     Task<bool> MaterialExistsAsync(
         string materialName,
         CancellationToken cancellationToken);

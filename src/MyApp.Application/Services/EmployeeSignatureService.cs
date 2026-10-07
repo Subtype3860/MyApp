@@ -12,7 +12,7 @@ public sealed class EmployeeSignatureService(
         CancellationToken cancellationToken)
     {
         var signature = await repository.GetAsync(
-            Normalize(employee),
+            employee,
             cancellationToken);
         return signature is null
             ? ServiceResult<EmployeeSignatureResponse>.NotFound()
@@ -25,9 +25,7 @@ public sealed class EmployeeSignatureService(
         string contentType,
         CancellationToken cancellationToken)
     {
-        var normalized = Normalize(employee);
-        if (string.IsNullOrEmpty(normalized.LastName) ||
-            string.IsNullOrEmpty(normalized.FirstName))
+        if (employee.EmployeeId == Guid.Empty)
         {
             return ServiceResult<bool>.Validation(
                 new Dictionary<string, string[]>
@@ -37,7 +35,7 @@ public sealed class EmployeeSignatureService(
         }
 
         await repository.SaveAsync(
-            normalized,
+            employee,
             content,
             contentType,
             cancellationToken);
@@ -49,16 +47,10 @@ public sealed class EmployeeSignatureService(
         CancellationToken cancellationToken)
     {
         var deleted = await repository.DeleteAsync(
-            Normalize(employee),
+            employee,
             cancellationToken);
         return deleted
             ? ServiceResult<bool>.Success(true)
             : ServiceResult<bool>.NotFound();
     }
-
-    private static EmployeeSignatureKey Normalize(EmployeeSignatureKey employee) =>
-        new(
-            employee.LastName.Trim(),
-            employee.FirstName.Trim(),
-            employee.Patronymic.Trim());
 }

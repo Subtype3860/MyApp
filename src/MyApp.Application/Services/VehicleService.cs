@@ -11,6 +11,7 @@ namespace MyApp.Application.Services;
 
 public sealed class VehicleService(
     IVehicleRepository repository,
+    IVehicleMediaRepository mediaRepository,
     IUserRepository userRepository) : IVehicleService
 {
     private const int MaximumPhotosPerEntry = 10;
@@ -156,18 +157,19 @@ public sealed class VehicleService(
         }
         var validation = await ValidatePhotosAsync(
             photos,
-            () => repository.GetDefectPhotoCountAsync(defectId, cancellationToken));
+            () => mediaRepository.GetDefectPhotoCountAsync(
+                defectId, cancellationToken));
         return validation is not null
             ? PhotoValidation(validation)
             : ServiceResult<IReadOnlyList<Guid>>.Success(
-                await repository.AddDefectPhotosAsync(
+                await mediaRepository.AddDefectPhotosAsync(
                     defectId, photos, cancellationToken));
     }
 
     public Task<VehicleWorkPhotoContent?> GetDefectPhotoAsync(
         Guid photoId,
         CancellationToken cancellationToken) =>
-        repository.GetDefectPhotoAsync(photoId, cancellationToken);
+        mediaRepository.GetDefectPhotoAsync(photoId, cancellationToken);
 
     public Task<ServiceResult<bool>> DeleteDefectPhotoAsync(
         Guid photoId,
@@ -175,7 +177,7 @@ public sealed class VehicleService(
         CancellationToken cancellationToken) =>
         DeleteMediaAsync(
             "defect-photo", photoId, userId,
-            repository.DeleteDefectPhotoAsync, cancellationToken);
+            mediaRepository.DeleteDefectPhotoAsync, cancellationToken);
 
     public Task<ServiceResult<IReadOnlyList<Guid>>> AddDefectVideosAsync(
         Guid defectId,
@@ -188,14 +190,14 @@ public sealed class VehicleService(
             userId,
             repository.DefectExistsAsync,
             CanManageDefectAsync,
-            repository.GetDefectVideoCountAsync,
-            repository.AddDefectVideosAsync,
+            mediaRepository.GetDefectVideoCountAsync,
+            mediaRepository.AddDefectVideosAsync,
             cancellationToken);
 
     public Task<VehicleWorkPhotoContent?> GetDefectVideoAsync(
         Guid videoId,
         CancellationToken cancellationToken) =>
-        repository.GetDefectVideoAsync(videoId, cancellationToken);
+        mediaRepository.GetDefectVideoAsync(videoId, cancellationToken);
 
     public Task<ServiceResult<bool>> DeleteDefectVideoAsync(
         Guid videoId,
@@ -203,7 +205,7 @@ public sealed class VehicleService(
         CancellationToken cancellationToken) =>
         DeleteMediaAsync(
             "defect-video", videoId, userId,
-            repository.DeleteDefectVideoAsync, cancellationToken);
+            mediaRepository.DeleteDefectVideoAsync, cancellationToken);
 
     public Task<ServiceResult<Guid>> AddHoursAsync(
         Guid vehicleId,
@@ -379,18 +381,19 @@ public sealed class VehicleService(
         }
         var validation = await ValidatePhotosAsync(
             photos,
-            () => repository.GetWorkPhotoCountAsync(workId, cancellationToken));
+            () => mediaRepository.GetWorkPhotoCountAsync(
+                workId, cancellationToken));
         return validation is not null
             ? PhotoValidation(validation)
             : ServiceResult<IReadOnlyList<Guid>>.Success(
-                await repository.AddWorkPhotosAsync(
+                await mediaRepository.AddWorkPhotosAsync(
                     workId, photos, cancellationToken));
     }
 
     public Task<VehicleWorkPhotoContent?> GetWorkPhotoAsync(
         Guid photoId,
         CancellationToken cancellationToken) =>
-        repository.GetWorkPhotoAsync(photoId, cancellationToken);
+        mediaRepository.GetWorkPhotoAsync(photoId, cancellationToken);
 
     public Task<ServiceResult<bool>> DeleteWorkPhotoAsync(
         Guid photoId,
@@ -398,7 +401,7 @@ public sealed class VehicleService(
         CancellationToken cancellationToken) =>
         DeleteMediaAsync(
             "work-photo", photoId, userId,
-            repository.DeleteWorkPhotoAsync, cancellationToken);
+            mediaRepository.DeleteWorkPhotoAsync, cancellationToken);
 
     public Task<ServiceResult<IReadOnlyList<Guid>>> AddWorkVideosAsync(
         Guid workId,
@@ -411,14 +414,14 @@ public sealed class VehicleService(
             userId,
             repository.WorkExistsAsync,
             CanManageWorkAsync,
-            repository.GetWorkVideoCountAsync,
-            repository.AddWorkVideosAsync,
+            mediaRepository.GetWorkVideoCountAsync,
+            mediaRepository.AddWorkVideosAsync,
             cancellationToken);
 
     public Task<VehicleWorkPhotoContent?> GetWorkVideoAsync(
         Guid videoId,
         CancellationToken cancellationToken) =>
-        repository.GetWorkVideoAsync(videoId, cancellationToken);
+        mediaRepository.GetWorkVideoAsync(videoId, cancellationToken);
 
     public Task<ServiceResult<bool>> DeleteWorkVideoAsync(
         Guid videoId,
@@ -426,7 +429,7 @@ public sealed class VehicleService(
         CancellationToken cancellationToken) =>
         DeleteMediaAsync(
             "work-video", videoId, userId,
-            repository.DeleteWorkVideoAsync, cancellationToken);
+            mediaRepository.DeleteWorkVideoAsync, cancellationToken);
 
     public async Task<ServiceResult<bool>> UpdatePartsRequestAsync(
         Guid workId,
@@ -938,7 +941,7 @@ public sealed class VehicleService(
         var user = await userRepository.FindByIdAsync(userId, cancellationToken);
         if (user is null ||
             !IsAdministrator(user) &&
-            !await repository.CanManageMediaAsync(
+            !await mediaRepository.CanManageMediaAsync(
                 category, mediaId, userId, cancellationToken))
         {
             return ServiceResult<bool>.Unauthorized();

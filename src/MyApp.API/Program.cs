@@ -1,4 +1,3 @@
-using MyApp.API.Endpoints;
 using MyApp.API.Extensions;
 using MyApp.Application;
 using MyApp.Application.Security;
@@ -25,6 +24,7 @@ builder.Services.AddInfrastructure(
     jwtOptions);
 builder.Services.AddJwtAuthentication(builder.Configuration);
 builder.Services.AddAuthorization();
+builder.Services.AddControllers();
 
 var app = builder.Build();
 
@@ -39,18 +39,6 @@ app.UseAuthorization();
 
 await app.Services.InitializeDatabaseAsync();
 
-app.MapAuthEndpoints();
-app.MapAdminUserEndpoints();
-app.MapProfessionEndpoints();
-app.MapTableViewEndpoints();
-app.MapComponentDocumentEndpoints();
-app.MapResponsibleEmployeeEndpoints();
-app.MapEmployeeSignatureEndpoints();
-app.MapCsvFileEndpoints();
-app.MapRequirementJournalEndpoints();
-app.MapMaterialGroupEndpoints();
-app.MapMaintenanceTemplateEndpoints();
-app.MapUserProfileEndpoints();
-app.MapVehicleEndpoints();
+app.MapControllers();
 
 app.Run();

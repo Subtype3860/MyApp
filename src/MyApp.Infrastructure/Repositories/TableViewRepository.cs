@@ -75,12 +75,37 @@ public sealed class TableViewRepository(
         var selectClause = request.TableName == "v_workers" &&
                            request.IncludeSignatures
             ? """
-              SELECT t.*, (signatures.last_name IS NOT NULL) AS "Роспись"
+              SELECT t.*,
+                     employees."Id" AS "EmployeeId",
+                     (signatures.employee_id IS NOT NULL) AS "Роспись"
               FROM v_workers AS t
+              LEFT JOIN (
+                  SELECT
+                      "Id",
+                      LOWER(REGEXP_REPLACE(
+                          BTRIM("FullName"),
+                          '\s+',
+                          ' ',
+                          'g')) AS normalized_name,
+                      COUNT(*) OVER (PARTITION BY LOWER(REGEXP_REPLACE(
+                          BTRIM("FullName"),
+                          '\s+',
+                          ' ',
+                          'g'))) AS match_count
+                  FROM v_employee
+              ) AS employees
+                ON employees.normalized_name = LOWER(REGEXP_REPLACE(
+                    CONCAT_WS(
+                        ' ',
+                        NULLIF(BTRIM(t."LastName"), ''),
+                        NULLIF(BTRIM(t."FirstName"), ''),
+                        NULLIF(BTRIM(t."Patronymic"), '')),
+                    '\s+',
+                    ' ',
+                    'g'))
+               AND employees.match_count = 1
               LEFT JOIN employee_signatures AS signatures
-                ON signatures.last_name = t."LastName"
-               AND signatures.first_name = t."FirstName"
-               AND signatures.patronymic = COALESCE(t."Patronymic", '')
+                ON signatures.employee_id = employees."Id"
               """
             : $"SELECT * FROM {request.TableName} AS t";
         await using var command = dataSource.CreateCommand(

@@ -276,16 +276,16 @@ public sealed class DatabaseInitializer(AppDbContext db) : IDatabaseInitializer
 
             UPDATE component_requirements AS requirements
             SET source_table = CASE
-                WHEN LOWER(employees."Profession") = LOWER('Кладовщик')
+                WHEN LOWER(v_employee."Profession") = LOWER('Кладовщик')
                     THEN 'v_full_ost'
-                WHEN LOWER(employees."Profession") = LOWER('Старший механик')
+                WHEN LOWER(v_employee."Profession") = LOWER('Старший механик')
                     THEN 'v_meh_ost'
                 ELSE requirements.source_table
             END
-            FROM employees
+            FROM v_employee
             WHERE requirements.source_table = ''
               AND REGEXP_REPLACE(
-                    BTRIM(employees."FullName"),
+                    BTRIM(v_employee."FullName"),
                     '\s+',
                     ' ',
                     'g') = REGEXP_REPLACE(
@@ -332,15 +332,103 @@ public sealed class DatabaseInitializer(AppDbContext db) : IDatabaseInitializer
             cancellationToken);
         await db.Database.ExecuteSqlRawAsync(
             """
-            CREATE TABLE IF NOT EXISTS employee_signatures (
-                last_name text NOT NULL,
-                first_name text NOT NULL,
-                patronymic text NOT NULL DEFAULT '',
-                content bytea NOT NULL,
-                content_type varchar(100) NOT NULL,
-                updated_at timestamptz NOT NULL DEFAULT NOW(),
-                PRIMARY KEY (last_name, first_name, patronymic)
-            );
+            DO $migration$
+            DECLARE
+                signatures_relation regclass :=
+                    to_regclass('employee_signatures');
+            BEGIN
+                IF signatures_relation IS NULL THEN
+                    CREATE TABLE employee_signatures (
+                        employee_id uuid PRIMARY KEY,
+                        content bytea NOT NULL,
+                        content_type varchar(100) NOT NULL,
+                        updated_at timestamptz NOT NULL DEFAULT NOW()
+                    );
+                    RETURN;
+                END IF;
+
+                IF EXISTS (
+                    SELECT 1
+                    FROM pg_attribute
+                    WHERE attrelid = signatures_relation
+                      AND attname = 'employee_id'
+                      AND NOT attisdropped
+                ) THEN
+                    RETURN;
+                END IF;
+
+                IF to_regclass('employee_signatures_legacy') IS NOT NULL THEN
+                    RAISE EXCEPTION
+                        'employee_signatures_legacy already exists; refusing to overwrite signature backup';
+                END IF;
+
+                ALTER TABLE employee_signatures
+                    RENAME TO employee_signatures_legacy;
+                ALTER TABLE employee_signatures_legacy
+                    RENAME CONSTRAINT employee_signatures_pkey
+                    TO employee_signatures_legacy_pkey;
+
+                CREATE TABLE employee_signatures (
+                    employee_id uuid PRIMARY KEY,
+                    content bytea NOT NULL,
+                    content_type varchar(100) NOT NULL,
+                    updated_at timestamptz NOT NULL DEFAULT NOW()
+                );
+
+                WITH employee_candidates AS (
+                    SELECT
+                        "Id",
+                        LOWER(REGEXP_REPLACE(
+                            BTRIM("FullName"),
+                            '\s+',
+                            ' ',
+                            'g')) AS normalized_name,
+                        COUNT(*) OVER (PARTITION BY LOWER(REGEXP_REPLACE(
+                            BTRIM("FullName"),
+                            '\s+',
+                            ' ',
+                            'g'))) AS match_count
+                    FROM v_employee
+                ),
+                matched_signatures AS (
+                    SELECT
+                        employees."Id" AS employee_id,
+                        signatures.content,
+                        signatures.content_type,
+                        signatures.updated_at,
+                        ROW_NUMBER() OVER (
+                            PARTITION BY employees."Id"
+                            ORDER BY signatures.updated_at DESC,
+                                     signatures.last_name,
+                                     signatures.first_name,
+                                     signatures.patronymic) AS signature_rank
+                    FROM employee_signatures_legacy AS signatures
+                    JOIN employee_candidates AS employees
+                      ON employees.normalized_name = LOWER(REGEXP_REPLACE(
+                          CONCAT_WS(
+                              ' ',
+                              NULLIF(BTRIM(signatures.last_name), ''),
+                              NULLIF(BTRIM(signatures.first_name), ''),
+                              NULLIF(BTRIM(signatures.patronymic), '')),
+                          '\s+',
+                          ' ',
+                          'g'))
+                     AND employees.match_count = 1
+                )
+                INSERT INTO employee_signatures (
+                    employee_id,
+                    content,
+                    content_type,
+                    updated_at)
+                SELECT
+                    employee_id,
+                    content,
+                    content_type,
+                    updated_at
+                FROM matched_signatures
+                WHERE signature_rank = 1;
+            END
+            $migration$;
             """,
             cancellationToken);
         await db.Database.ExecuteSqlRawAsync(

@@ -50,14 +50,26 @@ public sealed class CsvFileRepository(NpgsqlDataSource dataSource) : ICsvFileRep
             "SELECT lo_export(CAST(@objectId AS oid), @path)";
         exportCommand.Parameters.AddWithValue("objectId", (long)objectId);
         exportCommand.Parameters.AddWithValue("path", path);
-        await exportCommand.ExecuteNonQueryAsync(cancellationToken);
+        var exportResult = Convert.ToInt32(
+            await exportCommand.ExecuteScalarAsync(cancellationToken));
+        if (exportResult != 1)
+        {
+            throw new InvalidOperationException(
+                $"Не удалось записать CSV-файл «{fileName}».");
+        }
 
         await using var unlinkCommand = connection.CreateCommand();
         unlinkCommand.Transaction = transaction;
         unlinkCommand.CommandText =
             "SELECT lo_unlink(CAST(@objectId AS oid))";
         unlinkCommand.Parameters.AddWithValue("objectId", (long)objectId);
-        await unlinkCommand.ExecuteNonQueryAsync(cancellationToken);
+        var unlinkResult = Convert.ToInt32(
+            await unlinkCommand.ExecuteScalarAsync(cancellationToken));
+        if (unlinkResult != 1)
+        {
+            throw new InvalidOperationException(
+                "Не удалось удалить временный объект CSV-файла.");
+        }
         await transaction.CommitAsync(cancellationToken);
     }
 
@@ -81,12 +93,18 @@ public sealed class CsvFileRepository(NpgsqlDataSource dataSource) : ICsvFileRep
             LIMIT 1
             """;
         pathCommand.Parameters.AddWithValue("fileName", fileName);
-        var path = Convert.ToString(
-            await pathCommand.ExecuteScalarAsync(cancellationToken));
-        if (string.IsNullOrWhiteSpace(path))
+        await using var reader = await pathCommand.ExecuteReaderAsync(
+            cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
         {
             throw new InvalidOperationException(
                 $"В PostgreSQL не найден внешний CSV-файл «{fileName}».");
+        }
+        var path = reader.GetString(0);
+        if (await reader.ReadAsync(cancellationToken))
+        {
+            throw new InvalidOperationException(
+                $"Для CSV-файла «{fileName}» найдено несколько путей.");
         }
         return path;
     }

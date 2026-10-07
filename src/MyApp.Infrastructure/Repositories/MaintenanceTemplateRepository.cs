@@ -143,6 +143,25 @@ public sealed class MaintenanceTemplateRepository(
             ("exceptId", exceptId ?? Guid.Empty),
             cancellationToken);
 
+    public Task<bool> IntervalNameConflictExistsAsync(
+        Guid intervalId,
+        string name,
+        CancellationToken cancellationToken) =>
+        ExistsAsync(
+            """
+            SELECT EXISTS (
+                SELECT 1
+                FROM maintenance_intervals AS current
+                JOIN maintenance_intervals AS duplicate
+                  ON duplicate.equipment_id = current.equipment_id
+                 AND duplicate.id <> current.id
+                WHERE current.id = @intervalId
+                  AND LOWER(BTRIM(duplicate.name)) = LOWER(BTRIM(@name)))
+            """,
+            ("intervalId", intervalId),
+            ("name", name),
+            cancellationToken);
+
     public Task<bool> MaterialExistsAsync(
         string materialName,
         CancellationToken cancellationToken) =>

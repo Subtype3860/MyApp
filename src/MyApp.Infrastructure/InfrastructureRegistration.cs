@@ -4,6 +4,7 @@ using MyApp.Application.Abstractions;
 using MyApp.Application.Security;
 using MyApp.Infrastructure.Db;
 using MyApp.Infrastructure.Repositories;
+using MyApp.Infrastructure.Repositories.Vehicles;
 using MyApp.Infrastructure.Security;
 using Npgsql;
 
@@ -29,6 +30,7 @@ public static class InfrastructureRegistration
         services.AddScoped<IRequirementJournalRepository, RequirementJournalRepository>();
         services.AddScoped<IMaterialGroupRepository, MaterialGroupRepository>();
         services.AddScoped<IMaintenanceTemplateRepository, MaintenanceTemplateRepository>();
+        services.AddScoped<IVehicleMediaRepository, VehicleMediaRepository>();
         services.AddScoped<IVehicleRepository, VehicleRepository>();
         services.AddScoped<IPasswordHasher, Pbkdf2PasswordHasher>();
         services.AddScoped<ITokenProvider, JwtTokenProvider>();

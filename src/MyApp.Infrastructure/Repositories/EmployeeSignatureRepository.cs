@@ -15,11 +15,9 @@ public sealed class EmployeeSignatureRepository(
             """
             SELECT content, content_type
             FROM employee_signatures
-            WHERE last_name = @lastName
-              AND first_name = @firstName
-              AND patronymic = @patronymic
+            WHERE employee_id = @employeeId
             """);
-        AddEmployeeParameters(command, employee);
+        AddEmployeeIdParameter(command, employee);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         return await reader.ReadAsync(cancellationToken)
             ? new EmployeeSignatureResponse(
@@ -37,24 +35,20 @@ public sealed class EmployeeSignatureRepository(
         await using var command = dataSource.CreateCommand(
             """
             INSERT INTO employee_signatures (
-                last_name,
-                first_name,
-                patronymic,
+                employee_id,
                 content,
                 content_type)
             VALUES (
-                @lastName,
-                @firstName,
-                @patronymic,
+                @employeeId,
                 @content,
                 @contentType)
-            ON CONFLICT (last_name, first_name, patronymic)
+            ON CONFLICT (employee_id)
             DO UPDATE SET
                 content = EXCLUDED.content,
                 content_type = EXCLUDED.content_type,
                 updated_at = NOW()
             """);
-        AddEmployeeParameters(command, employee);
+        AddEmployeeIdParameter(command, employee);
         command.Parameters.AddWithValue("content", content);
         command.Parameters.AddWithValue("contentType", contentType);
         await command.ExecuteNonQueryAsync(cancellationToken);
@@ -67,20 +61,16 @@ public sealed class EmployeeSignatureRepository(
         await using var command = dataSource.CreateCommand(
             """
             DELETE FROM employee_signatures
-            WHERE last_name = @lastName
-              AND first_name = @firstName
-              AND patronymic = @patronymic
+            WHERE employee_id = @employeeId
             """);
-        AddEmployeeParameters(command, employee);
+        AddEmployeeIdParameter(command, employee);
         return await command.ExecuteNonQueryAsync(cancellationToken) > 0;
     }
 
-    private static void AddEmployeeParameters(
+    private static void AddEmployeeIdParameter(
         NpgsqlCommand command,
         EmployeeSignatureKey employee)
     {
-        command.Parameters.AddWithValue("lastName", employee.LastName);
-        command.Parameters.AddWithValue("firstName", employee.FirstName);
-        command.Parameters.AddWithValue("patronymic", employee.Patronymic);
+        command.Parameters.AddWithValue("employeeId", employee.EmployeeId);
     }
 }

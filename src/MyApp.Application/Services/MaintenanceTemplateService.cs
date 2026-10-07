@@ -116,6 +116,12 @@ public sealed class MaintenanceTemplateService(
         {
             return validation;
         }
+        if (await repository.IntervalNameConflictExistsAsync(
+                id, name, cancellationToken))
+        {
+            return ServiceResult<Guid>.Conflict(
+                "Такой пункт ТО для выбранной техники уже существует.");
+        }
         return await repository.RenameIntervalAsync(id, name, cancellationToken)
             ? ServiceResult<Guid>.Success(id)
             : ServiceResult<Guid>.NotFound();
