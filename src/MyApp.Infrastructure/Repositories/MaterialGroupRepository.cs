@@ -46,12 +46,12 @@ public sealed class MaterialGroupRepository(
     {
         var query =
             from item in db.MaterialGroupItems.AsNoTracking()
-            join group in db.MaterialGroups.AsNoTracking()
-                on item.GroupId equals group.Id
+            join materialGroup in db.MaterialGroups.AsNoTracking()
+                on item.GroupId equals materialGroup.Id
             where item.SourceTable == sourceTable
             orderby item.MaterialName
             select new MaterialGroupMappingResponse(
-                item.MaterialName, group.Id, group.Name);
+                item.MaterialName, materialGroup.Id, materialGroup.Name);
         return await query.ToListAsync(cancellationToken);
     }
 
