@@ -78,15 +78,51 @@ internal sealed class PostgreSqlIntegrationDatabase : IAsyncDisposable
                 created_at timestamptz NOT NULL DEFAULT NOW()
             );
 
+            CREATE TABLE vehicle_defects (
+                id uuid PRIMARY KEY,
+                vehicle_id uuid NOT NULL REFERENCES number_car(id) ON DELETE CASCADE,
+                node_name text NOT NULL DEFAULT '',
+                failure_reason text NOT NULL DEFAULT '',
+                error_code varchar(100) NOT NULL DEFAULT '',
+                symptoms text NOT NULL DEFAULT '',
+                downtime_started_at timestamptz NOT NULL DEFAULT NOW(),
+                assigned_to uuid REFERENCES app_users(id) ON DELETE RESTRICT,
+                repair_started_at timestamptz,
+                created_by uuid NOT NULL REFERENCES app_users(id) ON DELETE RESTRICT,
+                created_at timestamptz NOT NULL DEFAULT NOW()
+            );
+
+            CREATE TABLE vehicle_hour_readings (
+                id uuid PRIMARY KEY,
+                vehicle_id uuid NOT NULL REFERENCES number_car(id) ON DELETE CASCADE,
+                reading_date date NOT NULL,
+                engine_hours numeric NOT NULL CHECK (engine_hours >= 0),
+                note text NOT NULL DEFAULT '',
+                created_by uuid NOT NULL REFERENCES app_users(id) ON DELETE RESTRICT,
+                created_at timestamptz NOT NULL DEFAULT NOW()
+            );
+
             CREATE TABLE vehicle_works (
                 id uuid PRIMARY KEY,
                 vehicle_id uuid NOT NULL REFERENCES number_car(id) ON DELETE CASCADE,
-                repair_status varchar(30) NOT NULL DEFAULT 'repaired',
-                purchase_request_number varchar(100),
+                work_date date NOT NULL,
+                description text NOT NULL,
+                engine_hours numeric CHECK (engine_hours >= 0),
+                performer varchar(300) NOT NULL DEFAULT '',
+                note text NOT NULL DEFAULT '',
+                defect_id uuid REFERENCES vehicle_defects(id) ON DELETE CASCADE,
+                purchase_request_number varchar(100) NOT NULL DEFAULT '',
                 purchase_request_date date,
                 purchase_request_file_name varchar(255),
                 purchase_request_content_type varchar(100),
-                purchase_request_content bytea
+                purchase_request_content bytea,
+                failure_cause text NOT NULL DEFAULT '',
+                repair_status varchar(30) NOT NULL DEFAULT 'repaired',
+                required_parts text NOT NULL DEFAULT '',
+                performed_by uuid REFERENCES app_users(id) ON DELETE RESTRICT,
+                completed_at timestamptz,
+                created_by uuid NOT NULL REFERENCES app_users(id) ON DELETE RESTRICT,
+                created_at timestamptz NOT NULL DEFAULT NOW()
             );
             """);
         await command.ExecuteNonQueryAsync();

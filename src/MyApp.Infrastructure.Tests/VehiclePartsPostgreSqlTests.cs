@@ -15,12 +15,16 @@ public sealed class VehiclePartsPostgreSqlTests
         var workId = Guid.NewGuid();
         await database.ExecuteAsync(
             "INSERT INTO number_car (id) VALUES (@id)", ("id", vehicleId));
+        var userId = Guid.NewGuid();
+        await database.ExecuteAsync(
+            "INSERT INTO app_users (id) VALUES (@id)", ("id", userId));
         await database.ExecuteAsync(
             """
-            INSERT INTO vehicle_works (id, vehicle_id, repair_status)
-            VALUES (@id, @vehicle, 'awaiting_parts')
+            INSERT INTO vehicle_works
+                (id, vehicle_id, work_date, description, created_by, repair_status)
+            VALUES (@id, @vehicle, CURRENT_DATE, 'repair', @user, 'awaiting_parts')
             """,
-            ("id", workId), ("vehicle", vehicleId));
+            ("id", workId), ("vehicle", vehicleId), ("user", userId));
 
         var bytes = new byte[] { 37, 80, 68, 70, 45 };
         var changed = await repository.UpdatePartsRequestAsync(
@@ -68,14 +72,18 @@ public sealed class VehiclePartsPostgreSqlTests
         var completedWork = Guid.NewGuid();
         await database.ExecuteAsync(
             "INSERT INTO number_car (id) VALUES (@id)", ("id", vehicleId));
+        var userId = Guid.NewGuid();
+        await database.ExecuteAsync(
+            "INSERT INTO app_users (id) VALUES (@id)", ("id", userId));
         await database.ExecuteAsync(
             """
-            INSERT INTO vehicle_works (id, vehicle_id, repair_status)
-            VALUES (@pending, @vehicle, 'awaiting_parts'),
-                   (@complete, @vehicle, 'repaired')
+            INSERT INTO vehicle_works
+                (id, vehicle_id, work_date, description, created_by, repair_status)
+            VALUES (@pending, @vehicle, CURRENT_DATE, 'repair', @user, 'awaiting_parts'),
+                   (@complete, @vehicle, CURRENT_DATE, 'repair', @user, 'repaired')
             """,
             ("pending", pendingWork), ("complete", completedWork),
-            ("vehicle", vehicleId));
+            ("vehicle", vehicleId), ("user", userId));
 
         var request = new VehiclePartsRequest(
             "PART-2", new DateOnly(2026, 10, 8), null, null, null);
