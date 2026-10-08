@@ -23,8 +23,30 @@ public sealed class RequirementJournalRepository(
         ComponentDocumentRequest request,
         CancellationToken cancellationToken)
     {
+        var (fileName, lockKey) = ResolveSource(request.SourceTable);
+        var changes = AggregateStockChanges(request.Items);
         await using var transaction = await db.Database.BeginTransactionAsync(
             cancellationToken);
+
+        await AcquireSourceLockAsync(lockKey, cancellationToken);
+
+        // Server-side stock is authoritative. The UI's AvailableQuantity is
+        // display data and may be stale or deliberately manipulated.
+        // Preflight ALL lines before any call that can mutate a physical CSV.
+        var pendingWrites = new List<(string Name, decimal NewQuantity)>();
+        foreach (var change in changes)
+        {
+            var available = await GetCurrentQuantityAsync(
+                request.SourceTable, change.Name, cancellationToken);
+            if (available < change.Quantity)
+            {
+                throw new InvalidOperationException(
+                    $"Недостаточный остаток для компонента «{change.Name}»: " +
+                    $"доступно {available}, требуется {change.Quantity}.");
+            }
+            pendingWrites.Add((change.Name, available - change.Quantity));
+        }
+
         var requirementId = Guid.NewGuid();
         await db.ComponentRequirements.AddAsync(
             new ComponentRequirementRecord
@@ -52,15 +74,15 @@ public sealed class RequirementJournalRepository(
             });
         }
 
+        // Fail on database constraints BEFORE invoking edit_csv_tab.
         await db.SaveChangesAsync(cancellationToken);
-        foreach (var item in request.Items)
+        foreach (var (name, quantity) in pendingWrites)
         {
-            await UpdateCsvAsync(
-                request.SourceTable,
-                item,
-                cancellationToken);
+            EnsureCsvUpdateSucceeded(await ExecuteCsvFunctionAsync(
+                fileName, name, quantity, cancellationToken));
         }
-
+        // edit_csv_tab may write external files. A PostgreSQL rollback cannot
+        // undo those file writes; this is an interim guard, not full atomicity.
         await transaction.CommitAsync(cancellationToken);
     }
 
@@ -140,13 +162,26 @@ public sealed class RequirementJournalRepository(
     {
         await using var transaction = await db.Database.BeginTransactionAsync(
             cancellationToken);
-        var requirement = await db.ComponentRequirements
-            .AsNoTracking()
-            .FirstOrDefaultAsync(row => row.Id == id, cancellationToken);
-        if (requirement is null)
+
+        // Lock the requirement row BEFORE reading items and restoring stock:
+        // a second concurrent deletion must not restore the same stock twice.
+        string? sourceTable;
+        await using (var command = db.Database.GetDbConnection().CreateCommand())
+        {
+            command.Transaction = db.Database.CurrentTransaction?.GetDbTransaction();
+            command.CommandText =
+                "SELECT source_table FROM component_requirements WHERE id = @id FOR UPDATE";
+            AddParameter(command, "id", id);
+            sourceTable = Convert.ToString(
+                await command.ExecuteScalarAsync(cancellationToken));
+        }
+        if (string.IsNullOrEmpty(sourceTable))
         {
             return false;
         }
+
+        var (fileName, lockKey) = ResolveSource(sourceTable);
+        await AcquireSourceLockAsync(lockKey, cancellationToken);
 
         var items = await db.ComponentRequirementItems
             .AsNoTracking()
@@ -158,66 +193,72 @@ public sealed class RequirementJournalRepository(
                 item.Quantity,
                 0))
             .ToArrayAsync(cancellationToken);
-        foreach (var item in items)
+
+        var changes = AggregateStockChanges(items);
+        var pendingWrites = new List<(string Name, decimal NewQuantity)>();
+        foreach (var change in changes)
         {
-            await RestoreCsvAsync(
-                requirement.SourceTable,
-                item,
-                cancellationToken);
+            var available = await GetCurrentQuantityAsync(
+                sourceTable, change.Name, cancellationToken);
+            pendingWrites.Add((change.Name, checked(available + change.Quantity)));
         }
 
+        // Delete first; any relational failure occurs before touching CSV.
         var deleted = await db.ComponentRequirements
             .Where(row => row.Id == id)
             .ExecuteDeleteAsync(cancellationToken);
+        if (deleted == 0)
+        {
+            return false;
+        }
+
+        foreach (var (name, quantity) in pendingWrites)
+        {
+            EnsureCsvUpdateSucceeded(await ExecuteCsvFunctionAsync(
+                fileName, name, quantity, cancellationToken));
+        }
         await transaction.CommitAsync(cancellationToken);
-        return deleted > 0;
+        return true;
     }
 
-    private async Task UpdateCsvAsync(
-        string sourceTable,
-        ComponentDocumentItem item,
-        CancellationToken cancellationToken)
-    {
-        var fileName = sourceTable switch
+    private const int StockLockNamespace = 4386202;
+
+    private static (string FileName, int LockKey) ResolveSource(string sourceTable) =>
+        sourceTable switch
         {
-            "v_full_ost" or "full_ost" => "o",
-            "v_meh_ost" or "meh_ost" => "c",
+            "v_full_ost" or "full_ost" => ("o", 1),
+            "v_meh_ost" or "meh_ost" => ("c", 2),
             _ => throw new InvalidOperationException(
                 "Неизвестный источник компонентов.")
         };
-        var newValue = Math.Max(
-            item.AvailableQuantity - item.Quantity,
-            0);
-        var result = await ExecuteCsvFunctionAsync(
-            fileName,
-            item.Name,
-            newValue,
-            cancellationToken);
-        EnsureCsvUpdateSucceeded(result);
-    }
 
-    private async Task RestoreCsvAsync(
-        string sourceTable,
-        ComponentDocumentItem item,
+    private async Task AcquireSourceLockAsync(
+        int sourceKey,
         CancellationToken cancellationToken)
     {
-        var fileName = sourceTable switch
+        await db.Database.ExecuteSqlInterpolatedAsync(
+            $"SELECT pg_advisory_xact_lock({StockLockNamespace}, {sourceKey})",
+            cancellationToken);
+    }
+
+    private static IReadOnlyList<(string Name, decimal Quantity)> AggregateStockChanges(
+        IReadOnlyList<ComponentDocumentItem> items)
+    {
+        if (items.Count == 0)
+            throw new InvalidOperationException(
+                "Требование должно содержать хотя бы один компонент.");
+
+        var totals = new Dictionary<string, decimal>(StringComparer.Ordinal);
+        foreach (var item in items)
         {
-            "v_full_ost" or "full_ost" => "o",
-            "v_meh_ost" or "meh_ost" => "c",
-            _ => throw new InvalidOperationException(
-                "Для требования не указан источник остатков.")
-        };
-        var currentQuantity = await GetCurrentQuantityAsync(
-            sourceTable,
-            item.Name,
-            cancellationToken);
-        var result = await ExecuteCsvFunctionAsync(
-            fileName,
-            item.Name,
-            currentQuantity + item.Quantity,
-            cancellationToken);
-        EnsureCsvUpdateSucceeded(result);
+            if (string.IsNullOrWhiteSpace(item.Name) || item.Quantity <= 0)
+                throw new InvalidOperationException(
+                    "Компонент должен иметь название и положительное количество.");
+
+            var name = item.Name.Trim();
+            totals[name] = checked(totals.GetValueOrDefault(name) + item.Quantity);
+        }
+        return totals.Select(pair => (pair.Key, pair.Value)).ToArray();
     }
 
     private async Task<decimal> GetCurrentQuantityAsync(
