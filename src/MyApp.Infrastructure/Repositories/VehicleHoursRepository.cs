@@ -35,27 +35,41 @@ public sealed class VehicleHoursRepository(NpgsqlDataSource dataSource) : IVehic
             cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(
             cancellationToken);
+        // Load the latest eligible reading for every blank entry in ONE query.
+        // Keep a mutable in-transaction cache because the import can contain
+        // repeated rows for the same vehicle, including later blank rows.
+        var carryForwardHours = new Dictionary<Guid, decimal>();
+        var blankVehicleIds = items
+            .Where(item => !item.EngineHours.HasValue)
+            .Select(item => item.VehicleId)
+            .Distinct()
+            .ToArray();
+        if (blankVehicleIds.Length > 0)
+        {
+            await using var previous = connection.CreateCommand();
+            previous.Transaction = transaction;
+            previous.CommandText =
+                """
+                SELECT DISTINCT ON (vehicle_id) vehicle_id, engine_hours
+                FROM vehicle_hour_readings
+                WHERE vehicle_id = ANY(@vehicleIds)
+                  AND reading_date <= @readingDate
+                ORDER BY vehicle_id, reading_date DESC, created_at DESC
+                """;
+            previous.Parameters.AddWithValue("vehicleIds", blankVehicleIds);
+            previous.Parameters.AddWithValue("readingDate", readingDate);
+            await using var reader = await previous.ExecuteReaderAsync(
+                cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                carryForwardHours[reader.GetGuid(0)] = reader.GetDecimal(1);
+            }
+        }
+
         foreach (var item in items)
         {
-            var engineHours = item.EngineHours;
-            if (engineHours is null)
-            {
-                await using var previous = connection.CreateCommand();
-                previous.Transaction = transaction;
-                previous.CommandText =
-                    """
-                    SELECT engine_hours
-                    FROM vehicle_hour_readings
-                    WHERE vehicle_id = @vehicleId
-                      AND reading_date <= @readingDate
-                    ORDER BY reading_date DESC, created_at DESC
-                    LIMIT 1
-                    """;
-                previous.Parameters.AddWithValue("vehicleId", item.VehicleId);
-                previous.Parameters.AddWithValue("readingDate", readingDate);
-                var value = await previous.ExecuteScalarAsync(cancellationToken);
-                engineHours = value is decimal hours ? hours : 0m;
-            }
+            var engineHours = item.EngineHours ??
+                carryForwardHours.GetValueOrDefault(item.VehicleId);
 
             await using var update = connection.CreateCommand();
             update.Transaction = transaction;
@@ -69,12 +83,13 @@ public sealed class VehicleHoursRepository(NpgsqlDataSource dataSource) : IVehic
                 WHERE vehicle_id = @vehicleId
                   AND reading_date = @readingDate
                 """;
-            update.Parameters.AddWithValue("hours", engineHours.Value);
+            update.Parameters.AddWithValue("hours", engineHours);
             update.Parameters.AddWithValue("createdBy", createdBy);
             update.Parameters.AddWithValue("vehicleId", item.VehicleId);
             update.Parameters.AddWithValue("readingDate", readingDate);
             if (await update.ExecuteNonQueryAsync(cancellationToken) > 0)
             {
+                carryForwardHours[item.VehicleId] = engineHours;
                 continue;
             }
 
@@ -90,9 +105,10 @@ public sealed class VehicleHoursRepository(NpgsqlDataSource dataSource) : IVehic
             insert.Parameters.AddWithValue("id", Guid.NewGuid());
             insert.Parameters.AddWithValue("vehicleId", item.VehicleId);
             insert.Parameters.AddWithValue("readingDate", readingDate);
-            insert.Parameters.AddWithValue("hours", engineHours.Value);
+            insert.Parameters.AddWithValue("hours", engineHours);
             insert.Parameters.AddWithValue("createdBy", createdBy);
             await insert.ExecuteNonQueryAsync(cancellationToken);
+            carryForwardHours[item.VehicleId] = engineHours;
         }
         await transaction.CommitAsync(cancellationToken);
     }
