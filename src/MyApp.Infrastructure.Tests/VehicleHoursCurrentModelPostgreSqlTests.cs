@@ -1,4 +1,4 @@
-using Microsoft.EntityFrameworkCore;
+using Npgsql;
 using MyApp.Application.DTO;
 using MyApp.Application.Storage;
 using MyApp.Infrastructure.Repositories;
@@ -111,11 +111,12 @@ public sealed class VehicleHoursCurrentModelPostgreSqlTests
         await using (var db = fixture.CreateContext())
         {
             var repo = CreateRepository(db);
-            await Xunit.Assert.ThrowsAsync<DbUpdateException>(() =>
+            var error = await Xunit.Assert.ThrowsAsync<PostgresException>(() =>
                 repo.ImportHoursAsync(
                     new DateOnly(2026, 10, 8),
                     [new(vehicle, 20m), new(vehicle, -1m)],
                     user, CancellationToken.None));
+            Xunit.Assert.Equal(PostgresErrorCodes.CheckViolation, error.SqlState);
         }
         Xunit.Assert.Empty(await fixture.ReadingsAsync());
     }
