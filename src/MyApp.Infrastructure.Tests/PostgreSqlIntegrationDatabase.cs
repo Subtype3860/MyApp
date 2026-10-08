@@ -117,6 +117,35 @@ internal sealed class PostgreSqlIntegrationDatabase : IAsyncDisposable
             CREATE UNIQUE INDEX ux_material_group_items_material
                 ON material_group_items (source_table, BTRIM(material_name));
 
+            CREATE TABLE maintenance_equipment (
+                id uuid PRIMARY KEY,
+                name varchar(100) NOT NULL,
+                sort_order integer NOT NULL DEFAULT 0
+            );
+            CREATE UNIQUE INDEX ux_maintenance_equipment_name
+                ON maintenance_equipment (LOWER(BTRIM(name)));
+
+            CREATE TABLE maintenance_intervals (
+                id uuid PRIMARY KEY,
+                equipment_id uuid NOT NULL REFERENCES maintenance_equipment(id)
+                    ON DELETE CASCADE,
+                name varchar(100) NOT NULL,
+                sort_order integer NOT NULL DEFAULT 0
+            );
+            CREATE UNIQUE INDEX ux_maintenance_intervals_name
+                ON maintenance_intervals (equipment_id, LOWER(BTRIM(name)));
+
+            CREATE TABLE maintenance_interval_items (
+                id uuid PRIMARY KEY,
+                interval_id uuid NOT NULL REFERENCES maintenance_intervals(id)
+                    ON DELETE CASCADE,
+                material_name text NOT NULL,
+                quantity numeric NOT NULL CHECK (quantity > 0),
+                sort_order integer NOT NULL DEFAULT 0
+            );
+            CREATE UNIQUE INDEX ux_maintenance_items_material
+                ON maintenance_interval_items (interval_id, BTRIM(material_name));
+
             CREATE TABLE vehicle_purchase_requests (
                 id uuid PRIMARY KEY,
                 vehicle_id uuid NOT NULL REFERENCES number_car(id) ON DELETE CASCADE,
