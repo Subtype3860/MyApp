@@ -78,6 +78,28 @@ internal sealed class PostgreSqlIntegrationDatabase : IAsyncDisposable
             CREATE TABLE number_car (id uuid PRIMARY KEY);
             CREATE TABLE app_users (id uuid PRIMARY KEY);
 
+            CREATE TABLE component_requirements (
+                id uuid PRIMARY KEY,
+                created_at timestamptz NOT NULL DEFAULT NOW(),
+                created_by uuid NOT NULL REFERENCES app_users(id) ON DELETE RESTRICT,
+                author_name varchar(300) NOT NULL,
+                issuer_name varchar(300) NOT NULL,
+                vehicle_number varchar(100) NOT NULL,
+                source_table varchar(20) NOT NULL,
+                form_data jsonb NOT NULL
+            );
+            CREATE TABLE component_requirement_items (
+                requirement_id uuid NOT NULL
+                    REFERENCES component_requirements(id) ON DELETE CASCADE,
+                position integer NOT NULL,
+                name text NOT NULL,
+                unit varchar(100) NOT NULL,
+                quantity numeric NOT NULL,
+                PRIMARY KEY (requirement_id, position)
+            );
+            CREATE INDEX ix_component_requirements_created_at
+                ON component_requirements (created_at DESC);
+
             CREATE TABLE material_groups (
                 id uuid PRIMARY KEY,
                 name varchar(100) NOT NULL
