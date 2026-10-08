@@ -1,16 +1,17 @@
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.EntityFrameworkCore;
-using MyApp.Infrastructure.Db;
+using Microsoft.Extensions.DependencyInjection;
 using MyApp.Application.Abstractions;
+using MyApp.Application.DTO;
+using MyApp.Infrastructure.Db;
 using MyApp.Infrastructure.Repositories;
 using Npgsql;
 
 namespace MyApp.Infrastructure.Tests;
 
-public sealed class VehiclePartsRepositoryTests
+public sealed class VehicleHoursRepositoryTests
 {
     [Xunit.Fact]
-    public void Parts_port_resolves_to_independent_repository_without_connection()
+    public void Hours_port_resolves_independently_and_facade_uses_same_port()
     {
         var services = new ServiceCollection();
         using var dataSource = NpgsqlDataSource.Create(
@@ -25,9 +26,11 @@ public sealed class VehiclePartsRepositoryTests
 
         using var provider = services.BuildServiceProvider();
         using var scope = provider.CreateScope();
-        Xunit.Assert.IsType<VehiclePartsRepository>(
-            scope.ServiceProvider.GetRequiredService<IVehiclePartsRepository>());
+        var hours = scope.ServiceProvider.GetRequiredService<IVehicleHoursRepository>();
+        Xunit.Assert.IsType<VehicleHoursRepository>(hours);
         Xunit.Assert.IsType<VehicleRepository>(
             scope.ServiceProvider.GetRequiredService<IVehicleRepository>());
+        Xunit.Assert.Same(hours,
+            scope.ServiceProvider.GetRequiredService<IVehicleHoursRepository>());
     }
 }

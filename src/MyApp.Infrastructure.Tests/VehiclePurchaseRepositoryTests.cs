@@ -20,6 +20,7 @@ public sealed class VehiclePurchaseRepositoryTests
             "Host=localhost;Database=model_tests;Username=tests;Password=unused"));
         services.AddScoped<IVehiclePartsRepository, VehiclePartsRepository>();
         services.AddScoped<IVehiclePurchaseRepository, VehiclePurchaseRepository>();
+        services.AddScoped<IVehicleHoursRepository, VehicleHoursRepository>();
         services.AddScoped<IVehicleRepository, VehicleRepository>();
 
         using var provider = services.BuildServiceProvider();

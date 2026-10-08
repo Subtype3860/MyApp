@@ -38,8 +38,7 @@ public static class InfrastructureRegistration
             provider.GetRequiredService<IVehicleRepository>());
         services.AddScoped<IVehicleMediaRepository>(provider =>
             provider.GetRequiredService<IVehicleRepository>());
-        services.AddScoped<IVehicleHoursRepository>(provider =>
-            provider.GetRequiredService<IVehicleRepository>());
+        services.AddScoped<IVehicleHoursRepository, VehicleHoursRepository>();
         services.AddScoped<IVehicleWorkRepository>(provider =>
             provider.GetRequiredService<IVehicleRepository>());
         services.AddScoped<IVehiclePartsRepository, VehiclePartsRepository>();

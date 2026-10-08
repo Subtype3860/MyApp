@@ -15,4 +15,7 @@ public interface IVehicleHoursRepository
         IReadOnlyList<VehicleHoursImportItem> items,
         Guid createdBy,
         CancellationToken cancellationToken);
+    Task<IReadOnlyList<VehicleHoursResponse>> GetHoursAsync(
+        Guid vehicleId, DateOnly? from, DateOnly? to,
+        CancellationToken cancellationToken);
 }

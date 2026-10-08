@@ -11,7 +11,8 @@ public sealed class VehicleDefectPostgreSqlTests
         new(
             database.DataSource,
             new VehiclePartsRepository(database.DataSource),
-            new VehiclePurchaseRepository(context));
+            new VehiclePurchaseRepository(context),
+            new VehicleHoursRepository(database.DataSource));
 
     private static VehicleWorkRequest WorkRequest(Guid defectId) =>
         new(defectId, "failed bearing", "replace bearing", "repaired", null);
