@@ -71,27 +71,6 @@ public sealed partial class VehicleService(
         CancellationToken cancellationToken) =>
         repository.GetJournalAsync(vehicleId, from, to, cancellationToken);
 
-    public Task<ServiceResult<Guid>> AddPurchaseAsync(
-        Guid vehicleId,
-        VehiclePurchaseRequest request,
-        Guid createdBy,
-        CancellationToken cancellationToken) =>
-        CreateAsync(
-            vehicleId,
-            ValidatePurchase(request),
-            () => repository.AddPurchaseAsync(
-                vehicleId,
-                request with
-                {
-                    RequestNumber = Clean(request.RequestNumber),
-                    ItemName = Clean(request.ItemName),
-                    Status = Clean(request.Status),
-                    Note = Clean(request.Note)
-                },
-                createdBy,
-                cancellationToken),
-            cancellationToken);
-
     public async Task<bool> DeleteEntryAsync(
         string category,
         Guid id,
@@ -128,19 +107,6 @@ public sealed partial class VehicleService(
             return ServiceResult<Guid>.NotFound();
         }
         return ServiceResult<Guid>.Success(await create());
-    }
-
-    private static string? ValidatePurchase(VehiclePurchaseRequest request)
-    {
-        if (Clean(request.ItemName).Length is < 1 or > 500)
-        {
-            return "Наименование должно содержать от 1 до 500 символов.";
-        }
-        if (request.Quantity <= 0)
-        {
-            return "Количество должно быть больше нуля.";
-        }
-        return null;
     }
 
     private static string? ValidateText(string value, string label) =>
