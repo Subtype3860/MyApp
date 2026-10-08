@@ -85,3 +85,17 @@ The current extraction is an *incremental refactor*, not a finished clean archit
 - [x] GitHub Actions confirms .NET 10 build, unit tests, PostgreSQL tests for commit `bb30848`.
 
 **Important:** Existing SQL expression indexes and constraints remain database-managed; do not assume that EF Core model configurations are an exact schema migration baseline. Before generating/applying migrations, compare the actual database schema against the EF snapshot.
+
+
+## Requirement journal / CSV stock hardening (2026-10-08)
+
+- [x] Extracted `RequirementStockGateway` from `RequirementJournalRepository` and registered it with DI.
+- [x] Validate all issued quantities against freshly queried PostgreSQL stock views rather than trusting client-supplied `AvailableQuantity`.
+- [x] Aggregate duplicate stock names, reject overdrafts and validate all materials before invoking `edit_csv_tab`.
+- [x] Run relational inserts/deletes before CSV side effects to avoid touching CSV when a DB constraint fails first.
+- [x] Apply a per-source PostgreSQL transaction advisory lock to this application's issue/restore operations; `SELECT ... FOR UPDATE` prevents concurrent deletion of the same requirement.
+- [x] Added eight PostgreSQL integration scenarios with a transactional **DB stub** for `edit_csv_tab`: stale balances, duplicates, insufficient stock, FK failure, simultaneous issue, simultaneous restore, missing materials and simulated DB-function failure. These tests **do not** verify real external CSV rollback.
+- [x] Release build, unit tests and PostgreSQL integration tests passed for commit `6f91eab`.
+- [x] Documented remaining filesystem inconsistency risks and a DB-ledger/outbox migration proposal in [stock-file-consistency.md](stock-file-consistency.md).
+
+**Not done:** source inspection of deployed `edit_csv_tab`, real physical CSV failure-injection tests, reconciliation/backups and zero-data-loss baseline migration. A PostgreSQL transaction is not an atomic transaction with external CSV files.
