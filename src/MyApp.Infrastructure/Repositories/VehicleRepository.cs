@@ -4,7 +4,7 @@ using Npgsql;
 
 namespace MyApp.Infrastructure.Repositories;
 
-public sealed partial class VehicleRepository(NpgsqlDataSource dataSource) : IVehicleRepository
+public sealed partial class VehicleRepository(NpgsqlDataSource dataSource, IVehiclePartsRepository partsRepository) : IVehicleRepository
 {
     private const string ImageDirectory = "/mnt/dietpi/img";
     private const string VideoDirectory = "/mnt/dietpi/video";
@@ -154,13 +154,6 @@ public sealed partial class VehicleRepository(NpgsqlDataSource dataSource) : IVe
             to is null ? DBNull.Value : to.Value);
         return command;
     }
-
-    private static void AddNullable(
-        NpgsqlCommand command,
-        string name,
-        NpgsqlTypes.NpgsqlDbType type,
-        object? value) =>
-        command.Parameters.Add(name, type).Value = value ?? DBNull.Value;
 
     private async Task<Guid> InsertAsync(
         string sql,

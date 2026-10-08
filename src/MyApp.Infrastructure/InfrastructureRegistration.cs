@@ -42,8 +42,7 @@ public static class InfrastructureRegistration
             provider.GetRequiredService<IVehicleRepository>());
         services.AddScoped<IVehicleWorkRepository>(provider =>
             provider.GetRequiredService<IVehicleRepository>());
-        services.AddScoped<IVehiclePartsRepository>(provider =>
-            provider.GetRequiredService<IVehicleRepository>());
+        services.AddScoped<IVehiclePartsRepository, VehiclePartsRepository>();
         services.AddScoped<IVehicleEntryRepository>(provider =>
             provider.GetRequiredService<IVehicleRepository>());
         services.AddScoped<IPasswordHasher, Pbkdf2PasswordHasher>();
