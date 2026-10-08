@@ -1,4 +1,5 @@
 using MyApp.Infrastructure.Repositories;
+using MyApp.Infrastructure.Db;
 using Npgsql;
 
 namespace MyApp.Infrastructure.Tests;
@@ -6,8 +7,8 @@ namespace MyApp.Infrastructure.Tests;
 public sealed class MaintenanceTemplatePostgreSqlTests
 {
     private static MaintenanceTemplateRepository CreateRepository(
-        PostgreSqlIntegrationDatabase database) =>
-        new(database.DataSource);
+        PostgreSqlIntegrationDatabase database, AppDbContext context) =>
+        new(context, database.DataSource);
 
     private static Task CreateStockViewAsync(PostgreSqlIntegrationDatabase database) =>
         database.ExecuteAsync(
@@ -26,7 +27,8 @@ public sealed class MaintenanceTemplatePostgreSqlTests
     {
         await using var db = await PostgreSqlIntegrationDatabase.CreateAsync();
         await CreateStockViewAsync(db);
-        var repository = CreateRepository(db);
+        await using var context = db.CreateDbContext();
+        var repository = CreateRepository(db, context);
 
         var firstEquipment = await repository.CreateEquipmentAsync(
             "Excavators", CancellationToken.None);
@@ -67,7 +69,8 @@ public sealed class MaintenanceTemplatePostgreSqlTests
     public async Task Name_checks_and_renaming_respect_normalized_uniqueness()
     {
         await using var db = await PostgreSqlIntegrationDatabase.CreateAsync();
-        var repository = CreateRepository(db);
+        await using var context = db.CreateDbContext();
+        var repository = CreateRepository(db, context);
         var equipment = await repository.CreateEquipmentAsync(
             "Excavators", CancellationToken.None);
         var second = await repository.CreateEquipmentAsync(
@@ -105,7 +108,8 @@ public sealed class MaintenanceTemplatePostgreSqlTests
     public async Task Quantity_constraints_and_cascade_deletes_remain_enforced()
     {
         await using var db = await PostgreSqlIntegrationDatabase.CreateAsync();
-        var repository = CreateRepository(db);
+        await using var context = db.CreateDbContext();
+        var repository = CreateRepository(db, context);
         var equipment = await repository.CreateEquipmentAsync(
             "Dump trucks", CancellationToken.None);
         var interval = await repository.CreateIntervalAsync(
@@ -144,7 +148,8 @@ public sealed class MaintenanceTemplatePostgreSqlTests
     {
         await using var db = await PostgreSqlIntegrationDatabase.CreateAsync();
         await CreateStockViewAsync(db);
-        var repository = CreateRepository(db);
+        await using var context = db.CreateDbContext();
+        var repository = CreateRepository(db, context);
         Xunit.Assert.True(await repository.MaterialExistsAsync(
             " Hydraulic pump ", CancellationToken.None));
         Xunit.Assert.False(await repository.MaterialExistsAsync(

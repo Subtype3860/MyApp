@@ -108,4 +108,30 @@ public sealed class AppDbContextMappingTests
                   fk.Properties.Single().Name == nameof(MaterialGroupItemEntity.GroupId));
     }
 
+    [Xunit.Fact]
+    public void Maintenance_templates_keep_existing_schema_and_cascade_links()
+    {
+        using var db = CreateContext();
+        var equipment = db.Model.FindEntityType(typeof(MaintenanceEquipmentEntity));
+        var interval = db.Model.FindEntityType(typeof(MaintenanceIntervalEntity));
+        var item = db.Model.FindEntityType(typeof(MaintenanceItemEntity));
+        Xunit.Assert.NotNull(equipment);
+        Xunit.Assert.NotNull(interval);
+        Xunit.Assert.NotNull(item);
+        Xunit.Assert.Equal("maintenance_equipment", equipment.GetTableName());
+        Xunit.Assert.Equal("maintenance_intervals", interval.GetTableName());
+        Xunit.Assert.Equal("maintenance_interval_items", item.GetTableName());
+        var table = StoreObjectIdentifier.Table("maintenance_interval_items", null);
+        Xunit.Assert.Equal("material_name",
+            item.FindProperty(nameof(MaintenanceItemEntity.MaterialName))?.GetColumnName(table));
+        Xunit.Assert.Contains(interval.GetForeignKeys(),
+            fk => fk.DeleteBehavior == DeleteBehavior.Cascade &&
+                  fk.Properties.Count == 1 &&
+                  fk.Properties[0].Name == nameof(MaintenanceIntervalEntity.EquipmentId));
+        Xunit.Assert.Contains(item.GetForeignKeys(),
+            fk => fk.DeleteBehavior == DeleteBehavior.Cascade &&
+                  fk.Properties.Count == 1 &&
+                  fk.Properties[0].Name == nameof(MaintenanceItemEntity.IntervalId));
+    }
+
 }
