@@ -1,0 +1,35 @@
+name: Backend build
+
+on:
+  push:
+    branches:
+      - refactor/clean-architecture
+  pull_request:
+    paths:
+      - 'src/**'
+      - '.github/workflows/backend-ci.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Restore solution
+        run: dotnet restore src/MyApp.API.sln
+
+      - name: Build solution
+        run: dotnet build src/MyApp.API.sln --configuration Release --no-restore
+
+      # Add a test step when a test project is added to the solution.
+      # Integration tests need a PostgreSQL service and isolated test data.
