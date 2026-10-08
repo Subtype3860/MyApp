@@ -116,3 +116,21 @@ The current extraction is an *incremental refactor*, not a finished clean archit
 - The EF Core model is **not** a schema migration baseline. Expression indexes such as `LOWER(BTRIM(name))` and `BTRIM(material_name)`, database check constraints and deployed schema variations require separate audit.
 - Maintenance `GetAllAsync` retains its PostgreSQL `LEFT JOIN LATERAL` stock lookup. Its query plan must be measured on production-like data before optimizing.
 - Real CSV rollback/compensation remains unverified (see [stock-file-consistency.md](stock-file-consistency.md)).
+
+
+## Independent vehicle hours repository and import optimization (2026-10-08)
+
+- [x] Extracted `VehicleHoursRepository` implementing `IVehicleHoursRepository`. `VehicleRepository` forwards hour creation, import and journal reads; existing HTTP contracts remain unchanged.
+- [x] Added `GetHoursAsync` to the narrow hours repository port and registered the independent repository in DI.
+- [x] Added isolated DI tests and PostgreSQL tests covering filtering, blank-hour carry-forward, later dates and duplicate import lines.
+- [x] Optimized CSV import carry-forward: one parameterized `DISTINCT ON (vehicle_id)` query for all blank-hour vehicle IDs, replacing one SELECT per blank import line. The mutable cache preserves semantics for repeated lines in a single transaction.
+- [x] Added a transaction-level advisory lock keyed by reading date to serialize simultaneous CSV imports for that day. This prevents duplicate insertion via this import path without changing the existing database schema.
+- [x] Verified .NET 10 build, unit and PostgreSQL tests after the optimization (commit `40d9921`).
+- [ ] Measure performance on production-like CSV sizes and validate query plans/connection behavior.
+
+Caveats:
+
+- The import still performs individual UPDATE/INSERT statements per row; only blank-hour lookup N+1 has been removed.
+- The day-level advisory lock serializes **all** application CSV imports for the same date, including different vehicles. A future improvement could lock ordered vehicle IDs or add a validated uniqueness constraint and use `ON CONFLICT`.
+- `AddHoursAsync`, external SQL and other writers do not use this lock. Correctness of globally unique `(vehicle_id, reading_date)` records must eventually be enforced through a reviewed schema migration, after assessing historical duplicates.
+- Preserve transaction rollback for mixed valid and invalid imports.
