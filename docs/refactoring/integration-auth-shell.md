@@ -50,3 +50,44 @@ versions would remove new functionality.
 GitHub Actions workflow: `.github/workflows/integration-ci.yml`.
 The older refactor remains available for cherry-pick/adaptation selectively:
 `refactor/clean-architecture` (draft PR #6 against `master`).
+
+## Implemented in integration branch (2026-10-08)
+
+- [x] .NET 10 and Vue builds run independently in GitHub Actions.
+- [x] Ported xUnit test project with 5 tests of the **current** auth/navigation
+  permissions, including legacy permission mapping.
+- [x] Added isolated PostgreSQL 17 fixtures and maintenance template tests
+  against the current EF Core entity model (not the old repository models).
+- [x] Fixed concurrent `MAX(sort_order)+1` allocation in
+  `MaintenanceTemplateRepository`: scoped PostgreSQL advisory lock protects
+  SELECT and INSERT in one transaction, with parallel regression tests.
+- [x] Adapted the old stock issue/restore safeguards to this branch's
+  `RequirementJournalRepository` using its current `AppDbContext`.
+  Stock is read from server-side views, duplicate materials are aggregated,
+  all changes are preflighted, and issue/delete operations are locked.
+- [x] Fixed the discovered EF Core parent/child insertion-order error:
+  requirement header is saved before its items in the same transaction.
+- [x] Tests check stale client balances, duplicate stock lines, invalid
+  parent FK, insufficient/missing material and concurrent issue/restore.
+- [x] Latest tested code (commit `8221ab8`): 5 unit + 11 PostgreSQL tests;
+  backend and frontend builds passed in GitHub Actions.
+
+## Not yet transferred / do not blindly merge
+
+- [ ] Review `master`-only changes, especially October 1 edits/deletes of
+  parts requests and the October 7 vehicle-journal update. Map user-facing
+  functionality onto the current controller and DTO model.
+- [ ] Reassess vehicle-hours batch import performance and concurrency within
+  the current EF-based `VehicleRepository`; old Npgsql classes cannot be
+  pasted in without losing repair-history/media improvements.
+- [ ] Verify `edit_csv_tab` and `lo_export` on actual staging CSV files;
+  an EF transaction does not roll back the filesystem.
+- [ ] Audit deployed schema against `DatabaseInitializer` and EF metadata
+  before baseline migrations; run tests on a restored, isolated data copy.
+- [ ] Check authorization, media streaming, WebP, staged media transfer and
+  repair history end-to-end after integration.
+- [ ] Benchmark journal loading and uploads against representative data.
+
+The source `subtype3860-auth-navigation-shell` and previous
+`refactor/clean-architecture` remain unchanged. This integration PR
+targets the former, not `master`.
