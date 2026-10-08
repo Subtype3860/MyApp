@@ -1,0 +1,47 @@
+name: Integration branch build
+
+on:
+  push:
+    branches:
+      - refactor/integration-auth-shell
+  pull_request:
+    branches:
+      - subtype3860-auth-navigation-shell
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    name: .NET 10 backend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Restore
+        run: dotnet restore src/MyApp.API.sln
+      - name: Build
+        run: dotnet build src/MyApp.API.sln --configuration Release --no-restore
+      - name: Run unit tests
+        run: dotnet test src/MyApp.API.sln --configuration Release --no-build --no-restore
+
+  frontend:
+    name: Vue frontend
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install dependencies
+        run: npm ci
+      - name: Build
+        run: npm run build
