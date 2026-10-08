@@ -35,3 +35,21 @@ GitHub Actions runs .NET 10 build, xUnit tests, PostgreSQL tests and
 `edit_csv_tab` test stub, not a physical CSV file writer.
 See `docs/refactoring/stock-file-consistency.md` before deploying changes
 that touch production stock files.
+
+## Regression groups
+
+- `NavigationPermissionsTests`: legacy auth/navigation permissions.
+- `MaintenanceCurrentModelPostgreSqlTests`: template hierarchy and safe
+  parallel sort allocation.
+- `RequirementCurrentModelPostgreSqlTests`: authoritative stock, duplicate
+  lines, transaction rollback and concurrent issue/restore. The stock-writer
+  function is a **PostgreSQL test double**, not real filesystem I/O.
+- `VehicleHoursCurrentModelPostgreSqlTests`: empty-cell carry forward,
+  repeated rows, transaction rollback, concurrent import and **one group
+  SELECT for many blank rows**.
+- `VehiclePartsCurrentModelPostgreSqlTests`: create/edit/delete request
+  functionality on the active EF Core model, including awaiting_parts and
+  uniqueness rules.
+
+`Category=Integration` tests run only against random schemas in a
+disposable `*_test` database. They are not migration/production-data tests.
