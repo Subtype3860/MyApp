@@ -321,6 +321,11 @@ public sealed class VehicleRepository(
         return entity.Id;
     }
 
+    /// <summary>
+    /// CSV import is serialized by reading date to avoid duplicate inserts
+    /// from simultaneous imports using this repository. Direct AddHoursAsync
+    /// calls and external SQL do not participate in the advisory lock.
+    /// </summary>
     public async Task ImportHoursAsync(
         DateOnly readingDate,
         IReadOnlyList<VehicleHoursImportItem> items,
@@ -329,19 +334,54 @@ public sealed class VehicleRepository(
     {
         await using var transaction = await dbContext.Database
             .BeginTransactionAsync(cancellationToken);
-        foreach (var item in items)
+
+        // Keep MAX/UPSERT operations in this transaction and serialize all
+        // imports for one date. The lock is released automatically on commit
+        // or rollback, even if a row violates a database constraint.
+        const int lockNamespace = 4386203;
+        await dbContext.Database.ExecuteSqlInterpolatedAsync(
+            $"SELECT pg_advisory_xact_lock({lockNamespace}, {readingDate.DayNumber})",
+            cancellationToken);
+
+        // A blank CSV cell carries forward the most recent value on or before
+        // the import date. Fetch one most-recent row for each distinct vehicle
+        // in a SINGLE PostgreSQL query rather than querying inside the loop.
+        var blankVehicleIds = items
+            .Where(item => !item.EngineHours.HasValue)
+            .Select(item => item.VehicleId)
+            .Distinct()
+            .ToArray();
+        var carriedHours = new Dictionary<Guid, decimal>();
+        if (blankVehicleIds.Length > 0)
         {
-            var engineHours = item.EngineHours ??
-                await dbContext.VehicleHourReadings
-                    .AsNoTracking()
-                    .Where(reading =>
-                        reading.VehicleId == item.VehicleId &&
-                        reading.ReadingDate <= readingDate)
+            var lastReadings = await dbContext.VehicleHourReadings
+                .AsNoTracking()
+                .Where(reading =>
+                    blankVehicleIds.Contains(reading.VehicleId) &&
+                    reading.ReadingDate <= readingDate)
+                .GroupBy(reading => reading.VehicleId)
+                .Select(group => group
                     .OrderByDescending(reading => reading.ReadingDate)
                     .ThenByDescending(reading => reading.CreatedAt)
-                    .Select(reading => (decimal?)reading.EngineHours)
-                    .FirstOrDefaultAsync(cancellationToken) ??
-                0m;
+                    .Select(reading => new {
+                        reading.VehicleId,
+                        reading.EngineHours
+                    })
+                    .First())
+                .ToArrayAsync(cancellationToken);
+
+            foreach (var reading in lastReadings)
+            {
+                carriedHours[reading.VehicleId] = reading.EngineHours;
+            }
+        }
+
+        foreach (var item in items)
+        {
+            // Repeated rows for the same vehicle must observe earlier rows of
+            // this import, including an inserted or overwritten reading.
+            var engineHours = item.EngineHours ??
+                carriedHours.GetValueOrDefault(item.VehicleId);
             var now = DateTimeOffset.UtcNow;
             var updated = await dbContext.VehicleHourReadings
                 .Where(reading =>
@@ -356,6 +396,7 @@ public sealed class VehicleRepository(
                     cancellationToken);
             if (updated > 0)
             {
+                carriedHours[item.VehicleId] = engineHours;
                 continue;
             }
 
@@ -369,6 +410,7 @@ public sealed class VehicleRepository(
                 CreatedBy = createdBy
             });
             await dbContext.SaveChangesAsync(cancellationToken);
+            carriedHours[item.VehicleId] = engineHours;
         }
         await transaction.CommitAsync(cancellationToken);
     }
