@@ -134,3 +134,21 @@ Caveats:
 - The day-level advisory lock serializes **all** application CSV imports for the same date, including different vehicles. A future improvement could lock ordered vehicle IDs or add a validated uniqueness constraint and use `ON CONFLICT`.
 - `AddHoursAsync`, external SQL and other writers do not use this lock. Correctness of globally unique `(vehicle_id, reading_date)` records must eventually be enforced through a reviewed schema migration, after assessing historical duplicates.
 - Preserve transaction rollback for mixed valid and invalid imports.
+
+
+## Independent vehicle work and defect repositories (2026-10-08)
+
+- [x] Added `VehicleWorkRepository` with its own Npgsql access for work creation, ownership checks and work journal data including photos/videos. The compatible `VehicleRepository` forwards to the narrow work port.
+- [x] Added `VehicleDefectRepository` with creation, existence checks, claim and atomic completion. The `SELECT ... FOR UPDATE` transaction and duplicate-completion guard were preserved during extraction.
+- [x] Extended `IVehicleWorkRepository` and `IVehicleDefectRepository` with journal-query methods. Both narrow ports are now independently registered in DI.
+- [x] Added PostgreSQL fixtures for defect/work photo and video metadata; added tests for work journal projections, defect status transitions (`new → in_progress → repaired`), media, and cross-vehicle filtering.
+- [x] Updated legacy facade construction and unit-test service registration to resolve the independent repositories. Existing API method signatures are unchanged.
+- [x] Removed unused legacy SQL `InsertAsync`, `CreateRangeCommand` and obsolete media list reader after all callers moved, reducing duplicated code in the compatibility facade.
+- [x] Verified .NET 10 build and **18 unit / 30 PostgreSQL integration tests** for the independent defect repository on commit `01decc9` ([GitHub Actions](https://github.com/Subtype3860/MyApp/actions/runs/37760449459)).
+
+### Remaining limitations
+
+- The combined `VehicleRepository` still owns vehicle listing, journal composition, entry deletion and media/file side effects. The media and entry ports still resolve to the legacy facade; splitting them safely needs filesystem-failure tests.
+- Work/defect journal queries retain specialized Npgsql joins and several database roundtrips. Benchmark query plans on production-like data before optimizing.
+- Real disk media cleanup can fail after a database deletion; durable cleanup/compensation remains open.
+- The tests use an isolated PostgreSQL fixture, not the deployed database schema, and do not verify all API and frontend scenarios.
