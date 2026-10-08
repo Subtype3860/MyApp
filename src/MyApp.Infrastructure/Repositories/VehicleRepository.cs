@@ -4,7 +4,7 @@ using Npgsql;
 
 namespace MyApp.Infrastructure.Repositories;
 
-public sealed partial class VehicleRepository(NpgsqlDataSource dataSource, IVehiclePartsRepository partsRepository) : IVehicleRepository
+public sealed partial class VehicleRepository(NpgsqlDataSource dataSource, IVehiclePartsRepository partsRepository, IVehiclePurchaseRepository purchaseRepository) : IVehicleRepository
 {
     private const string ImageDirectory = "/mnt/dietpi/img";
     private const string VideoDirectory = "/mnt/dietpi/video";

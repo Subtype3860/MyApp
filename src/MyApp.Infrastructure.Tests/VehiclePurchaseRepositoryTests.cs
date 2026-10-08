@@ -5,10 +5,10 @@ using Npgsql;
 
 namespace MyApp.Infrastructure.Tests;
 
-public sealed class VehiclePartsRepositoryTests
+public sealed class VehiclePurchaseRepositoryTests
 {
     [Xunit.Fact]
-    public void Parts_port_resolves_to_independent_repository_without_connection()
+    public void Purchase_port_resolves_to_independent_repository_without_database()
     {
         var services = new ServiceCollection();
         using var dataSource = NpgsqlDataSource.Create(
@@ -20,8 +20,8 @@ public sealed class VehiclePartsRepositoryTests
 
         using var provider = services.BuildServiceProvider();
         using var scope = provider.CreateScope();
-        Xunit.Assert.IsType<VehiclePartsRepository>(
-            scope.ServiceProvider.GetRequiredService<IVehiclePartsRepository>());
+        Xunit.Assert.IsType<VehiclePurchaseRepository>(
+            scope.ServiceProvider.GetRequiredService<IVehiclePurchaseRepository>());
         Xunit.Assert.IsType<VehicleRepository>(
             scope.ServiceProvider.GetRequiredService<IVehicleRepository>());
     }

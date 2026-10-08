@@ -32,8 +32,7 @@ public static class InfrastructureRegistration
         services.AddScoped<IVehicleRepository, VehicleRepository>();
         services.AddScoped<IVehicleQueryRepository>(provider =>
             provider.GetRequiredService<IVehicleRepository>());
-        services.AddScoped<IVehiclePurchaseRepository>(provider =>
-            provider.GetRequiredService<IVehicleRepository>());
+        services.AddScoped<IVehiclePurchaseRepository, VehiclePurchaseRepository>();
         services.AddScoped<IVehicleDefectRepository>(provider =>
             provider.GetRequiredService<IVehicleRepository>());
         services.AddScoped<IVehicleMediaRepository>(provider =>

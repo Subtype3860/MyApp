@@ -9,4 +9,8 @@ public interface IVehiclePurchaseRepository
         VehiclePurchaseRequest request,
         Guid createdBy,
         CancellationToken cancellationToken);
+
+    Task<IReadOnlyList<VehiclePurchaseResponse>> GetPurchasesAsync(
+        Guid vehicleId, DateOnly? from, DateOnly? to,
+        CancellationToken cancellationToken);
 }
