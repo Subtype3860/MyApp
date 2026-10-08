@@ -6,6 +6,10 @@ namespace MyApp.Infrastructure.Repositories;
 
 public sealed class VehicleHoursRepository(NpgsqlDataSource dataSource) : IVehicleHoursRepository
 {
+    // Serializes imports for the same day without requiring a new DB index.
+    // Direct AddHoursAsync calls and external writers do not use this lock.
+    private const int ImportLockNamespace = 4386201;
+
     public Task<Guid> AddHoursAsync(
         Guid vehicleId,
         VehicleHoursRequest request,
@@ -35,6 +39,15 @@ public sealed class VehicleHoursRepository(NpgsqlDataSource dataSource) : IVehic
             cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(
             cancellationToken);
+        await using (var importLock = connection.CreateCommand())
+        {
+            importLock.Transaction = transaction;
+            importLock.CommandText =
+                "SELECT pg_advisory_xact_lock(@lockNamespace, @dateKey)";
+            importLock.Parameters.AddWithValue("lockNamespace", ImportLockNamespace);
+            importLock.Parameters.AddWithValue("dateKey", readingDate.DayNumber);
+            await importLock.ExecuteNonQueryAsync(cancellationToken);
+        }
         // Load the latest eligible reading for every blank entry in ONE query.
         // Keep a mutable in-transaction cache because the import can contain
         // repeated rows for the same vehicle, including later blank rows.

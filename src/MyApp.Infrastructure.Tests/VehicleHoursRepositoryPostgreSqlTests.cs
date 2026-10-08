@@ -127,4 +127,32 @@ public sealed class VehicleHoursRepositoryPostgreSqlTests
         Xunit.Assert.Equal(75m, Xunit.Assert.Single(current).EngineHours);
     }
 
+    [Xunit.Fact]
+    [Xunit.Trait("Category", "Integration")]
+    public async Task Concurrent_imports_for_one_date_do_not_create_duplicate_readings()
+    {
+        await using var database = await PostgreSqlIntegrationDatabase.CreateAsync();
+        var repo = new VehicleHoursRepository(database.DataSource);
+        var vehicle = Guid.NewGuid();
+        var user = Guid.NewGuid();
+        var date = new DateOnly(2026, 10, 8);
+        await database.ExecuteAsync(
+            "INSERT INTO number_car(id) VALUES (@id)", ("id", vehicle));
+        await database.ExecuteAsync(
+            "INSERT INTO app_users(id) VALUES (@id)", ("id", user));
+
+        await Task.WhenAll(
+            repo.ImportHoursAsync(
+                date, [new VehicleHoursImportItem(vehicle, 100m)],
+                user, CancellationToken.None),
+            repo.ImportHoursAsync(
+                date, [new VehicleHoursImportItem(vehicle, 200m)],
+                user, CancellationToken.None));
+
+        var readings = await repo.GetHoursAsync(
+            vehicle, date, date, CancellationToken.None);
+        var reading = Xunit.Assert.Single(readings);
+        Xunit.Assert.Contains(reading.EngineHours, new[] { 100m, 200m });
+    }
+
 }
