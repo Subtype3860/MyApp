@@ -13,7 +13,8 @@ public sealed class VehicleDefectPostgreSqlTests
             new VehiclePartsRepository(database.DataSource),
             new VehiclePurchaseRepository(context),
             new VehicleHoursRepository(database.DataSource),
-            new VehicleWorkRepository(database.DataSource));
+            new VehicleWorkRepository(database.DataSource),
+            new VehicleDefectRepository(database.DataSource));
 
     private static VehicleWorkRequest WorkRequest(Guid defectId) =>
         new(defectId, "failed bearing", "replace bearing", "repaired", null);
@@ -89,4 +90,66 @@ public sealed class VehicleDefectPostgreSqlTests
         count.Parameters.AddWithValue("defectId", defectId);
         Xunit.Assert.Equal(1L, (long)(await count.ExecuteScalarAsync())!);
     }
+    [Xunit.Fact]
+    [Xunit.Trait("Category", "Integration")]
+    public async Task Defect_journal_returns_status_and_media_for_correct_vehicle()
+    {
+        await using var database = await PostgreSqlIntegrationDatabase.CreateAsync();
+        var repository = new VehicleDefectRepository(database.DataSource);
+        var vehicle = Guid.NewGuid();
+        var otherVehicle = Guid.NewGuid();
+        var creator = Guid.NewGuid();
+        await database.ExecuteAsync(
+            "INSERT INTO number_car(id) VALUES (@a), (@b)",
+            ("a", vehicle), ("b", otherVehicle));
+        await database.ExecuteAsync(
+            """
+            INSERT INTO app_users(id, first_name, last_name)
+            VALUES (@id, 'Alice', 'Smith')
+            """, ("id", creator));
+
+        var defectId = await repository.AddDefectAsync(
+            vehicle, new VehicleDefectRequest(
+                "ERR-1", "Hydraulic leak", DateTimeOffset.UtcNow),
+            creator, CancellationToken.None);
+
+        await database.ExecuteAsync(
+            """
+            INSERT INTO vehicle_defect_photos
+                (id, defect_id, file_name, content_type, size)
+            VALUES (@id, @defect, 'leak.jpg', 'image/jpeg', 512)
+            """, ("id", Guid.NewGuid()), ("defect", defectId));
+        await database.ExecuteAsync(
+            """
+            INSERT INTO vehicle_defect_videos
+                (id, defect_id, file_name, content_type, size)
+            VALUES (@id, @defect, 'inspection.mp4', 'video/mp4', 1024)
+            """, ("id", Guid.NewGuid()), ("defect", defectId));
+
+        var defects = await repository.GetDefectsAsync(
+            vehicle, null, null, CancellationToken.None);
+        var entry = Xunit.Assert.Single(defects);
+        Xunit.Assert.Equal(defectId, entry.Id);
+        Xunit.Assert.Equal("new", entry.Status);
+        Xunit.Assert.Equal("Alice Smith", entry.CreatedByName);
+        Xunit.Assert.Equal("leak.jpg",
+            Xunit.Assert.Single(entry.Photos).FileName);
+        Xunit.Assert.Equal("inspection.mp4",
+            Xunit.Assert.Single(entry.Videos).FileName);
+        Xunit.Assert.Empty(await repository.GetDefectsAsync(
+            otherVehicle, null, null, CancellationToken.None));
+
+        Xunit.Assert.True(await repository.ClaimDefectAsync(
+            defectId, creator, CancellationToken.None));
+        var claimed = Xunit.Assert.Single(await repository.GetDefectsAsync(
+            vehicle, null, null, CancellationToken.None));
+        Xunit.Assert.Equal("in_progress", claimed.Status);
+        var completed = await repository.CompleteDefectAsync(
+            defectId, WorkRequest(defectId), creator, false, CancellationToken.None);
+        Xunit.Assert.NotNull(completed);
+        var repaired = Xunit.Assert.Single(await repository.GetDefectsAsync(
+            vehicle, null, null, CancellationToken.None));
+        Xunit.Assert.Equal("repaired", repaired.Status);
+    }
+
 }

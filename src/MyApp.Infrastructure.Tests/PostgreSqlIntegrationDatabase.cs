@@ -210,6 +210,23 @@ internal sealed class PostgreSqlIntegrationDatabase : IAsyncDisposable
                 created_by uuid NOT NULL REFERENCES app_users(id) ON DELETE RESTRICT,
                 created_at timestamptz NOT NULL DEFAULT NOW()
             );
+            CREATE TABLE vehicle_defect_photos (
+                id uuid PRIMARY KEY,
+                defect_id uuid NOT NULL REFERENCES vehicle_defects(id) ON DELETE CASCADE,
+                file_name text NOT NULL,
+                content_type text NOT NULL,
+                content bytea,
+                size integer NOT NULL DEFAULT 0,
+                created_at timestamptz NOT NULL DEFAULT NOW()
+            );
+            CREATE TABLE vehicle_defect_videos (
+                id uuid PRIMARY KEY,
+                defect_id uuid NOT NULL REFERENCES vehicle_defects(id) ON DELETE CASCADE,
+                file_name text NOT NULL,
+                content_type text NOT NULL,
+                size bigint NOT NULL,
+                created_at timestamptz NOT NULL DEFAULT NOW()
+            );
             CREATE TABLE vehicle_work_photos (
                 id uuid PRIMARY KEY,
                 work_id uuid NOT NULL REFERENCES vehicle_works(id) ON DELETE CASCADE,

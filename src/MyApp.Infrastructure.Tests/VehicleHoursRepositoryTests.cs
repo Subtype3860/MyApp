@@ -23,6 +23,7 @@ public sealed class VehicleHoursRepositoryTests
         services.AddScoped<IVehiclePurchaseRepository, VehiclePurchaseRepository>();
         services.AddScoped<IVehicleHoursRepository, VehicleHoursRepository>();
         services.AddScoped<IVehicleWorkRepository, VehicleWorkRepository>();
+        services.AddScoped<IVehicleDefectRepository, VehicleDefectRepository>();
         services.AddScoped<IVehicleRepository, VehicleRepository>();
 
         using var provider = services.BuildServiceProvider();

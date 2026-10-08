@@ -31,4 +31,7 @@ public interface IVehicleDefectRepository
         Guid performedBy,
         bool administrator,
         CancellationToken cancellationToken);
+    Task<IReadOnlyList<VehicleDefectResponse>> GetDefectsAsync(
+        Guid vehicleId, DateOnly? from, DateOnly? to,
+        CancellationToken cancellationToken);
 }
