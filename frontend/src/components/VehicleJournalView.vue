@@ -30,6 +30,7 @@ const journal = ref(null)
 const repairDefects = ref([])
 const repairDrafts = ref({})
 const selectedRepairWorkIds = ref({})
+const repairFileInputs = new Map()
 
 // --- Полноэкранный просмотрщик медиафайлов ---
 const mediaViewerOpen = ref(false)
@@ -628,8 +629,7 @@ function isRepairMediaFile(file) {
 }
 
 /**
- * Обрабатывает загрузку фото/видео в зону «upload-zone» карточки ремонта
- * (drag-and-drop или выбор через `<input type="file">`). Файлы сохраняются
+ * Обрабатывает выбор фото/видео для карточки ремонта. Файлы сохраняются
  * локально до нажатия кнопки «ВЫПОЛНЕНИЕ».
  * @param {object} defect Неисправность, к которой относится загрузка.
  * @param {DragEvent|Event} event Событие drop либо изменения `<input>`.
@@ -1384,7 +1384,7 @@ function formatDateTime(value) {
 
                 <h3>ЭТАПЫ РЕМОНТА (История)</h3>
                 <ul v-if="repairHistory(defect).length">
-                  <li v-for="item in repairHistory(defect)" :key="item.id">
+                  <li v-for="item in repairHistory(defect)" :key="item.id" class="repair-stage-row">
                     <button
                       class="repair-stage-button"
                       :class="{ active: selectedRepairWork(defect)?.id === item.id }"
@@ -1399,6 +1399,7 @@ function formatDateTime(value) {
                       type="button"
                       :disabled="isSaving"
                       title="Удалить этап вместе с медиа"
+                      :aria-label="`Удалить этап ${item.date} вместе с медиа`"
                       @click.stop="deleteRepairWork(defect, item.id)"
                     >
                       ×
@@ -1414,20 +1415,25 @@ function formatDateTime(value) {
                   ></textarea>
                 </div>
 
-                <label
-                  v-if="props.section === 'works'"
-                  class="upload-zone"
-                  @dragover.prevent
-                  @drop.prevent="uploadRepairFiles(defect, $event)"
-                >
+                <div v-if="props.section === 'works'" class="repair-file-upload">
+                  <button
+                    class="secondary-button repair-upload-button"
+                    type="button"
+                    :disabled="isSaving"
+                    @click="repairFileInputs.get(defect.id)?.click()"
+                  >
+                    <span aria-hidden="true">＋</span> Добавить фото или видео
+                  </button>
                   <input
+                    :ref="element => element ? repairFileInputs.set(defect.id, element) : repairFileInputs.delete(defect.id)"
                     type="file"
                     accept="image/*,video/*"
                     multiple
+                    hidden
+                    :disabled="isSaving"
                     @change="uploadRepairFiles(defect, $event)"
                   />
-                  ⬆ Перетащите файлы сюда<br />или нажмите для выбора
-                </label>
+                </div>
                 <div
                   v-if="props.section === 'works' && repairDraft(defect).previews.length"
                   class="repair-card-file-list"

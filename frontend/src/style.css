@@ -1844,6 +1844,20 @@ button {
   gap: 8px;
 }
 
+.repair-stage-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  margin-bottom: 6px;
+}
+
+.repair-stage-row .repair-stage-button {
+  min-width: 0;
+  min-height: 48px;
+  overflow-wrap: anywhere;
+}
+
 .repair-stage-button {
   padding: 2px 6px;
   border: 0;
@@ -1862,14 +1876,21 @@ button {
 }
 
 .repair-stage-delete {
-  margin-left: 4px;
-  padding: 1px 5px;
-  border: 0;
-  border-radius: 5px;
+  display: grid;
+  flex: 0 0 48px;
+  width: 48px;
+  height: 48px;
+  margin-left: auto;
+  padding: 0;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--system-red) 35%, transparent);
+  border-radius: 9px;
   background: transparent;
   color: var(--system-red);
   cursor: pointer;
-  font-size: 16px;
+  font-size: 30px;
+  line-height: 1;
+  touch-action: manipulation;
 }
 
 .repair-stage-delete:hover {
@@ -1891,22 +1912,25 @@ button {
   white-space: pre-wrap;
 }
 
-.upload-zone {
-  display: block;
-  margin: 10px 0 18px;
-  padding: 18px;
-  border: 2px dashed var(--border);
-  color: var(--text-secondary);
-  cursor: pointer;
-  text-align: center;
+.repair-file-upload {
+  margin: 12px 0 18px;
 }
 
-.upload-zone input {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip: rect(0 0 0 0);
+.repair-upload-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 48px;
+  max-width: 100%;
+  padding: 10px 16px;
+  touch-action: manipulation;
+}
+
+@media (max-width: 680px) {
+  .repair-upload-button {
+    width: 100%;
+  }
 }
 
 .status-options {
