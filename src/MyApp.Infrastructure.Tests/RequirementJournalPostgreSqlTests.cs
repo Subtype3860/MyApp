@@ -203,4 +203,95 @@ public sealed class RequirementJournalPostgreSqlTests
                 request, CancellationToken.None));
         Xunit.Assert.Equal(0L, await CountRequirementsAsync(database));
     }
+
+    [Xunit.Fact]
+    [Xunit.Trait("Category", "Integration")]
+    public async Task Concurrent_deletions_restore_stock_only_once()
+    {
+        await using var database = await PostgreSqlIntegrationDatabase.CreateAsync();
+        await SetupTransactionalStockStubAsync(database, 10m);
+        var userId = Guid.NewGuid();
+        await database.ExecuteAsync(
+            "INSERT INTO app_users (id) VALUES (@id)", ("id", userId));
+        var repository = CreateRepository(database);
+        await repository.SaveAsync(
+            userId, "Author", "Issuer",
+            Request(new ComponentDocumentItem("Filter", "pcs", 4m, 10m)),
+            CancellationToken.None);
+        var requirement = Xunit.Assert.Single(
+            await repository.GetRecentAsync(CancellationToken.None));
+        Xunit.Assert.Equal(6m, await GetStockAsync(database));
+
+        var results = await Task.WhenAll(
+            repository.DeleteAsync(requirement.Id, CancellationToken.None),
+            repository.DeleteAsync(requirement.Id, CancellationToken.None));
+        Xunit.Assert.Single(results, result => result);
+        Xunit.Assert.Single(results, result => !result);
+        Xunit.Assert.Equal(10m, await GetStockAsync(database));
+        Xunit.Assert.Equal(0L, await CountRequirementsAsync(database));
+    }
+
+    [Xunit.Fact]
+    [Xunit.Trait("Category", "Integration")]
+    public async Task Missing_second_material_is_detected_before_any_write()
+    {
+        await using var database = await PostgreSqlIntegrationDatabase.CreateAsync();
+        await SetupTransactionalStockStubAsync(database, 10m);
+        var userId = Guid.NewGuid();
+        await database.ExecuteAsync(
+            "INSERT INTO app_users (id) VALUES (@id)", ("id", userId));
+        var repository = CreateRepository(database);
+        await Xunit.Assert.ThrowsAsync<InvalidOperationException>(() =>
+            repository.SaveAsync(
+                userId, "Author", "Issuer",
+                Request(
+                    new ComponentDocumentItem("Filter", "pcs", 2m, 10m),
+                    new ComponentDocumentItem("Unknown material", "pcs", 1m, 10m)),
+                CancellationToken.None));
+
+        Xunit.Assert.Equal(10m, await GetStockAsync(database));
+        Xunit.Assert.Equal(0L, await CountRequirementsAsync(database));
+    }
+
+    [Xunit.Fact]
+    [Xunit.Trait("Category", "Integration")]
+    public async Task Database_stub_updates_are_rolled_back_on_stock_function_failure()
+    {
+        await using var database = await PostgreSqlIntegrationDatabase.CreateAsync();
+        await SetupTransactionalStockStubAsync(database, 10m);
+        await database.ExecuteAsync(
+            "INSERT INTO stock_fixture(name, quantity) VALUES ('FailItem', 10)");
+        await database.ExecuteAsync(
+            """
+            CREATE OR REPLACE FUNCTION edit_csv_tab(
+                file_name text, search_text text, new_value numeric)
+            RETURNS text LANGUAGE plpgsql AS $body$
+            BEGIN
+                IF BTRIM(search_text) = 'FailItem' THEN
+                    RETURN 'Не удалось изменить CSV';
+                END IF;
+                UPDATE stock_fixture SET quantity = new_value
+                WHERE BTRIM(name) = BTRIM(search_text);
+                RETURN 'Успешно обновлено!';
+            END;
+            $body$;
+            """);
+        var userId = Guid.NewGuid();
+        await database.ExecuteAsync(
+            "INSERT INTO app_users (id) VALUES (@id)", ("id", userId));
+        var repository = CreateRepository(database);
+
+        await Xunit.Assert.ThrowsAsync<InvalidOperationException>(() =>
+            repository.SaveAsync(
+                userId, "Author", "Issuer",
+                Request(
+                    new ComponentDocumentItem("Filter", "pcs", 2m, 10m),
+                    new ComponentDocumentItem("FailItem", "pcs", 3m, 10m)),
+                CancellationToken.None));
+
+        Xunit.Assert.Equal(10m, await GetStockAsync(database));
+        Xunit.Assert.Equal(0L, await CountRequirementsAsync(database));
+        // This checks a transactional DATABASE stub, not file rollback.
+    }
+
 }
