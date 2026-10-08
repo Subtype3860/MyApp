@@ -99,3 +99,20 @@ The current extraction is an *incremental refactor*, not a finished clean archit
 - [x] Documented remaining filesystem inconsistency risks and a DB-ledger/outbox migration proposal in [stock-file-consistency.md](stock-file-consistency.md).
 
 **Not done:** source inspection of deployed `edit_csv_tab`, real physical CSV failure-injection tests, reconciliation/backups and zero-data-loss baseline migration. A PostgreSQL transaction is not an atomic transaction with external CSV files.
+
+
+## Maintenance template EF Core refactor and concurrency hardening (2026-10-08)
+
+- [x] Added PostgreSQL fixture schema and four baseline integration tests for the existing maintenance template behavior.
+- [x] Added `MaintenanceEquipmentEntity`, `MaintenanceIntervalEntity`, `MaintenanceItemEntity` and `IEntityTypeConfiguration<T>` mappings.
+- [x] Converted the straightforward maintenance existence queries, normalized name/duplicate checks, quantity changes, renames and deletes to EF Core/LINQ. Retained SQL for stock-view `LEFT JOIN LATERAL` and insertion sort-order logic.
+- [x] Wrapped each `MAX(sort_order) + 1` INSERT in a PostgreSQL transaction with a scoped `pg_advisory_xact_lock`, ensuring concurrent inserts through this repository cannot allocate the same order for the same equipment/interval.
+- [x] Added a PostgreSQL integration test with parallel equipment, interval and material insert operations, checking consecutive unique `sort_order` values.
+- [x] Verified **16 unit and 24 PostgreSQL integration tests** on commit `82c18f5` via [GitHub Actions](https://github.com/Subtype3860/MyApp/actions/runs/37747844151).
+
+### Remaining caveats
+
+- The advisory lock is respected only by writers using this repository; external SQL or startup seed code can still affect ordering without following the same lock policy.
+- The EF Core model is **not** a schema migration baseline. Expression indexes such as `LOWER(BTRIM(name))` and `BTRIM(material_name)`, database check constraints and deployed schema variations require separate audit.
+- Maintenance `GetAllAsync` retains its PostgreSQL `LEFT JOIN LATERAL` stock lookup. Its query plan must be measured on production-like data before optimizing.
+- Real CSV rollback/compensation remains unverified (see [stock-file-consistency.md](stock-file-consistency.md)).
