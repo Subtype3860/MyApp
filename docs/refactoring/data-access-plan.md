@@ -59,3 +59,18 @@ Outstanding high-priority work:
 - [ ] Review media and CSV file operations for rollback/compensation behavior.
 
 The current extraction is an *incremental refactor*, not a finished clean architecture. Passing unit tests does not demonstrate database/data migration compatibility.
+
+
+## PostgreSQL integration and first LINQ conversion (2026-10-08)
+
+- [x] CI provisions a disposable PostgreSQL 17 database and runs integration tests in isolated, generated schemas.
+- [x] Purchase integration checks: roundtrip, vehicle/date filtering, and database quantity constraint.
+- [x] Parts integration checks: attachment roundtrip and cleanup, state gating, typed NULL parameters.
+- [x] Defect integration checks: assignee authorization, duplicate completion, concurrent completion serialized by `FOR UPDATE`.
+- [x] Hours import integration checks: carry-forward, repeated-date update, and transaction rollback on invalid vehicle.
+- [x] Corrected `VehiclePartsRepository.DeletePartsRequestAsync`: `purchase_request_number` is `NOT NULL` in the deployed schema, so clearing to SQL `NULL` caused PostgreSQL error 23502; now clears to the permitted empty string.
+- [x] Converted `VehiclePurchaseRepository` from direct Npgsql SQL to EF Core CRUD and LINQ read projections with `AsNoTracking`.
+- [x] Added `VehiclePurchaseEntity`, `VehiclePurchaseConfiguration`, and regression checks for model metadata.
+- [x] CI confirms build, unit tests and PostgreSQL integration tests on the LINQ conversion (commit `1f5432e`).
+
+**Next milestones:** PostgreSQL integration tests for requirement/CSV workflows and media side effects; independent defect/hours/work repository implementations; LINQ mapping and migration strategy for other standard tables. The integration fixture mirrors relevant table columns and constraints; it does **not** validate the existing startup initializer against a real production snapshot. Avoid applying automatic migrations to deployed databases before baseline comparison and backups.
