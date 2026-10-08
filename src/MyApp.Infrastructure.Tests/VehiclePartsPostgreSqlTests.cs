@@ -56,7 +56,7 @@ public sealed class VehiclePartsPostgreSqlTests
         verify.Parameters.AddWithValue("id", workId);
         await using var reader = await verify.ExecuteReaderAsync();
         Xunit.Assert.True(await reader.ReadAsync());
-        Xunit.Assert.True(reader.IsDBNull(0));
+        Xunit.Assert.Equal(string.Empty, reader.GetString(0));
         Xunit.Assert.True(reader.IsDBNull(1));
         Xunit.Assert.True(reader.IsDBNull(2));
     }

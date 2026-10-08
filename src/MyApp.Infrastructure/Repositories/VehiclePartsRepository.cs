@@ -58,7 +58,7 @@ public sealed class VehiclePartsRepository(NpgsqlDataSource dataSource) : IVehic
         await using var command = dataSource.CreateCommand(
             """
             UPDATE vehicle_works
-            SET purchase_request_number = NULL,
+            SET purchase_request_number = '',
                 purchase_request_date = NULL,
                 purchase_request_file_name = NULL,
                 purchase_request_content_type = NULL,
