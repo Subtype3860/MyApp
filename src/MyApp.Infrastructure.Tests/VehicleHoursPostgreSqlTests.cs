@@ -13,7 +13,8 @@ public sealed class VehicleHoursPostgreSqlTests
             database.DataSource,
             new VehiclePartsRepository(database.DataSource),
             new VehiclePurchaseRepository(context),
-            new VehicleHoursRepository(database.DataSource));
+            new VehicleHoursRepository(database.DataSource),
+            new VehicleWorkRepository(database.DataSource));
 
     [Xunit.Fact]
     [Xunit.Trait("Category", "Integration")]

@@ -76,7 +76,12 @@ internal sealed class PostgreSqlIntegrationDatabase : IAsyncDisposable
         await using var command = DataSource.CreateCommand(
             """
             CREATE TABLE number_car (id uuid PRIMARY KEY);
-            CREATE TABLE app_users (id uuid PRIMARY KEY);
+            CREATE TABLE app_users (
+                id uuid PRIMARY KEY,
+                first_name text NOT NULL DEFAULT '',
+                middle_name text NOT NULL DEFAULT '',
+                last_name text NOT NULL DEFAULT ''
+            );
 
             CREATE TABLE component_requirements (
                 id uuid PRIMARY KEY,
@@ -203,6 +208,23 @@ internal sealed class PostgreSqlIntegrationDatabase : IAsyncDisposable
                 performed_by uuid REFERENCES app_users(id) ON DELETE RESTRICT,
                 completed_at timestamptz,
                 created_by uuid NOT NULL REFERENCES app_users(id) ON DELETE RESTRICT,
+                created_at timestamptz NOT NULL DEFAULT NOW()
+            );
+            CREATE TABLE vehicle_work_photos (
+                id uuid PRIMARY KEY,
+                work_id uuid NOT NULL REFERENCES vehicle_works(id) ON DELETE CASCADE,
+                file_name text NOT NULL,
+                content_type text NOT NULL,
+                content bytea,
+                size integer NOT NULL DEFAULT 0,
+                created_at timestamptz NOT NULL DEFAULT NOW()
+            );
+            CREATE TABLE vehicle_work_videos (
+                id uuid PRIMARY KEY,
+                work_id uuid NOT NULL REFERENCES vehicle_works(id) ON DELETE CASCADE,
+                file_name text NOT NULL,
+                content_type text NOT NULL,
+                size bigint NOT NULL,
                 created_at timestamptz NOT NULL DEFAULT NOW()
             );
             """);

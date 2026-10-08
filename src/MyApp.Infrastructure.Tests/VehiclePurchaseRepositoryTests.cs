@@ -21,6 +21,7 @@ public sealed class VehiclePurchaseRepositoryTests
         services.AddScoped<IVehiclePartsRepository, VehiclePartsRepository>();
         services.AddScoped<IVehiclePurchaseRepository, VehiclePurchaseRepository>();
         services.AddScoped<IVehicleHoursRepository, VehicleHoursRepository>();
+        services.AddScoped<IVehicleWorkRepository, VehicleWorkRepository>();
         services.AddScoped<IVehicleRepository, VehicleRepository>();
 
         using var provider = services.BuildServiceProvider();

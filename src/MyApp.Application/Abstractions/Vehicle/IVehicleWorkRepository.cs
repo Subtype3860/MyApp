@@ -14,4 +14,7 @@ public interface IVehicleWorkRepository
 
     Task<bool> IsWorkPerformerAsync(
         Guid workId, Guid userId, CancellationToken cancellationToken);
+    Task<IReadOnlyList<VehicleWorkResponse>> GetWorksAsync(
+        Guid vehicleId, DateOnly? from, DateOnly? to,
+        CancellationToken cancellationToken);
 }
