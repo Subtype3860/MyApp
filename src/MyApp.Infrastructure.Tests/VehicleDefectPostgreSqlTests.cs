@@ -79,8 +79,8 @@ public sealed class VehicleDefectPostgreSqlTests
             repo.CompleteDefectAsync(defectId, work, userId, true, CancellationToken.None),
             repo.CompleteDefectAsync(defectId, work, userId, true, CancellationToken.None));
 
-        Xunit.Assert.Single(attempts.Where(id => id.HasValue));
-        Xunit.Assert.Single(attempts.Where(id => !id.HasValue));
+        Xunit.Assert.Single(attempts, id => id.HasValue);
+        Xunit.Assert.Single(attempts, id => !id.HasValue);
 
         await using var count = database.DataSource.CreateCommand(
             "SELECT COUNT(*) FROM vehicle_works WHERE defect_id = @defectId AND completed_at IS NOT NULL");

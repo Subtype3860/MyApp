@@ -49,8 +49,9 @@ public sealed class MaterialGroupPostgreSqlTests
         Xunit.Assert.False(await repository.DeleteItemAsync(firstId, CancellationToken.None));
         Xunit.Assert.True(await repository.DeleteGroupAsync(groupId, CancellationToken.None));
         Xunit.Assert.False(await repository.DeleteGroupAsync(groupId, CancellationToken.None));
-        Xunit.Assert.Empty((await repository.GetAllAsync(CancellationToken.None))
-            .Where(group => group.Id == groupId));
+        Xunit.Assert.DoesNotContain(
+            await repository.GetAllAsync(CancellationToken.None),
+            group => group.Id == groupId);
     }
 
     [Xunit.Fact]
