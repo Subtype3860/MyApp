@@ -14,7 +14,7 @@ public sealed partial class VehicleRepository
         Guid createdBy, CancellationToken cancellationToken) =>
         hoursRepository.ImportHoursAsync(readingDate, items, createdBy, cancellationToken);
 
-    private Task<IReadOnlyList<VehicleHoursResponse>> GetHoursAsync(
+    public Task<IReadOnlyList<VehicleHoursResponse>> GetHoursAsync(
         Guid vehicleId, DateOnly? from, DateOnly? to,
         CancellationToken cancellationToken) =>
         hoursRepository.GetHoursAsync(vehicleId, from, to, cancellationToken);
