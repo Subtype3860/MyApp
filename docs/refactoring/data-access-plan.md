@@ -74,3 +74,14 @@ The current extraction is an *incremental refactor*, not a finished clean archit
 - [x] CI confirms build, unit tests and PostgreSQL integration tests on the LINQ conversion (commit `1f5432e`).
 
 **Next milestones:** PostgreSQL integration tests for requirement/CSV workflows and media side effects; independent defect/hours/work repository implementations; LINQ mapping and migration strategy for other standard tables. The integration fixture mirrors relevant table columns and constraints; it does **not** validate the existing startup initializer against a real production snapshot. Avoid applying automatic migrations to deployed databases before baseline comparison and backups.
+
+
+## Material groups EF Core conversion (2026-10-08)
+
+- [x] Added `MaterialGroupEntity` and `MaterialGroupItemEntity` with their EF Core configurations and cascade relationship.
+- [x] `MaterialGroupRepository` uses LINQ for groups and items queries, normalized-name checks, create, and `ExecuteDeleteAsync` for deletes.
+- [x] Retained raw Npgsql for `MaterialExistsAsync` because it queries a strictly allowlisted PostgreSQL view identifier.
+- [x] Added three PostgreSQL integration scenarios for CRUD, date-independent material mappings, uniqueness, cascade deletes, and view allowlisting.
+- [x] GitHub Actions confirms .NET 10 build, unit tests, PostgreSQL tests for commit `bb30848`.
+
+**Important:** Existing SQL expression indexes and constraints remain database-managed; do not assume that EF Core model configurations are an exact schema migration baseline. Before generating/applying migrations, compare the actual database schema against the EF snapshot.
