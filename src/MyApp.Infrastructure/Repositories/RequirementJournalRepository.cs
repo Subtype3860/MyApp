@@ -61,6 +61,11 @@ public sealed class RequirementJournalRepository(
             },
             cancellationToken);
 
+        // EF does not model a navigation/foreign key between these records.
+        // Persist the parent first so children cannot be inserted before it.
+        // Both SaveChanges calls remain inside the same transaction.
+        await db.SaveChangesAsync(cancellationToken);
+
         for (var index = 0; index < request.Items.Count; index++)
         {
             var item = request.Items[index];
