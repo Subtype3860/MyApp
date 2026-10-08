@@ -131,7 +131,7 @@ public sealed class VehicleDefectPostgreSqlTests
         var entry = Xunit.Assert.Single(defects);
         Xunit.Assert.Equal(defectId, entry.Id);
         Xunit.Assert.Equal("new", entry.Status);
-        Xunit.Assert.Equal("Alice Smith", entry.CreatedByName);
+        Xunit.Assert.Equal("Smith Alice", entry.CreatedByName);
         Xunit.Assert.Equal("leak.jpg",
             Xunit.Assert.Single(entry.Photos).FileName);
         Xunit.Assert.Equal("inspection.mp4",
