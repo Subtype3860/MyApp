@@ -186,15 +186,15 @@ function closeMedia() {
 .repair-history__loading,
 .repair-history__message {
   padding: 1.25rem;
-  border: 1px solid #e1e5eb;
+  border: 1px solid var(--border);
   border-radius: 1rem;
-  background: #fff;
+  background: var(--bg-surface);
 }
 
 .repair-history__search label {
   display: block;
   margin-bottom: 0.55rem;
-  color: #273244;
+  color: var(--text-main);
   font-weight: 650;
 }
 
@@ -207,7 +207,7 @@ function closeMedia() {
   min-width: 0;
   flex: 1;
   padding: 0.75rem 0.9rem;
-  border: 1px solid #cbd3df;
+  border: 1px solid var(--border);
   border-radius: 0.65rem;
   font: inherit;
 }
@@ -216,8 +216,8 @@ function closeMedia() {
   padding: 0.7rem 1.25rem;
   border: 0;
   border-radius: 0.65rem;
-  background: #0878e5;
-  color: #fff;
+  background: var(--accent);
+  color: var(--bg-surface);
   font: inherit;
   font-weight: 650;
   cursor: pointer;
@@ -230,13 +230,13 @@ function closeMedia() {
 
 .repair-history__hint {
   margin: 0.5rem 0 0;
-  color: #687386;
+  color: var(--text-secondary);
   font-size: 0.9rem;
 }
 
 .repair-history__hint--warning,
 .repair-history__message {
-  color: #b42318;
+  color: var(--system-red);
 }
 
 .repair-history__loading {
@@ -245,14 +245,14 @@ function closeMedia() {
   justify-content: center;
   gap: 0.75rem;
   min-height: 7rem;
-  color: #586477;
+  color: var(--text-secondary);
 }
 
 .repair-history__spinner {
   width: 1.35rem;
   height: 1.35rem;
-  border: 3px solid #d5e7fb;
-  border-top-color: #0878e5;
+  border: 3px solid var(--border);
+  border-top-color: var(--accent);
   border-radius: 50%;
   animation: repair-history-spin 0.75s linear infinite;
 }

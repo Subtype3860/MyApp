@@ -29,15 +29,15 @@ const emit = defineEmits(['view-media'])
   display: grid;
   gap: 1rem;
   padding: clamp(1rem, 3vw, 1.5rem);
-  border: 1px solid #e1e5eb;
+  border: 1px solid var(--border);
   border-radius: 1rem;
-  background: #fff;
+  background: var(--bg-surface);
   box-shadow: 0 8px 24px rgb(30 48 76 / 5%);
 }
 
 .vehicle-card__summary {
   margin: 0;
-  color: #202a38;
+  color: var(--text-main);
   font-size: clamp(1rem, 2.5vw, 1.2rem);
   font-weight: 750;
   overflow-wrap: anywhere;

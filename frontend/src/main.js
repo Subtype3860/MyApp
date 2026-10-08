@@ -1,5 +1,6 @@
 import { createApp } from 'vue'
 import './style.css'
+import './styles/digital.css'
 import App from './App.vue'
 
 const TOKEN_KEY = 'myapp.authToken'

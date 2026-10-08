@@ -33,7 +33,7 @@ const emit = defineEmits(['view-media'])
 
 .repair-list h3 {
   margin: 0;
-  color: #202a38;
+  color: var(--text-main);
 }
 
 .repair-list__items {
@@ -45,7 +45,7 @@ const emit = defineEmits(['view-media'])
   margin: 0;
   padding: 1rem;
   border-radius: 0.7rem;
-  background: #f6f8fb;
-  color: #687386;
+  background: var(--bg-main);
+  color: var(--text-secondary);
 }
 </style>

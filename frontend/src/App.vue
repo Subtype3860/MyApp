@@ -1,5 +1,6 @@
 <script setup>
-import { onBeforeUnmount, ref } from 'vue'
+import { nextTick, onBeforeUnmount, ref } from 'vue'
+import BrandIdentity from './components/BrandIdentity.vue'
 import AuthLogin from './components/AuthLogin.vue'
 import HomeView from './components/HomeView.vue'
 import MaintenanceView from './components/MaintenanceView.vue'
@@ -27,9 +28,13 @@ const legacyPermissionMap = {
 const parsePermissions = (value) => {
   try {
     const permissions = JSON.parse(value || '[]')
-    return [...new Set(
-      permissions.map((permission) => legacyPermissionMap[permission] || permission),
-    )]
+    return [
+      ...new Set(
+        permissions.map(
+          (permission) => legacyPermissionMap[permission] || permission,
+        ),
+      ),
+    ]
   } catch {
     return []
   }
@@ -41,7 +46,18 @@ if (storedToken && !storedRole) {
 const token = ref(storedRole ? storedToken : null)
 const role = ref(storedRole)
 const permissions = ref(parsePermissions(storedPermissions))
-const isNavigationCollapsed = ref(true)
+const isNavigationCollapsed = ref(false)
+const mobileMenuOpen = ref(false)
+const mobileMenuButton = ref(null)
+function closeMobileMenu() {
+  const wasOpen = mobileMenuOpen.value
+  mobileMenuOpen.value = false
+  if (wasOpen) nextTick(() => mobileMenuButton.value?.focus())
+}
+function navigate(page) {
+  currentPage.value = page
+  closeMobileMenu()
+}
 const currentPage = ref('home')
 const currentTable = ref('v_full_ost')
 const currentSettings = ref('users')
@@ -54,7 +70,10 @@ const sessionExpiredMessage = ref('')
 function handleAuthenticated(authData) {
   localStorage.setItem(TOKEN_KEY, authData.token)
   localStorage.setItem(ROLE_KEY, authData.role)
-  localStorage.setItem(PERMISSIONS_KEY, JSON.stringify(authData.permissions || []))
+  localStorage.setItem(
+    PERMISSIONS_KEY,
+    JSON.stringify(authData.permissions || []),
+  )
   token.value = authData.token
   role.value = authData.role
   permissions.value = authData.permissions || []
@@ -62,6 +81,7 @@ function handleAuthenticated(authData) {
 }
 
 function handleLogout() {
+  closeMobileMenu()
   localStorage.removeItem(TOKEN_KEY)
   localStorage.removeItem(ROLE_KEY)
   localStorage.removeItem(PERMISSIONS_KEY)
@@ -76,7 +96,8 @@ function handleLogout() {
 
 function handleSessionExpired(event) {
   sessionExpiredMessage.value =
-    event.detail?.message || 'Срок действия сессии истёк. Требуется повторная авторизация.'
+    event.detail?.message ||
+    'Срок действия сессии истёк. Требуется повторная авторизация.'
   handleLogout()
 }
 
@@ -86,6 +107,7 @@ onBeforeUnmount(() => {
 })
 
 function openTable(tableName) {
+  closeMobileMenu()
   if (
     tableName !== currentTable.value &&
     (tableName === 'v_full_ost' || tableName === 'v_meh_ost')
@@ -97,16 +119,19 @@ function openTable(tableName) {
 }
 
 function openSettings(section) {
+  closeMobileMenu()
   currentSettings.value = section
   currentPage.value = 'settings'
 }
 
 function openVehicleSection(section) {
+  closeMobileMenu()
   currentVehicleSection.value = section
   currentPage.value = 'vehicles'
 }
 
 function openSelectedComponents() {
+  closeMobileMenu()
   currentPage.value = 'selected-components'
 }
 
@@ -147,8 +172,32 @@ function updateSelectedComponentRows(rows) {
   />
 
   <div v-else class="app-shell">
+    <header class="mobile-topbar" :inert="mobileMenuOpen">
+      <BrandIdentity />
+      <button
+        ref="mobileMenuButton"
+        type="button"
+        class="icon-button"
+        aria-label="Открыть меню"
+        aria-controls="main-navigation"
+        :aria-expanded="mobileMenuOpen"
+        @click="mobileMenuOpen = true"
+      >
+        <span class="hamburger" aria-hidden="true"
+          ><span></span><span></span><span></span
+        ></span>
+      </button>
+    </header>
+    <div
+      v-if="mobileMenuOpen"
+      class="navigation-backdrop"
+      aria-hidden="true"
+      @click="closeMobileMenu"
+    ></div>
     <NavigationSidebar
       :collapsed="isNavigationCollapsed"
+      :mobile-open="mobileMenuOpen"
+      @close="closeMobileMenu"
       :active-page="currentPage"
       :active-table="currentTable"
       :active-settings="currentSettings"
@@ -158,71 +207,80 @@ function updateSelectedComponentRows(rows) {
       :selected-components-count="selectedComponentRows.length"
       :token="token"
       :profile-version="profileVersion"
-      @toggle="isNavigationCollapsed = true"
-      @navigate="currentPage = $event"
+      @toggle="isNavigationCollapsed = !isNavigationCollapsed"
+      @navigate="navigate"
       @navigate-table="openTable"
       @navigate-selected-components="openSelectedComponents"
       @navigate-settings="openSettings"
       @navigate-vehicle="openVehicleSection"
       @logout="handleLogout"
     />
-    <HomeView
-      v-if="currentPage === 'home'"
-      :navigation-collapsed="isNavigationCollapsed"
-      :token="token"
-    />
-    <TablesView
-      v-else-if="currentPage === 'tables'"
-      :navigation-collapsed="isNavigationCollapsed"
-      :selected-table-id="currentTable"
-      :selected-component-rows="selectedComponentRows"
-      :selected-responsible-employee="selectedResponsibleEmployee"
-      :token="token"
-      @select-table="currentTable = $event"
-      @show-selected-components="openSelectedComponents"
-      @update:selected-component-rows="updateSelectedComponentRows"
-      @update:selected-responsible-employee="updateResponsibleEmployee"
-    />
-    <SelectedComponentsView
-      v-else-if="currentPage === 'selected-components'"
-      :navigation-collapsed="isNavigationCollapsed"
-      :rows="selectedComponentRows"
-      :responsible-employee="selectedResponsibleEmployee"
-      :token="token"
-      @back="openTable(currentTable)"
-      @clear="selectedComponentRows = []"
-      @update:rows="updateSelectedComponentRows"
-    />
-    <RequirementsJournalView
-      v-else-if="currentPage === 'requirements'"
-      :navigation-collapsed="isNavigationCollapsed"
-      :token="token"
-    />
-    <MaintenanceView
-      v-else-if="currentPage === 'maintenance'"
-      :navigation-collapsed="isNavigationCollapsed"
-      :selected-count="selectedComponentRows.length"
-      :token="token"
-      @apply-template="applyMaintenanceTemplate"
-      @show-selected="openSelectedComponents"
-    />
-    <VehicleJournalView
-      v-else-if="currentPage === 'vehicles'"
-      :navigation-collapsed="isNavigationCollapsed"
-      :section="currentVehicleSection"
-      :token="token"
-    />
-    <SettingsView
-      v-else-if="currentPage === 'settings' && String(role).toLowerCase() === 'administrator'"
-      :navigation-collapsed="isNavigationCollapsed"
-      :selected-section="currentSettings"
-      :token="token"
-    />
-    <ProfileView
-      v-else-if="currentPage === 'profile'"
-      :navigation-collapsed="isNavigationCollapsed"
-      :token="token"
-      @profile-updated="profileVersion++"
-    />
+    <div class="page-content" :inert="mobileMenuOpen">
+      <HomeView
+        v-if="currentPage === 'home'"
+        :permissions="permissions"
+        :is-admin="String(role).toLowerCase() === 'administrator'"
+        @navigate="navigate"
+        @navigate-vehicle="openVehicleSection"
+        :navigation-collapsed="isNavigationCollapsed"
+        :token="token"
+      />
+      <TablesView
+        v-else-if="currentPage === 'tables'"
+        :navigation-collapsed="isNavigationCollapsed"
+        :selected-table-id="currentTable"
+        :selected-component-rows="selectedComponentRows"
+        :selected-responsible-employee="selectedResponsibleEmployee"
+        :token="token"
+        @select-table="currentTable = $event"
+        @show-selected-components="openSelectedComponents"
+        @update:selected-component-rows="updateSelectedComponentRows"
+        @update:selected-responsible-employee="updateResponsibleEmployee"
+      />
+      <SelectedComponentsView
+        v-else-if="currentPage === 'selected-components'"
+        :navigation-collapsed="isNavigationCollapsed"
+        :rows="selectedComponentRows"
+        :responsible-employee="selectedResponsibleEmployee"
+        :token="token"
+        @back="openTable(currentTable)"
+        @clear="selectedComponentRows = []"
+        @update:rows="updateSelectedComponentRows"
+      />
+      <RequirementsJournalView
+        v-else-if="currentPage === 'requirements'"
+        :navigation-collapsed="isNavigationCollapsed"
+        :token="token"
+      />
+      <MaintenanceView
+        v-else-if="currentPage === 'maintenance'"
+        :navigation-collapsed="isNavigationCollapsed"
+        :selected-count="selectedComponentRows.length"
+        :token="token"
+        @apply-template="applyMaintenanceTemplate"
+        @show-selected="openSelectedComponents"
+      />
+      <VehicleJournalView
+        v-else-if="currentPage === 'vehicles'"
+        :navigation-collapsed="isNavigationCollapsed"
+        :section="currentVehicleSection"
+        :token="token"
+      />
+      <SettingsView
+        v-else-if="
+          currentPage === 'settings' &&
+          String(role).toLowerCase() === 'administrator'
+        "
+        :navigation-collapsed="isNavigationCollapsed"
+        :selected-section="currentSettings"
+        :token="token"
+      />
+      <ProfileView
+        v-else-if="currentPage === 'profile'"
+        :navigation-collapsed="isNavigationCollapsed"
+        :token="token"
+        @profile-updated="profileVersion++"
+      />
+    </div>
   </div>
 </template>

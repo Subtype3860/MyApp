@@ -1,6 +1,6 @@
 <script setup>
 import { ref } from 'vue'
-import brandLogo from '../assets/brand-logo.png'
+import BrandIdentity from './BrandIdentity.vue'
 
 const props = defineProps({
   sessionMessage: {
@@ -57,9 +57,20 @@ async function submitLogin() {
 
 <template>
   <main class="auth-page">
+    <section class="auth-intro" aria-labelledby="auth-heading">
+      <BrandIdentity />
+      <p class="eyebrow">РАБОЧЕЕ ПРОСТРАНСТВО МЕХАНИКА</p>
+      <h2 id="auth-heading">Техника<br /><span>под контролем</span></h2>
+      <p>
+        Обслуживание, ремонт и учёт техники<br />в единой системе предприятия.
+      </p>
+      <div class="auth-intro__tags">
+        <span>Парк техники</span><span>ТО и ремонт</span><span>Материалы</span>
+      </div>
+    </section>
     <section class="auth-card macos-glass-panel" aria-labelledby="login-title">
-      <img class="auth-brand-logo" :src="brandLogo" alt="ООО «Даль-Восток Сервис»" />
-      <p class="eyebrow">ARM МЕХАНИК ООО "ДВС"</p>
+      <BrandIdentity />
+      <p class="eyebrow">ВХОД В СИСТЕМУ</p>
       <h1 id="login-title">Добро пожаловать</h1>
       <p class="auth-subtitle">Войдите в аккаунт, чтобы продолжить работу.</p>
 
@@ -86,7 +97,9 @@ async function submitLogin() {
           required
         />
 
-        <p v-if="errorMessage" class="form-error" role="alert">{{ errorMessage }}</p>
+        <p v-if="errorMessage" class="form-error" role="alert">
+          {{ errorMessage }}
+        </p>
         <p v-if="props.sessionMessage" class="form-error" role="alert">
           {{ props.sessionMessage }}
         </p>

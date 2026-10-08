@@ -62,9 +62,9 @@ const emit = defineEmits(['view-media'])
   display: grid;
   gap: 0.75rem;
   padding: 1rem;
-  border: 1px solid #e5e9ef;
+  border: 1px solid var(--border);
   border-radius: 0.85rem;
-  background: #f8fafc;
+  background: var(--bg-main);
 }
 
 .repair-request__header {
@@ -73,18 +73,18 @@ const emit = defineEmits(['view-media'])
 }
 
 .repair-request time {
-  color: #687386;
+  color: var(--text-secondary);
   font-size: 0.9rem;
 }
 
 .repair-request h4 {
   margin: 0.2rem 0 0;
-  color: #202a38;
+  color: var(--text-main);
 }
 
 .repair-request__description {
   margin: 0;
-  color: #344054;
+  color: var(--text-main);
 }
 
 .repair-request__media {
@@ -99,7 +99,7 @@ const emit = defineEmits(['view-media'])
 
 .repair-request__details summary {
   width: fit-content;
-  color: #1768b2;
+  color: var(--accent);
   font-weight: 650;
   cursor: pointer;
 }
@@ -112,22 +112,22 @@ const emit = defineEmits(['view-media'])
   display: grid;
   gap: 0.55rem;
   padding-left: 0.85rem;
-  border-left: 2px solid #d8e8f8;
+  border-left: 2px solid var(--border);
 }
 
 .repair-request__media button {
   padding: 0.55rem 0.75rem;
-  border: 1px solid #c9dff5;
+  border: 1px solid var(--border);
   border-radius: 0.6rem;
-  background: #f1f7fd;
-  color: #1768b2;
+  background: var(--bg-surface);
+  color: var(--accent);
   font: inherit;
   cursor: pointer;
 }
 
 .repair-request__empty {
   margin: 0;
-  color: #687386;
+  color: var(--text-secondary);
   font-size: 0.9rem;
 }
 </style>
