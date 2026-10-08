@@ -1,3 +1,4 @@
+using Microsoft.EntityFrameworkCore;
 using MyApp.Application.DTO;
 using MyApp.Infrastructure.Db;
 using MyApp.Infrastructure.Repositories;
@@ -66,13 +67,14 @@ public sealed class VehiclePurchasePostgreSqlTests
         await database.ExecuteAsync(
             "INSERT INTO app_users (id) VALUES (@id)", ("id", userId));
 
-        var error = await Xunit.Assert.ThrowsAsync<PostgresException>(
+        var error = await Xunit.Assert.ThrowsAsync<DbUpdateException>(
             () => repository.AddPurchaseAsync(
                 vehicleId,
                 new VehiclePurchaseRequest(
                     new DateOnly(2026, 10, 8), "REQ-invalid",
                     "Pump", 0m, "new", ""),
                 userId, CancellationToken.None));
-        Xunit.Assert.Equal(PostgresErrorCodes.CheckViolation, error.SqlState);
+        var postgresError = Xunit.Assert.IsType<PostgresException>(error.InnerException);
+        Xunit.Assert.Equal(PostgresErrorCodes.CheckViolation, postgresError.SqlState);
     }
 }
