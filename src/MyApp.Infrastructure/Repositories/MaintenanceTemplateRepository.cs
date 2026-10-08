@@ -9,6 +9,10 @@ namespace MyApp.Infrastructure.Repositories;
 public sealed class MaintenanceTemplateRepository(
     AppDbContext db, NpgsqlDataSource dataSource) : IMaintenanceTemplateRepository
 {
+    // pg_advisory_xact_lock serializes MAX(sort_order)+1 for the same scope.
+    // The lock is held through the INSERT transaction, not just the SELECT.
+    private const int SortLockNamespace = 4386200;
+
     public async Task<IReadOnlyList<MaintenanceEquipmentResponse>> GetAllAsync(
         CancellationToken cancellationToken)
     {
@@ -152,6 +156,7 @@ public Task<bool> EquipmentExistsAsync(
             VALUES (@id, @name,
                 COALESCE((SELECT MAX(sort_order) + 1 FROM maintenance_equipment), 0))
             """,
+            "maintenance/equipment",
             cancellationToken,
             ("name", name));
 
@@ -170,6 +175,7 @@ public Task<bool> EquipmentExistsAsync(
                     FROM maintenance_intervals
                     WHERE equipment_id = @equipmentId), 0))
             """,
+            "maintenance/interval/" + equipmentId.ToString("N"),
             cancellationToken,
             ("equipmentId", equipmentId),
             ("name", name));
@@ -190,6 +196,7 @@ public Task<bool> EquipmentExistsAsync(
                     FROM maintenance_interval_items
                     WHERE interval_id = @intervalId), 0))
             """,
+            "maintenance/item/" + intervalId.ToString("N"),
             cancellationToken,
             ("intervalId", intervalId),
             ("materialName", materialName),
@@ -269,14 +276,34 @@ public Task<bool> EquipmentExistsAsync(
 
     private async Task<Guid> InsertAsync(
         string sql,
+        string lockKey,
         CancellationToken cancellationToken,
         params (string Name, object? Value)[] parameters)
     {
         var id = Guid.NewGuid();
-        await using var command = dataSource.CreateCommand(sql);
-        command.Parameters.AddWithValue("id", id);
-        AddParameters(command, parameters);
-        await command.ExecuteNonQueryAsync(cancellationToken);
+        await using var connection = await dataSource.OpenConnectionAsync(
+            cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(
+            cancellationToken);
+        await using (var lockCommand = connection.CreateCommand())
+        {
+            lockCommand.Transaction = transaction;
+            lockCommand.CommandText =
+                "SELECT pg_advisory_xact_lock(@lockNamespace, hashtext(@lockKey))";
+            lockCommand.Parameters.AddWithValue("lockNamespace", SortLockNamespace);
+            lockCommand.Parameters.AddWithValue("lockKey", lockKey);
+            await lockCommand.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        await using (var command = connection.CreateCommand())
+        {
+            command.Transaction = transaction;
+            command.CommandText = sql;
+            command.Parameters.AddWithValue("id", id);
+            AddParameters(command, parameters);
+            await command.ExecuteNonQueryAsync(cancellationToken);
+        }
+        await transaction.CommitAsync(cancellationToken);
         return id;
     }
 

@@ -155,4 +155,51 @@ public sealed class MaintenanceTemplatePostgreSqlTests
         Xunit.Assert.False(await repository.MaterialExistsAsync(
             "Unknown material", CancellationToken.None));
     }
+    [Xunit.Fact]
+    [Xunit.Trait("Category", "Integration")]
+    public async Task Parallel_template_creates_assign_unique_sort_order_within_scope()
+    {
+        await using var db = await PostgreSqlIntegrationDatabase.CreateAsync();
+        await using var context = db.CreateDbContext();
+        var repository = CreateRepository(db, context);
+        var equipmentIds = await Task.WhenAll(
+            Enumerable.Range(0, 10).Select(index =>
+                repository.CreateEquipmentAsync(
+                    $"Equipment-{index}", CancellationToken.None)));
+        await using (var check = db.DataSource.CreateCommand(
+            "SELECT ARRAY_AGG(sort_order ORDER BY sort_order) FROM maintenance_equipment"))
+        {
+            var values = (int[])(await check.ExecuteScalarAsync())!;
+            Xunit.Assert.Equal(Enumerable.Range(0, 10), values);
+        }
+
+        var equipmentId = equipmentIds[0];
+        var intervalIds = await Task.WhenAll(
+            Enumerable.Range(0, 12).Select(index =>
+                repository.CreateIntervalAsync(
+                    equipmentId, $"TO-{index}", CancellationToken.None)));
+        await using (var check = db.DataSource.CreateCommand(
+            "SELECT ARRAY_AGG(sort_order ORDER BY sort_order) " +
+            "FROM maintenance_intervals WHERE equipment_id = @equipment"))
+        {
+            check.Parameters.AddWithValue("equipment", equipmentId);
+            var values = (int[])(await check.ExecuteScalarAsync())!;
+            Xunit.Assert.Equal(Enumerable.Range(0, 12), values);
+        }
+
+        var intervalId = intervalIds[0];
+        await Task.WhenAll(
+            Enumerable.Range(0, 12).Select(index =>
+                repository.AddItemAsync(
+                    intervalId, $"Material-{index}", 1m, CancellationToken.None)));
+        await using (var check = db.DataSource.CreateCommand(
+            "SELECT ARRAY_AGG(sort_order ORDER BY sort_order) " +
+            "FROM maintenance_interval_items WHERE interval_id = @interval"))
+        {
+            check.Parameters.AddWithValue("interval", intervalId);
+            var values = (int[])(await check.ExecuteScalarAsync())!;
+            Xunit.Assert.Equal(Enumerable.Range(0, 12), values);
+        }
+    }
+
 }
