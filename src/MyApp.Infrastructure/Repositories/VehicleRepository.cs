@@ -136,56 +136,6 @@ public sealed partial class VehicleRepository(NpgsqlDataSource dataSource, IVehi
             : null;
     }
 
-    private NpgsqlCommand CreateRangeCommand(
-        string sql,
-        Guid vehicleId,
-        DateOnly? from,
-        DateOnly? to)
-    {
-        var command = dataSource.CreateCommand(sql);
-        command.Parameters.AddWithValue("vehicleId", vehicleId);
-        command.Parameters.AddWithValue(
-            "from",
-            NpgsqlTypes.NpgsqlDbType.Date,
-            from is null ? DBNull.Value : from.Value);
-        command.Parameters.AddWithValue(
-            "to",
-            NpgsqlTypes.NpgsqlDbType.Date,
-            to is null ? DBNull.Value : to.Value);
-        return command;
-    }
-
-    private async Task<Guid> InsertAsync(
-        string sql,
-        Guid vehicleId,
-        Guid createdBy,
-        CancellationToken cancellationToken,
-        params (string Name, object? Value)[] parameters)
-    {
-        var id = Guid.NewGuid();
-        await using var command = dataSource.CreateCommand(sql);
-        command.Parameters.AddWithValue("id", id);
-        command.Parameters.AddWithValue("vehicleId", vehicleId);
-        command.Parameters.AddWithValue("createdBy", createdBy);
-        foreach (var (name, value) in parameters)
-        {
-            if (value is null)
-            {
-                command.Parameters.Add(
-                    name,
-                    name == "resolvedDate"
-                        ? NpgsqlTypes.NpgsqlDbType.Date
-                        : NpgsqlTypes.NpgsqlDbType.Numeric).Value = DBNull.Value;
-            }
-            else
-            {
-                command.Parameters.AddWithValue(name, value);
-            }
-        }
-        await command.ExecuteNonQueryAsync(cancellationToken);
-        return id;
-    }
-
     private static VehicleResponse ReadVehicle(NpgsqlDataReader reader) =>
         new(
             reader.GetGuid(0),

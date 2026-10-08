@@ -385,29 +385,6 @@ public sealed partial class VehicleRepository
         }
     }
 
-    private static async Task<Dictionary<Guid, List<VehicleMediaResponse>>>
-        ReadMediaByParentAsync(
-            NpgsqlDataReader reader,
-            CancellationToken cancellationToken)
-    {
-        var result = new Dictionary<Guid, List<VehicleMediaResponse>>();
-        while (await reader.ReadAsync(cancellationToken))
-        {
-            var parentId = reader.GetGuid(0);
-            if (!result.TryGetValue(parentId, out var media))
-            {
-                media = [];
-                result[parentId] = media;
-            }
-            media.Add(new(
-                reader.GetGuid(1),
-                reader.GetString(2),
-                reader.GetString(3),
-                reader.GetInt64(4)));
-        }
-        return result;
-    }
-
     private static string GetSafeExtension(
         string fileName,
         string contentType)
