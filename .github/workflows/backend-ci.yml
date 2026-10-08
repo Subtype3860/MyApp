@@ -16,6 +16,20 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: myapp_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d myapp_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -32,6 +46,9 @@ jobs:
         run: dotnet build src/MyApp.API.sln --configuration Release --no-restore
 
       - name: Run unit tests
-        run: dotnet test src/MyApp.API.sln --configuration Release --no-build --no-restore
+        run: dotnet test src/MyApp.API.sln --configuration Release --no-build --no-restore --filter "Category!=Integration"
 
-      # PostgreSQL integration tests will be added with isolated test data.
+      - name: Run PostgreSQL integration tests
+        env:
+          MYAPP_TEST_POSTGRES: Host=localhost;Port=5432;Database=myapp_test;Username=postgres;Password=postgres
+        run: dotnet test src/MyApp.Infrastructure.Tests/MyApp.Infrastructure.Tests.csproj --configuration Release --no-build --no-restore --filter "Category=Integration"
