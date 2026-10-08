@@ -1,4 +1,5 @@
 using MyApp.Application.DTO;
+using MyApp.Infrastructure.Db;
 using MyApp.Infrastructure.Repositories;
 using Npgsql;
 
@@ -11,7 +12,8 @@ public sealed class VehiclePurchasePostgreSqlTests
     public async Task Purchase_roundtrip_is_scoped_by_vehicle_and_date()
     {
         await using var database = await PostgreSqlIntegrationDatabase.CreateAsync();
-        var repository = new VehiclePurchaseRepository(database.DataSource);
+        await using var context = database.CreateDbContext();
+        var repository = new VehiclePurchaseRepository(context);
         var vehicleId = Guid.NewGuid();
         var otherVehicleId = Guid.NewGuid();
         var userId = Guid.NewGuid();
@@ -55,7 +57,8 @@ public sealed class VehiclePurchasePostgreSqlTests
     public async Task Purchase_cannot_bypass_positive_quantity_constraint()
     {
         await using var database = await PostgreSqlIntegrationDatabase.CreateAsync();
-        var repository = new VehiclePurchaseRepository(database.DataSource);
+        await using var context = database.CreateDbContext();
+        var repository = new VehiclePurchaseRepository(context);
         var vehicleId = Guid.NewGuid();
         var userId = Guid.NewGuid();
         await database.ExecuteAsync(

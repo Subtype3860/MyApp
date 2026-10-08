@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata;
 using MyApp.Domain.Entities;
 using MyApp.Infrastructure.Db;
+using MyApp.Infrastructure.Db.Entities;
 
 namespace MyApp.Infrastructure.Tests;
 
@@ -70,4 +71,23 @@ public sealed class AppDbContextMappingTests
         Xunit.Assert.Equal("gen_random_uuid()",
             profession.FindProperty(nameof(Profession.Id))?.GetDefaultValueSql());
     }
+    [Xunit.Fact]
+    public void Vehicle_purchases_keep_existing_columns_and_generated_timestamp()
+    {
+        using var context = CreateContext();
+        var purchase = context.Model.FindEntityType(typeof(VehiclePurchaseEntity));
+        Xunit.Assert.NotNull(purchase);
+        Xunit.Assert.Equal("vehicle_purchase_requests", purchase.GetTableName());
+
+        var table = StoreObjectIdentifier.Table("vehicle_purchase_requests", null);
+        Xunit.Assert.Equal("vehicle_id",
+            purchase.FindProperty(nameof(VehiclePurchaseEntity.VehicleId))?.GetColumnName(table));
+        Xunit.Assert.Equal("created_by",
+            purchase.FindProperty(nameof(VehiclePurchaseEntity.CreatedBy))?.GetColumnName(table));
+        Xunit.Assert.Equal("quantity",
+            purchase.FindProperty(nameof(VehiclePurchaseEntity.Quantity))?.GetColumnName(table));
+        Xunit.Assert.Equal("NOW()",
+            purchase.FindProperty(nameof(VehiclePurchaseEntity.CreatedAt))?.GetDefaultValueSql());
+    }
+
 }

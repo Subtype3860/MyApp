@@ -1,3 +1,5 @@
+using Microsoft.EntityFrameworkCore;
+using MyApp.Infrastructure.Db;
 using Npgsql;
 
 namespace MyApp.Infrastructure.Tests;
@@ -17,6 +19,17 @@ internal sealed class PostgreSqlIntegrationDatabase : IAsyncDisposable
     }
 
     public NpgsqlDataSource DataSource { get; }
+
+    public AppDbContext CreateDbContext()
+    {
+        var options = new DbContextOptionsBuilder<AppDbContext>()
+            .UseNpgsql(new NpgsqlConnectionStringBuilder(connectionString)
+            {
+                SearchPath = schema
+            }.ConnectionString)
+            .Options;
+        return new AppDbContext(options);
+    }
 
     public static async Task<PostgreSqlIntegrationDatabase> CreateAsync()
     {

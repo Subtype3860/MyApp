@@ -1,15 +1,17 @@
 using MyApp.Application.DTO;
 using MyApp.Infrastructure.Repositories;
+using MyApp.Infrastructure.Db;
 
 namespace MyApp.Infrastructure.Tests;
 
 public sealed class VehicleDefectPostgreSqlTests
 {
-    private static VehicleRepository CreateRepository(PostgreSqlIntegrationDatabase database) =>
+    private static VehicleRepository CreateRepository(
+        PostgreSqlIntegrationDatabase database, AppDbContext context) =>
         new(
             database.DataSource,
             new VehiclePartsRepository(database.DataSource),
-            new VehiclePurchaseRepository(database.DataSource));
+            new VehiclePurchaseRepository(context));
 
     private static VehicleWorkRequest WorkRequest(Guid defectId) =>
         new(defectId, "failed bearing", "replace bearing", "repaired", null);
@@ -19,7 +21,8 @@ public sealed class VehicleDefectPostgreSqlTests
     public async Task Only_assignee_can_complete_defect_and_completion_is_idempotent()
     {
         await using var database = await PostgreSqlIntegrationDatabase.CreateAsync();
-        var repo = CreateRepository(database);
+        await using var context = database.CreateDbContext();
+        var repo = CreateRepository(database, context);
         var vehicleId = Guid.NewGuid();
         var creatorId = Guid.NewGuid();
         var mechanicId = Guid.NewGuid();
@@ -58,7 +61,8 @@ public sealed class VehicleDefectPostgreSqlTests
     public async Task Concurrent_completion_only_creates_one_completed_work()
     {
         await using var database = await PostgreSqlIntegrationDatabase.CreateAsync();
-        var repo = CreateRepository(database);
+        await using var context = database.CreateDbContext();
+        var repo = CreateRepository(database, context);
         var vehicleId = Guid.NewGuid();
         var userId = Guid.NewGuid();
         await database.ExecuteAsync(

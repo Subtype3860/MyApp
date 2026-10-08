@@ -1,4 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.EntityFrameworkCore;
+using MyApp.Infrastructure.Db;
 using MyApp.Application.Abstractions;
 using MyApp.Infrastructure.Repositories;
 using Npgsql;
@@ -14,6 +16,8 @@ public sealed class VehiclePurchaseRepositoryTests
         using var dataSource = NpgsqlDataSource.Create(
             "Host=localhost;Database=model_tests;Username=tests;Password=unused");
         services.AddSingleton(dataSource);
+        services.AddDbContext<AppDbContext>(options => options.UseNpgsql(
+            "Host=localhost;Database=model_tests;Username=tests;Password=unused"));
         services.AddScoped<IVehiclePartsRepository, VehiclePartsRepository>();
         services.AddScoped<IVehiclePurchaseRepository, VehiclePurchaseRepository>();
         services.AddScoped<IVehicleRepository, VehicleRepository>();

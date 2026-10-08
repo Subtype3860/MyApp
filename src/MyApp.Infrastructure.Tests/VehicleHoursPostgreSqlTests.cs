@@ -1,23 +1,26 @@
 using MyApp.Application.DTO;
 using MyApp.Infrastructure.Repositories;
+using MyApp.Infrastructure.Db;
 using Npgsql;
 
 namespace MyApp.Infrastructure.Tests;
 
 public sealed class VehicleHoursPostgreSqlTests
 {
-    private static VehicleRepository CreateRepository(PostgreSqlIntegrationDatabase database) =>
+    private static VehicleRepository CreateRepository(
+        PostgreSqlIntegrationDatabase database, AppDbContext context) =>
         new(
             database.DataSource,
             new VehiclePartsRepository(database.DataSource),
-            new VehiclePurchaseRepository(database.DataSource));
+            new VehiclePurchaseRepository(context));
 
     [Xunit.Fact]
     [Xunit.Trait("Category", "Integration")]
     public async Task Blank_readings_carry_forward_and_reimport_updates_existing_date()
     {
         await using var database = await PostgreSqlIntegrationDatabase.CreateAsync();
-        var repository = CreateRepository(database);
+        await using var context = database.CreateDbContext();
+        var repository = CreateRepository(database, context);
         var vehicleId = Guid.NewGuid();
         var userId = Guid.NewGuid();
 
@@ -69,7 +72,8 @@ public sealed class VehicleHoursPostgreSqlTests
     public async Task Import_is_atomic_when_any_vehicle_id_is_unknown()
     {
         await using var database = await PostgreSqlIntegrationDatabase.CreateAsync();
-        var repository = CreateRepository(database);
+        await using var context = database.CreateDbContext();
+        var repository = CreateRepository(database, context);
         var vehicleId = Guid.NewGuid();
         var userId = Guid.NewGuid();
         await database.ExecuteAsync(
