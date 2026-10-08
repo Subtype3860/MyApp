@@ -10,6 +10,8 @@ namespace MyApp.Infrastructure.Repositories;
 public sealed class MaintenanceTemplateRepository(
     AppDbContext db) : IMaintenanceTemplateRepository
 {
+    private const int SortLockNamespace = 4386200;
+
     public async Task<IReadOnlyList<MaintenanceEquipmentResponse>> GetAllAsync(
         CancellationToken cancellationToken)
     {
@@ -147,66 +149,85 @@ public sealed class MaintenanceTemplateRepository(
             cancellationToken);
     }
 
-    public async Task<Guid> CreateEquipmentAsync(
+    public Task<Guid> CreateEquipmentAsync(
         string name,
-        CancellationToken cancellationToken)
-    {
-        var sortOrder = await db.MaintenanceEquipment
-            .Select(equipment => (int?)equipment.SortOrder)
-            .MaxAsync(cancellationToken) ?? -1;
-        var equipment = new MaintenanceEquipmentRecord
-        {
-            Id = Guid.NewGuid(),
-            Name = name,
-            SortOrder = sortOrder + 1
-        };
-        await db.MaintenanceEquipment.AddAsync(equipment, cancellationToken);
-        await db.SaveChangesAsync(cancellationToken);
-        return equipment.Id;
-    }
+        CancellationToken cancellationToken) =>
+        CreateOrderedAsync<MaintenanceEquipmentRecord>(
+            db.MaintenanceEquipment.Select(equipment => (int?)equipment.SortOrder),
+            "equipment",
+            order => new MaintenanceEquipmentRecord
+            {
+                Id = Guid.NewGuid(),
+                Name = name,
+                SortOrder = order
+            },
+            equipment => equipment.Id,
+            cancellationToken);
 
-    public async Task<Guid> CreateIntervalAsync(
+    public Task<Guid> CreateIntervalAsync(
         Guid equipmentId,
         string name,
-        CancellationToken cancellationToken)
-    {
-        var sortOrder = await db.MaintenanceIntervals
-            .Where(interval => interval.EquipmentId == equipmentId)
-            .Select(interval => (int?)interval.SortOrder)
-            .MaxAsync(cancellationToken) ?? -1;
-        var interval = new MaintenanceIntervalRecord
-        {
-            Id = Guid.NewGuid(),
-            EquipmentId = equipmentId,
-            Name = name,
-            SortOrder = sortOrder + 1
-        };
-        await db.MaintenanceIntervals.AddAsync(interval, cancellationToken);
-        await db.SaveChangesAsync(cancellationToken);
-        return interval.Id;
-    }
+        CancellationToken cancellationToken) =>
+        CreateOrderedAsync<MaintenanceIntervalRecord>(
+            db.MaintenanceIntervals
+                .Where(interval => interval.EquipmentId == equipmentId)
+                .Select(interval => (int?)interval.SortOrder),
+            "interval/" + equipmentId.ToString("N"),
+            order => new MaintenanceIntervalRecord
+            {
+                Id = Guid.NewGuid(),
+                EquipmentId = equipmentId,
+                Name = name,
+                SortOrder = order
+            },
+            interval => interval.Id,
+            cancellationToken);
 
-    public async Task<Guid> AddItemAsync(
+    public Task<Guid> AddItemAsync(
         Guid intervalId,
         string materialName,
         decimal quantity,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken) =>
+        CreateOrderedAsync<MaintenanceIntervalItemRecord>(
+            db.MaintenanceIntervalItems
+                .Where(item => item.IntervalId == intervalId)
+                .Select(item => (int?)item.SortOrder),
+            "item/" + intervalId.ToString("N"),
+            order => new MaintenanceIntervalItemRecord
+            {
+                Id = Guid.NewGuid(),
+                IntervalId = intervalId,
+                MaterialName = materialName,
+                Quantity = quantity,
+                SortOrder = order
+            },
+            item => item.Id,
+            cancellationToken);
+
+    /// <summary>
+    /// Read MAX(sort_order) and INSERT under the same PostgreSQL transaction.
+    /// Only repository writers using this lock participate; out-of-band SQL
+    /// still needs the same policy or a database-level uniqueness constraint.
+    /// </summary>
+    private async Task<Guid> CreateOrderedAsync<TEntity>(
+        IQueryable<int?> sortOrders,
+        string lockScope,
+        Func<int, TEntity> buildEntity,
+        Func<TEntity, Guid> getId,
+        CancellationToken cancellationToken) where TEntity : class
     {
-        var sortOrder = await db.MaintenanceIntervalItems
-            .Where(item => item.IntervalId == intervalId)
-            .Select(item => (int?)item.SortOrder)
-            .MaxAsync(cancellationToken) ?? -1;
-        var item = new MaintenanceIntervalItemRecord
-        {
-            Id = Guid.NewGuid(),
-            IntervalId = intervalId,
-            MaterialName = materialName,
-            Quantity = quantity,
-            SortOrder = sortOrder + 1
-        };
-        await db.MaintenanceIntervalItems.AddAsync(item, cancellationToken);
+        await using var transaction = await db.Database.BeginTransactionAsync(
+            cancellationToken);
+        await db.Database.ExecuteSqlInterpolatedAsync(
+            $"SELECT pg_advisory_xact_lock({SortLockNamespace}, hashtext({lockScope}))",
+            cancellationToken);
+
+        var maxOrder = await sortOrders.MaxAsync(cancellationToken) ?? -1;
+        var entity = buildEntity(checked(maxOrder + 1));
+        await db.Set<TEntity>().AddAsync(entity, cancellationToken);
         await db.SaveChangesAsync(cancellationToken);
-        return item.Id;
+        await transaction.CommitAsync(cancellationToken);
+        return getId(entity);
     }
 
     public async Task<bool> RenameEquipmentAsync(
