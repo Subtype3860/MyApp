@@ -35,3 +35,27 @@ This document tracks the incremental refactor of MyApp. All implementation chang
 ## Definition of done
 
 No API contract regressions; no destructive migration without an explicit upgrade procedure; all new data access paths covered by tests; CI build green; SQL exceptions documented.
+
+
+## Verified implementation progress (2026-10-08)
+
+Completed without changing production database schema:
+
+- [x] Added .NET 10 CI workflow and a unit-test project. EF Core model mappings and DI composition are covered by isolated tests.
+- [x] Split the original vehicle repository into feature-oriented partial files, preserving SQL and transaction method bodies during the move.
+- [x] Split the original vehicle application service into feature-oriented partial files, preserving existing request validation and parsing implementations during the move.
+- [x] Extracted the existing EF Core mapping for `User` and `Profession` into individual `IEntityTypeConfiguration<T>` classes.
+- [x] Segregated vehicle repository contracts into eight narrowly scoped interfaces, retaining `IVehicleRepository` as a compatibility facade.
+- [x] Replaced direct parts request handling within the facade with `VehiclePartsRepository`, registered via a scoped `IVehiclePartsRepository` port.
+- [x] Replaced direct purchase handling within the facade with `VehiclePurchaseRepository`, registered via a scoped `IVehiclePurchaseRepository` port.
+
+Outstanding high-priority work:
+
+- [ ] PostgreSQL integration tests for journal, defect completion, imports and file-backed stock changes.
+- [ ] Introduce EF Core entity mappings for remaining standard tables and plan a verified baseline migration (without running schema changes on startup).
+- [ ] Move remaining feature-oriented partial implementations into independent repositories and focused application services.
+- [ ] Migrate ordinary CRUD to EF Core/LINQ while preserving specialized PostgreSQL SQL where justified.
+- [ ] Benchmark query plans and import roundtrips before claiming performance improvement.
+- [ ] Review media and CSV file operations for rollback/compensation behavior.
+
+The current extraction is an *incremental refactor*, not a finished clean architecture. Passing unit tests does not demonstrate database/data migration compatibility.
