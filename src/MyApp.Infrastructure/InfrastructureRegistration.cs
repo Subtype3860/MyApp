@@ -26,6 +26,7 @@ public static class InfrastructureRegistration
         services.AddScoped<IResponsibleEmployeeRepository, ResponsibleEmployeeRepository>();
         services.AddScoped<IEmployeeSignatureRepository, EmployeeSignatureRepository>();
         services.AddScoped<ICsvFileRepository, CsvFileRepository>();
+        services.AddScoped<RequirementStockGateway>();
         services.AddScoped<IRequirementJournalRepository, RequirementJournalRepository>();
         services.AddScoped<IMaterialGroupRepository, MaterialGroupRepository>();
         services.AddScoped<IMaintenanceTemplateRepository, MaintenanceTemplateRepository>();

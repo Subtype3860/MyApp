@@ -7,7 +7,8 @@ using NpgsqlTypes;
 namespace MyApp.Infrastructure.Repositories;
 
 public sealed class RequirementJournalRepository(
-    NpgsqlDataSource dataSource) : IRequirementJournalRepository
+    NpgsqlDataSource dataSource,
+    RequirementStockGateway stockGateway) : IRequirementJournalRepository
 {
     private static readonly JsonSerializerOptions JsonOptions =
         new(JsonSerializerDefaults.Web);
@@ -19,12 +20,40 @@ public sealed class RequirementJournalRepository(
         ComponentDocumentRequest request,
         CancellationToken cancellationToken)
     {
-        var requirementId = Guid.NewGuid();
+        RequirementStockGateway.ValidateSource(request.SourceTable);
+        var changes = BuildStockChanges(request.Items);
+        if (changes.Count == 0)
+        {
+            throw new InvalidOperationException(
+                "Требование должно содержать хотя бы один компонент.");
+        }
+
         await using var connection = await dataSource.OpenConnectionAsync(
             cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(
             cancellationToken);
+        await stockGateway.AcquireSourceLockAsync(
+            connection, transaction, request.SourceTable, cancellationToken);
 
+        // Read actual stock, not client-provided AvailableQuantity. Aggregate
+        // identical material names so repeated lines cannot overwrite each other.
+        // Validate every line before any potentially external file mutation.
+        var updatedQuantities = new List<(string Name, decimal Value)>();
+        foreach (var change in changes)
+        {
+            var available = await stockGateway.GetCurrentQuantityAsync(
+                connection, transaction, request.SourceTable,
+                change.Name, cancellationToken);
+            if (available < change.Quantity)
+            {
+                throw new InvalidOperationException(
+                    $"Недостаточный остаток для компонента «{change.Name}»: " +
+                    $"доступно {available}, требуется {change.Quantity}.");
+            }
+            updatedQuantities.Add((change.Name, available - change.Quantity));
+        }
+
+        var requirementId = Guid.NewGuid();
         await using (var headerCommand = connection.CreateCommand())
         {
             headerCommand.Transaction = transaction;
@@ -52,43 +81,27 @@ public sealed class RequirementJournalRepository(
             headerCommand.Parameters.AddWithValue("authorName", authorName);
             headerCommand.Parameters.AddWithValue("issuerName", issuerName);
             headerCommand.Parameters.AddWithValue(
-                "vehicleNumber",
-                request.VehicleNumber);
+                "vehicleNumber", request.VehicleNumber);
             headerCommand.Parameters.AddWithValue(
-                "sourceTable",
-                request.SourceTable);
+                "sourceTable", request.SourceTable);
             headerCommand.Parameters.AddWithValue(
-                "formData",
-                NpgsqlDbType.Jsonb,
+                "formData", NpgsqlDbType.Jsonb,
                 JsonSerializer.Serialize(request, JsonOptions));
             await headerCommand.ExecuteNonQueryAsync(cancellationToken);
         }
 
+        // Database inserts (including their constraints) precede CSV writes.
         for (var index = 0; index < request.Items.Count; index++)
         {
             var item = request.Items[index];
-            await UpdateCsvAsync(
-                connection,
-                transaction,
-                request.SourceTable,
-                item,
-                cancellationToken);
             await using var itemCommand = connection.CreateCommand();
             itemCommand.Transaction = transaction;
             itemCommand.CommandText =
                 """
                 INSERT INTO component_requirement_items (
-                    requirement_id,
-                    position,
-                    name,
-                    unit,
-                    quantity)
+                    requirement_id, position, name, unit, quantity)
                 VALUES (
-                    @requirementId,
-                    @position,
-                    @name,
-                    @unit,
-                    @quantity)
+                    @requirementId, @position, @name, @unit, @quantity)
                 """;
             itemCommand.Parameters.AddWithValue("requirementId", requirementId);
             itemCommand.Parameters.AddWithValue("position", index + 1);
@@ -98,42 +111,15 @@ public sealed class RequirementJournalRepository(
             await itemCommand.ExecuteNonQueryAsync(cancellationToken);
         }
 
-        await transaction.CommitAsync(cancellationToken);
-    }
-
-    private static async Task UpdateCsvAsync(
-        NpgsqlConnection connection,
-        NpgsqlTransaction transaction,
-        string sourceTable,
-        ComponentDocumentItem item,
-        CancellationToken cancellationToken)
-    {
-        var fileName = sourceTable switch
+        // CAUTION: the legacy edit_csv_tab may modify files on disk. An error
+        // here can still leave external side effects despite DB rollback.
+        foreach (var (name, quantity) in updatedQuantities)
         {
-            "v_full_ost" or "full_ost" => "o",
-            "v_meh_ost" or "meh_ost" => "c",
-            _ => throw new InvalidOperationException(
-                "Неизвестный источник компонентов.")
-        };
-        var newValue = Math.Max(
-            item.AvailableQuantity - item.Quantity,
-            0);
-
-        await using var command = connection.CreateCommand();
-        command.Transaction = transaction;
-        command.CommandText =
-            "SELECT edit_csv_tab(@fileName, @searchText, @newValue)";
-        command.Parameters.AddWithValue("fileName", fileName);
-        command.Parameters.AddWithValue("searchText", item.Name);
-        command.Parameters.AddWithValue("newValue", newValue);
-        var result = Convert.ToString(
-            await command.ExecuteScalarAsync(cancellationToken));
-        if (string.IsNullOrWhiteSpace(result) ||
-            !result.StartsWith("Успешно обновлено!", StringComparison.Ordinal))
-        {
-            throw new InvalidOperationException(
-                result ?? "Функция edit_csv_tab не вернула результат.");
+            await stockGateway.SetQuantityAsync(
+                connection, transaction, request.SourceTable,
+                name, quantity, cancellationToken);
         }
+        await transaction.CommitAsync(cancellationToken);
     }
 
     public async Task<IReadOnlyList<RequirementJournalEntry>> GetRecentAsync(
@@ -231,18 +217,20 @@ public sealed class RequirementJournalRepository(
         await using (var sourceCommand = connection.CreateCommand())
         {
             sourceCommand.Transaction = transaction;
+            // Prevent concurrent deletions from restoring the same stock twice.
             sourceCommand.CommandText =
-                "SELECT source_table FROM component_requirements WHERE id = @id";
+                "SELECT source_table FROM component_requirements WHERE id = @id FOR UPDATE";
             sourceCommand.Parameters.AddWithValue("id", id);
             var source = await sourceCommand.ExecuteScalarAsync(cancellationToken);
             if (source is null)
             {
                 return false;
             }
-
             sourceTable = Convert.ToString(source) ?? string.Empty;
         }
 
+        await stockGateway.AcquireSourceLockAsync(
+            connection, transaction, sourceTable, cancellationToken);
         var items = new List<ComponentDocumentItem>();
         await using (var itemsCommand = connection.CreateCommand())
         {
@@ -267,127 +255,53 @@ public sealed class RequirementJournalRepository(
             }
         }
 
-        foreach (var item in items)
+        var changes = BuildStockChanges(items);
+        var restoredQuantities = new List<(string Name, decimal Value)>();
+        foreach (var change in changes)
         {
-            await RestoreCsvAsync(
-                connection,
-                transaction,
-                sourceTable,
-                item,
-                cancellationToken);
+            var available = await stockGateway.GetCurrentQuantityAsync(
+                connection, transaction, sourceTable,
+                change.Name, cancellationToken);
+            restoredQuantities.Add(
+                (change.Name, checked(available + change.Quantity)));
         }
 
+        // Delete within the transaction before potentially changing CSV files.
         await using var deleteCommand = connection.CreateCommand();
         deleteCommand.Transaction = transaction;
         deleteCommand.CommandText =
             "DELETE FROM component_requirements WHERE id = @id";
         deleteCommand.Parameters.AddWithValue("id", id);
         var deleted = await deleteCommand.ExecuteNonQueryAsync(cancellationToken) > 0;
+        if (!deleted)
+        {
+            return false;
+        }
+
+        foreach (var (name, quantity) in restoredQuantities)
+        {
+            await stockGateway.SetQuantityAsync(
+                connection, transaction, sourceTable,
+                name, quantity, cancellationToken);
+        }
         await transaction.CommitAsync(cancellationToken);
-        return deleted;
+        return true;
     }
 
-    private static async Task RestoreCsvAsync(
-        NpgsqlConnection connection,
-        NpgsqlTransaction transaction,
-        string sourceTable,
-        ComponentDocumentItem item,
-        CancellationToken cancellationToken)
+    private static IReadOnlyList<(string Name, decimal Quantity)> BuildStockChanges(
+        IReadOnlyList<ComponentDocumentItem> items)
     {
-        var fileName = sourceTable switch
+        var totals = new Dictionary<string, decimal>(StringComparer.Ordinal);
+        foreach (var item in items)
         {
-            "v_full_ost" or "full_ost" => "o",
-            "v_meh_ost" or "meh_ost" => "c",
-            _ => throw new InvalidOperationException(
-                "Для требования не указан источник остатков.")
-        };
-        var currentQuantity = await GetCurrentQuantityAsync(
-            connection,
-            transaction,
-            sourceTable,
-            item.Name,
-            cancellationToken);
-        var newValue = currentQuantity + item.Quantity;
-
-        await using var command = connection.CreateCommand();
-        command.Transaction = transaction;
-        command.CommandText =
-            "SELECT edit_csv_tab(@fileName, @searchText, @newValue)";
-        command.Parameters.AddWithValue("fileName", fileName);
-        command.Parameters.AddWithValue("searchText", item.Name);
-        command.Parameters.AddWithValue("newValue", newValue);
-        var result = Convert.ToString(
-            await command.ExecuteScalarAsync(cancellationToken));
-        if (string.IsNullOrWhiteSpace(result) ||
-            !result.StartsWith("Успешно обновлено!", StringComparison.Ordinal))
-        {
-            throw new InvalidOperationException(
-                result ?? "Функция edit_csv_tab не вернула результат.");
+            if (string.IsNullOrWhiteSpace(item.Name) || item.Quantity <= 0)
+            {
+                throw new InvalidOperationException(
+                    "Компонент должен иметь название и положительное количество.");
+            }
+            var name = item.Name.Trim();
+            totals[name] = checked(totals.GetValueOrDefault(name) + item.Quantity);
         }
-    }
-
-    private static async Task<decimal> GetCurrentQuantityAsync(
-        NpgsqlConnection connection,
-        NpgsqlTransaction transaction,
-        string sourceTable,
-        string itemName,
-        CancellationToken cancellationToken)
-    {
-        if (sourceTable is not (
-                "v_full_ost" or
-                "v_meh_ost" or
-                "full_ost" or
-                "meh_ost"))
-        {
-            throw new InvalidOperationException(
-                "Для требования не указан источник остатков.");
-        }
-
-        await using var command = connection.CreateCommand();
-        command.Transaction = transaction;
-        command.CommandText = sourceTable switch
-        {
-            "v_full_ost" or "v_meh_ost" =>
-                $"""
-                SELECT "Количество"
-                FROM {sourceTable}
-                WHERE BTRIM("Наименование") = BTRIM(@name)
-                LIMIT 1
-                """,
-            _ =>
-                $"""
-                SELECT amount
-                FROM {sourceTable}
-                WHERE BTRIM(name) = BTRIM(@name)
-                LIMIT 1
-                """
-        };
-        command.Parameters.AddWithValue("name", itemName);
-        var result = await command.ExecuteScalarAsync(cancellationToken);
-        if (result is null || result is DBNull)
-        {
-            throw new InvalidOperationException(
-                $"Компонент «{itemName.Trim()}» не найден в остатках.");
-        }
-
-        if (result is decimal decimalValue)
-        {
-            return decimalValue;
-        }
-
-        var text = Convert.ToString(
-            result,
-            System.Globalization.CultureInfo.InvariantCulture);
-        if (decimal.TryParse(
-                text?.Replace(',', '.'),
-                System.Globalization.NumberStyles.Number,
-                System.Globalization.CultureInfo.InvariantCulture,
-                out var quantity))
-        {
-            return quantity;
-        }
-
-        throw new InvalidOperationException(
-            $"Некорректный остаток для компонента «{itemName.Trim()}»: {text}.");
+        return totals.Select(pair => (pair.Key, pair.Value)).ToArray();
     }
 }
