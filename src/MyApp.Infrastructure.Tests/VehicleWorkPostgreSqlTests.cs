@@ -65,6 +65,7 @@ public sealed class VehicleWorkPostgreSqlTests
         Xunit.Assert.Equal("replaced bearing", entry.Description);
         Xunit.Assert.Equal("bearing.jpg",
             Xunit.Assert.Single(entry.Photos).FileName);
+        Xunit.Assert.NotNull(entry.Videos);
         Xunit.Assert.Equal("repair.mp4",
             Xunit.Assert.Single(entry.Videos).FileName);
         Xunit.Assert.Empty(await repository.GetWorksAsync(
