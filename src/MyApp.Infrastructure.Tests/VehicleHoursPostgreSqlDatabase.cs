@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using MyApp.Infrastructure.Db;
 using Npgsql;
 
@@ -24,9 +25,14 @@ internal sealed class VehicleHoursPostgreSqlDatabase : IAsyncDisposable
         }.ConnectionString;
     }
 
-    public AppDbContext CreateContext() =>
-        new(new DbContextOptionsBuilder<AppDbContext>()
-            .UseNpgsql(scopedConnectionString).Options);
+    public AppDbContext CreateContext(DbCommandInterceptor? interceptor = null)
+    {
+        var options = new DbContextOptionsBuilder<AppDbContext>()
+            .UseNpgsql(scopedConnectionString);
+        if (interceptor is not null)
+            options.AddInterceptors(interceptor);
+        return new AppDbContext(options.Options);
+    }
 
     public static async Task<VehicleHoursPostgreSqlDatabase> CreateAsync()
     {
