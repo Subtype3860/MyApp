@@ -90,4 +90,22 @@ public sealed class AppDbContextMappingTests
             purchase.FindProperty(nameof(VehiclePurchaseEntity.CreatedAt))?.GetDefaultValueSql());
     }
 
+    [Xunit.Fact]
+    public void Material_groups_keep_tables_columns_and_cascade_relationship()
+    {
+        using var context = CreateContext();
+        var group = context.Model.FindEntityType(typeof(MaterialGroupEntity));
+        var item = context.Model.FindEntityType(typeof(MaterialGroupItemEntity));
+        Xunit.Assert.NotNull(group);
+        Xunit.Assert.NotNull(item);
+        Xunit.Assert.Equal("material_groups", group.GetTableName());
+        Xunit.Assert.Equal("material_group_items", item.GetTableName());
+        var itemTable = StoreObjectIdentifier.Table("material_group_items", null);
+        Xunit.Assert.Equal("source_table",
+            item.FindProperty(nameof(MaterialGroupItemEntity.SourceTable))?.GetColumnName(itemTable));
+        Xunit.Assert.Contains(item.GetForeignKeys(),
+            fk => fk.DeleteBehavior == DeleteBehavior.Cascade &&
+                  fk.Properties.Single().Name == nameof(MaterialGroupItemEntity.GroupId));
+    }
+
 }

@@ -14,6 +14,8 @@ public class AppDbContext : DbContext
     public DbSet<User> Users => Set<User>();
     public DbSet<Profession> Professions => Set<Profession>();
     public DbSet<VehiclePurchaseEntity> VehiclePurchases => Set<VehiclePurchaseEntity>();
+    public DbSet<MaterialGroupEntity> MaterialGroups => Set<MaterialGroupEntity>();
+    public DbSet<MaterialGroupItemEntity> MaterialGroupItems => Set<MaterialGroupItemEntity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -21,5 +23,7 @@ public class AppDbContext : DbContext
         modelBuilder.ApplyConfiguration(new UserConfiguration());
         modelBuilder.ApplyConfiguration(new ProfessionConfiguration());
         modelBuilder.ApplyConfiguration(new VehiclePurchaseConfiguration());
+        modelBuilder.ApplyConfiguration(new MaterialGroupConfiguration());
+        modelBuilder.ApplyConfiguration(new MaterialGroupItemConfiguration());
     }
 }
