@@ -29,8 +29,8 @@ const journal = ref(null)
 // Плоский список неисправностей, отображаемых во вкладке «Ремонт».
 const repairDefects = ref([])
 const repairDrafts = ref({})
-const selectedRepairWorkIds = ref({})
 const repairFileInputs = new Map()
+const expandNewRepairForm = window.matchMedia('(min-width: 761px)').matches
 
 // --- Полноэкранный просмотрщик медиафайлов ---
 const mediaViewerOpen = ref(false)
@@ -112,11 +112,6 @@ function authHeaders(json = false) {
     Authorization: `Bearer ${props.token}`,
     ...(json ? { 'Content-Type': 'application/json' } : {}),
   }
-}
-
-function workMedia(defect, type) {
-  const work = selectedRepairWork(defect)
-  return workMediaForWorks(work ? [work] : [], type)
 }
 
 function workMediaForWorks(works, type) {
@@ -546,39 +541,14 @@ function repairStatusLabel(status) {
   }[repairStatus(status)]
 }
 
-/**
- * Строит список записей истории этапов ремонта для карточки неисправности.
- * @param {object} defect Неисправность с массивом связанных работ `repairWorks`.
- * @returns {{date: string, text: string}[]}
- */
-function repairHistory(defect) {
-  return [...(defect.repairWorks ?? [])]
-    .sort((first, second) =>
-      new Date(first.createdAt ?? 0) - new Date(second.createdAt ?? 0))
-    .map((work) => ({
-      id: work.id,
-      date: formatDateTime(work.createdAt),
-    }))
-}
-
 function repairWorksInOrder(defect) {
   return [...(defect.repairWorks ?? [])].sort((first, second) =>
     new Date(first.createdAt ?? 0) - new Date(second.createdAt ?? 0))
 }
 
-function selectedRepairWork(defect) {
-  const works = repairWorksInOrder(defect)
-  if (!works.length) return null
-  const selectedId = selectedRepairWorkIds.value[defect.id]
-  return works.find((work) => work.id === selectedId) ?? works[0]
-}
-
-function selectRepairWork(defect, workId) {
-  selectedRepairWorkIds.value[defect.id] = workId
-}
-
 async function deleteRepairWork(defect, workId) {
-  if (!window.confirm('Удалить этап ремонта вместе с фото и видео?')) return
+  const work = defect.repairWorks?.find(item => item.id === workId)
+  if (!window.confirm(`Удалить этап от ${formatDateTime(work?.createdAt)} вместе с фото и видео?`)) return
 
   isSaving.value = true
   errorMessage.value = ''
@@ -596,7 +566,6 @@ async function deleteRepairWork(defect, workId) {
         'Не удалось удалить этап ремонта.',
       )
     }
-    delete selectedRepairWorkIds.value[defect.id]
     successMessage.value = 'Этап ремонта и его медиа удалены.'
     await loadRepairDefects()
   } catch (error) {
@@ -1002,11 +971,8 @@ function openRepairMedia(items, type) {
   mediaViewerOpen.value = true
 }
 
-function openRepairMediaCollection(defect, type, source = 'defect') {
-  const items = source === 'work'
-    ? workMedia(defect, type)
-    : defectMedia(defect, type)
-  return openRepairMedia(items, type)
+function openRepairMediaCollection(defect, type) {
+  return openRepairMedia(defectMedia(defect, type), type)
 }
 
 function closeMediaViewer() {
@@ -1362,169 +1328,75 @@ function formatDateTime(value) {
           <article
             v-for="defect in repairDefects"
             :key="defect.id"
-            class="repair-card"
+            class="repair-card repair-timeline-card"
           >
-            <header class="card-header">
-              <h2>Ремонт: Гар. № {{ defect.vehicleGarageNumber ?? '—' }} ({{ defect.vehicleName || '—' }})</h2>
-              <div class="header-actions">
-                <span class="repair-status-badge" :class="`repair-status-badge--${defect.repairStatus}`">
-                  Статус: {{ repairStatusLabel(defect.repairStatus) }}
-                </span>
+            <header class="repair-overview-header">
+              <div>
+                <h2>{{ defect.vehicleName || 'Техника' }} · Гар. №{{ defect.vehicleGarageNumber ?? '—' }}</h2>
+                <p class="repair-overview-meta"><span>Гос. № {{ defect.vehicleStateNumber || '—' }}</span><span>Простой с {{ formatDateTime(defect.downtimeStartedAt) }}</span></p>
               </div>
+              <span class="repair-status-badge" :class="`repair-status-badge--${defect.repairStatus}`">{{ repairStatusLabel(defect.repairStatus) }}</span>
             </header>
-            <section class="card-body">
-              <div class="column left">
-                <h3>ТЕХНИКА</h3>
-                <p><b>Модель:</b> {{ defect.vehicleName || '—' }}</p>
-                <p><b>Гос. №:</b> {{ defect.vehicleStateNumber || '—' }}</p>
-                <p><b>Дата простоя:</b> {{ formatDateTime(defect.downtimeStartedAt) }}</p>
 
-                <h3>ОПИСАНИЕ НЕИСПРАВНОСТИ</h3>
-                <p class="repair-description">{{ defect.symptoms || defect.failureReason || '—' }}</p>
-
-                <h3>ЭТАПЫ РЕМОНТА (История)</h3>
-                <ul v-if="repairHistory(defect).length">
-                  <li v-for="item in repairHistory(defect)" :key="item.id" class="repair-stage-row">
-                    <button
-                      class="repair-stage-button"
-                      :class="{ active: selectedRepairWork(defect)?.id === item.id }"
-                      type="button"
-                      @click="selectRepairWork(defect, item.id)"
-                    >
-                      • {{ item.date }}
-                    </button>
-                    <button
-                      v-if="props.section === 'works'"
-                      class="repair-stage-delete"
-                      type="button"
-                      :disabled="isSaving"
-                      title="Удалить этап вместе с медиа"
-                      :aria-label="`Удалить этап ${item.date} вместе с медиа`"
-                      @click.stop="deleteRepairWork(defect, item.id)"
-                    >
-                      ×
-                    </button>
-                  </li>
-                </ul>
-                <p v-else class="repair-card-muted">История пока отсутствует.</p>
-                <div v-if="props.section === 'works'" class="add-history">
-                  <textarea
-                    v-model="repairDraft(defect).description"
-                    rows="3"
-                    placeholder="Отчёт о выполненной работе..."
-                  ></textarea>
-                </div>
-
-                <div v-if="props.section === 'works'" class="repair-file-upload">
-                  <button
-                    class="secondary-button repair-upload-button"
-                    type="button"
-                    :disabled="isSaving"
-                    @click="repairFileInputs.get(defect.id)?.click()"
-                  >
-                    <span aria-hidden="true">＋</span> Добавить фото или видео
-                  </button>
-                  <input
-                    :ref="element => element ? repairFileInputs.set(defect.id, element) : repairFileInputs.delete(defect.id)"
-                    type="file"
-                    accept="image/*,video/*"
-                    multiple
-                    hidden
-                    :disabled="isSaving"
-                    @change="uploadRepairFiles(defect, $event)"
-                  />
-                </div>
-                <div
-                  v-if="props.section === 'works' && repairDraft(defect).previews.length"
-                  class="repair-card-file-list"
-                >
-                  <span v-for="item in repairDraft(defect).previews" :key="item.url">
-                    {{ item.file.name }}
-                  </span>
-                </div>
-
-                <template v-if="props.section === 'works'">
-                  <h3>СТАТУС РЕМОНТА</h3>
-                  <div class="status-options">
-                    <label>
-                      <input v-model="repairDraft(defect).status" type="radio" value="repair" />
-                      На ремонте
-                    </label>
-                    <label>
-                      <input v-model="repairDraft(defect).status" type="radio" value="waiting" />
-                      Ожидает запчасти
-                    </label>
-                    <label>
-                      <input v-model="repairDraft(defect).status" type="radio" value="done" />
-                      Исправна (Готово)
-                    </label>
-                  </div>
-                  <button
-                    class="repair-card-button repair-card-button--secondary"
-                    type="button"
-                    :disabled="isSaving"
-                    @click="completeRepair(defect)"
-                  >
-                    ВЫПОЛНЕНИЕ
-                  </button>
-                </template>
-              </div>
-
-              <div class="column right">
-                <h3>ФОТО И ВИДЕО НЕИСПРАВНОСТИ</h3>
-                <div class="repair-card-media">
-                  <span v-if="!defect.photos.length && !defect.videos.length">
-                    Нет вложений
-                  </span>
-                  <button
-                    v-if="defect.photos.length"
-                    class="repair-card-button repair-card-button--secondary"
-                    type="button"
-                    @click="openRepairMediaCollection(defect, 'image')"
-                  >
-                    Просмотр фото ({{ defect.photos.length }})
-                  </button>
-                  <button
-                    v-if="defect.videos.length"
-                    class="repair-card-button repair-card-button--secondary"
-                    type="button"
-                    @click="openRepairMediaCollection(defect, 'video')"
-                  >
-                    Просмотр видео ({{ defect.videos.length }})
-                  </button>
-                </div>
-
-                <h3>ФОТО И ВИДЕО РЕМОНТНЫХ РАБОТ</h3>
-                <div class="repair-card-media">
-                  <span v-if="!workMedia(defect, 'image').length && !workMedia(defect, 'video').length">
-                    Нет вложений
-                  </span>
-                  <button
-                    v-if="workMedia(defect, 'image').length"
-                    class="repair-card-button repair-card-button--secondary"
-                    type="button"
-                    @click="openRepairMediaCollection(defect, 'image', 'work')"
-                  >
-                    Просмотр фото ({{ workMedia(defect, 'image').length }})
-                  </button>
-                  <button
-                    v-if="workMedia(defect, 'video').length"
-                    class="repair-card-button repair-card-button--secondary"
-                    type="button"
-                    @click="openRepairMediaCollection(defect, 'video', 'work')"
-                  >
-                    Просмотр видео ({{ workMedia(defect, 'video').length }})
-                  </button>
-                </div>
-                <div v-if="selectedRepairWork(defect)" class="repair-work-report">
-                  <h3>ОПИСАНИЕ ВЫПОЛНЕННЫХ РАБОТ</h3>
-                  <p>
-                    {{ selectedRepairWork(defect).description || 'Описание не указано.' }}
-                  </p>
-                </div>
-
+            <section class="repair-fault-panel" aria-label="Неисправность">
+              <div><h3>Неисправность</h3><p>{{ defect.symptoms || defect.failureReason || 'Описание не указано.' }}</p></div>
+              <div class="repair-timeline-media">
+                <button v-if="defect.photos?.length" class="secondary-button" type="button" @click="openRepairMediaCollection(defect, 'image')">Фото · {{ defect.photos.length }}</button>
+                <button v-if="defect.videos?.length" class="secondary-button" type="button" @click="openRepairMediaCollection(defect, 'video')">Видео · {{ defect.videos.length }}</button>
+                <span v-if="!defect.photos?.length && !defect.videos?.length" class="repair-card-muted">Нет вложений</span>
               </div>
             </section>
+
+            <section class="repair-timeline-panel" aria-label="История ремонта">
+              <h3>История ремонта <span class="repair-stage-count">Этапов: {{ defect.repairWorks?.length || 0 }}</span></h3>
+              <ol v-if="defect.repairWorks?.length" class="repair-timeline">
+                <li v-for="(work, index) in repairWorksInOrder(defect).slice().reverse()" :key="work.id" class="repair-timeline-item">
+                  <details class="repair-timeline-stage" :open="index === 0">
+                    <summary>
+                      <span class="repair-stage-date">{{ formatDateTime(work.createdAt) }}</span>
+                      <span class="repair-stage-excerpt">{{ work.description || 'Описание не указано.' }}</span>
+                      <span class="repair-stage-chevron" aria-hidden="true">⌄</span>
+                    </summary>
+                    <div class="repair-stage-content">
+                      <p>{{ work.description || 'Описание не указано.' }}</p>
+                      <div class="repair-timeline-media">
+                        <button v-if="work.photos?.length" class="secondary-button" type="button" @click="openRepairMedia(workMediaForWorks([work], 'image'), 'image')">Фото · {{ work.photos.length }}</button>
+                        <button v-if="work.videos?.length" class="secondary-button" type="button" @click="openRepairMedia(workMediaForWorks([work], 'video'), 'video')">Видео · {{ work.videos.length }}</button>
+                        <span v-if="!work.photos?.length && !work.videos?.length" class="repair-card-muted">Нет вложений</span>
+                      </div>
+                    </div>
+                  </details>
+                  <button class="repair-stage-delete repair-timeline-delete" type="button" :disabled="isSaving" :aria-label="`Удалить этап ${formatDateTime(work.createdAt)} вместе с медиа`" title="Удалить этап вместе с медиа" @click="deleteRepairWork(defect, work.id)">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M6 7l1 14h10l1-14M10 10v7m4-7v7" /></svg>
+                  </button>
+                </li>
+              </ol>
+              <p v-else class="repair-card-muted">Этапов пока нет. Добавьте первую запись о выполненной работе.</p>
+            </section>
+
+            <details class="repair-new-stage" :open="expandNewRepairForm">
+              <summary><span class="repair-new-stage-closed">+ Добавить этап</span><span class="repair-new-stage-open">Новый этап</span><span aria-hidden="true" class="repair-stage-chevron">⌄</span></summary>
+              <form class="repair-new-stage-form" @submit.prevent="completeRepair(defect)">
+                <div class="repair-new-stage-description">
+                  <label :for="`repair-description-${defect.id}`">Описание выполненных работ</label>
+                  <textarea :id="`repair-description-${defect.id}`" v-model="repairDraft(defect).description" rows="4" placeholder="Что было сделано?" required :disabled="isSaving"></textarea>
+                  <div class="repair-file-upload">
+                    <button class="secondary-button repair-upload-button" type="button" :disabled="isSaving" @click="repairFileInputs.get(defect.id)?.click()"><span aria-hidden="true">+</span> Добавить фото или видео</button>
+                    <input :ref="element => element ? repairFileInputs.set(defect.id, element) : repairFileInputs.delete(defect.id)" type="file" accept="image/*,video/*" multiple hidden :disabled="isSaving" @change="uploadRepairFiles(defect, $event)" />
+                  </div>
+                  <div v-if="repairDraft(defect).previews.length" class="repair-card-file-list" aria-live="polite"><span v-for="item in repairDraft(defect).previews" :key="item.url">{{ item.file.name }}</span></div>
+                </div>
+                <div class="repair-new-stage-actions">
+                  <fieldset class="repair-status-options" :disabled="isSaving">
+                    <legend>Статус после выполнения</legend>
+                    <label><input v-model="repairDraft(defect).status" :name="`repair-status-${defect.id}`" type="radio" value="repair" /> На ремонте</label>
+                    <label><input v-model="repairDraft(defect).status" :name="`repair-status-${defect.id}`" type="radio" value="waiting" /> Ожидает запчасти</label>
+                    <label><input v-model="repairDraft(defect).status" :name="`repair-status-${defect.id}`" type="radio" value="done" /> Исправна (Готово)</label>
+                  </fieldset>
+                  <button class="primary-button repair-save-stage" type="submit" :disabled="isSaving">{{ isSaving ? 'Сохранение…' : 'Сохранить этап' }}</button>
+                </div>
+              </form>
+            </details>
           </article>
           <p v-if="!repairDefects.length" class="vehicle-empty">
             Неисправностей нет.
