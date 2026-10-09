@@ -1,12 +1,12 @@
-name: Integration branch build
+name: MyApp CI
 
 on:
   push:
     branches:
-      - refactor/integration-auth-shell
+      - master
   pull_request:
     branches:
-      - subtype3860-auth-navigation-shell
+      - master
   workflow_dispatch:
 
 permissions:
