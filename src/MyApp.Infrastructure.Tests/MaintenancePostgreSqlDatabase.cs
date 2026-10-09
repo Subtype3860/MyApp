@@ -110,7 +110,7 @@ internal sealed class MaintenancePostgreSqlDatabase : IAsyncDisposable
             CREATE VIEW v_full_ost AS
                 SELECT 'Filter'::text AS "Наименование",
                        'pcs'::text AS "Ед.изм.",
-                       {{stockColumn}} AS "Количество";
+                       {stockColumn} AS "Количество";
             """);
         await cmd.ExecuteNonQueryAsync();
     }

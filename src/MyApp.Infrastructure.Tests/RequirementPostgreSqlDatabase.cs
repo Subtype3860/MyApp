@@ -100,14 +100,14 @@ internal sealed class RequirementPostgreSqlDatabase : IAsyncDisposable
             );
             CREATE VIEW v_full_ost AS
                 SELECT name AS "Наименование", 'pcs'::text AS "Ед.изм.",
-                       quantity{{stockCast}} AS "Количество" FROM stock_fixture;
+                       quantity{stockCast} AS "Количество" FROM stock_fixture;
             CREATE VIEW v_meh_ost AS
                 SELECT name AS "Наименование", 'pcs'::text AS "Ед.изм.",
-                       quantity{{stockCast}} AS "Количество" FROM stock_fixture;
+                       quantity{stockCast} AS "Количество" FROM stock_fixture;
             CREATE VIEW full_ost AS
-                SELECT name, quantity{{stockCast}} AS amount FROM stock_fixture;
+                SELECT name, quantity{stockCast} AS amount FROM stock_fixture;
             CREATE VIEW meh_ost AS
-                SELECT name, quantity{{stockCast}} AS amount FROM stock_fixture;
+                SELECT name, quantity{stockCast} AS amount FROM stock_fixture;
 
             CREATE FUNCTION edit_csv_tab(
                 file_name text, search_text text, new_value numeric)
