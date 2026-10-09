@@ -32,10 +32,41 @@ trap cleanup EXIT
 mkdir -p "$WORK/api"
 cp -a "$RELEASE/api/." "$WORK/api/"
 
+# PostgreSQL's restored file_fdw tables refer to /mnt/shara/data/*.csv,
+# a path on the ORIGINAL DATABASE HOST (not the Fedora VPS). Copy only
+# readable regular CSV files from the Fedora CIFS mount into temporary,
+# private, disposable storage. NEVER bind mount the production share into
+# the database: its extensions/functions can have filesystem side effects.
+CSV_SOURCE="${MYAPP_CSV_SNAPSHOT_SOURCE:-/mnt/dietpi/data}"
+test -r "$CSV_SOURCE/p.csv" || {
+  echo "Required employee CSV is missing or unreadable on Fedora: $CSV_SOURCE/p.csv"
+  echo "Check the read-only CIFS mount; do not connect the live share to the test container."
+  exit 1
+}
+mkdir -p "$WORK/pg-csv"
+chmod 755 "$WORK/pg-csv"
+shopt -s nullglob
+csv_count=0
+for source in "$CSV_SOURCE"/*.csv; do
+  # Avoid following symlinks into unrelated parts of the shared filesystem.
+  if [[ ! -f "$source" || -L "$source" || ! -r "$source" ]]; then
+    echo "Skipping nonregular, symlinked or unreadable CSV: $(basename "$source")"
+    continue
+  fi
+  cp -- "$source" "$WORK/pg-csv/$(basename "$source")"
+  chmod 444 "$WORK/pg-csv/$(basename "$source")"
+  csv_count=$((csv_count + 1))
+done
+shopt -u nullglob
+test "$csv_count" -gt 0
+echo "=== Staged $csv_count local read-only CSV copies for isolated PostgreSQL ==="
+echo "The live CIFS share is not mounted in the test pod."
+
 echo "=== Start isolated PostgreSQL 17 (no external network) ==="
 podman pod create --name "$POD" --network none >/dev/null
 podman run -d --pod "$POD" --name "$PG" \
   --tmpfs /var/lib/postgresql/data:rw,size=1g \
+  -v "$WORK/pg-csv:/mnt/shara/data:ro,Z" \
   -e POSTGRES_HOST_AUTH_METHOD=trust \
   -e POSTGRES_DB=restore_job \
   -e POSTGRES_INITDB_ARGS=--locale=ru_RU.UTF-8 \
@@ -55,6 +86,17 @@ echo "=== Restore PostgreSQL backup (in disposable pod only) ==="
 podman cp "$BACKUP/job.dump" "$PG:/tmp/job.dump"
 podman exec "$PG" pg_restore -U postgres -d restore_job \
   --no-owner --no-acl --exit-on-error --single-transaction /tmp/job.dump
+
+echo "=== Restored file_fdw CSV references (metadata only) ==="
+podman exec "$PG" psql -U postgres -d restore_job -v ON_ERROR_STOP=1 -c \
+  "SELECT n.nspname AS schema, c.relname AS foreign_table,
+          opt.option_value AS configured_filename
+   FROM pg_foreign_table ft
+   JOIN pg_class c ON c.oid=ft.ftrelid
+   JOIN pg_namespace n ON n.oid=c.relnamespace
+   CROSS JOIN LATERAL pg_options_to_table(ft.ftoptions) opt
+   WHERE opt.option_name='filename'
+   ORDER BY n.nspname,c.relname;" 
 
 echo "=== Restored component requirements column types ==="
 podman exec "$PG" psql -U postgres -d restore_job -v ON_ERROR_STOP=1 -c \
