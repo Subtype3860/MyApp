@@ -32,7 +32,8 @@ internal sealed class MaintenancePostgreSqlDatabase : IAsyncDisposable
         return new AppDbContext(options);
     }
 
-    public static async Task<MaintenancePostgreSqlDatabase> CreateAsync()
+    public static async Task<MaintenancePostgreSqlDatabase> CreateAsync(
+        bool numericStockView = false)
     {
         var connectionString = Environment.GetEnvironmentVariable("MYAPP_TEST_POSTGRES");
         if (string.IsNullOrWhiteSpace(connectionString))
@@ -61,7 +62,7 @@ internal sealed class MaintenancePostgreSqlDatabase : IAsyncDisposable
 
         try
         {
-            await result.InitializeAsync();
+            await result.InitializeAsync(numericStockView);
             return result;
         }
         catch
@@ -71,11 +72,12 @@ internal sealed class MaintenancePostgreSqlDatabase : IAsyncDisposable
         }
     }
 
-    private async Task InitializeAsync()
+    private async Task InitializeAsync(bool numericStockView)
     {
         await using var dataSource = NpgsqlDataSource.Create(scopedConnectionString);
+        var stockColumn = numericStockView ? "'8'::numeric" : "'8'::text";
         await using var cmd = dataSource.CreateCommand(
-            """
+            $"""
             CREATE TABLE maintenance_equipment (
                 id uuid PRIMARY KEY,
                 name varchar(100) NOT NULL,
@@ -108,7 +110,7 @@ internal sealed class MaintenancePostgreSqlDatabase : IAsyncDisposable
             CREATE VIEW v_full_ost AS
                 SELECT 'Filter'::text AS "Наименование",
                        'pcs'::text AS "Ед.изм.",
-                       '8'::text AS "Количество";
+                       {{stockColumn}} AS "Количество";
             """);
         await cmd.ExecuteNonQueryAsync();
     }

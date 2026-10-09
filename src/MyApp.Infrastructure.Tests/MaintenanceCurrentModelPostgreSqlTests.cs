@@ -34,6 +34,29 @@ public sealed class MaintenanceCurrentModelPostgreSqlTests
 
     [Xunit.Fact]
     [Xunit.Trait("Category", "Integration")]
+    public async Task Numeric_stock_view_is_readable_in_maintenance_templates()
+    {
+        await using var fixture = await MaintenancePostgreSqlDatabase.CreateAsync(
+            numericStockView: true);
+        await using var db = fixture.CreateContext();
+        var repo = new MaintenanceTemplateRepository(db);
+        var equipmentId = await repo.CreateEquipmentAsync(
+            "Excavators", CancellationToken.None);
+        var intervalId = await repo.CreateIntervalAsync(
+            equipmentId, "TO-500", CancellationToken.None);
+        await repo.AddItemAsync(
+            intervalId, "Filter", 2m, CancellationToken.None);
+
+        var equipment = Xunit.Assert.Single(
+            await repo.GetAllAsync(CancellationToken.None));
+        var interval = Xunit.Assert.Single(equipment.Intervals);
+        var material = Xunit.Assert.Single(interval.Items);
+        Xunit.Assert.Equal("Filter", material.MaterialName);
+        Xunit.Assert.Equal(8m, material.AvailableQuantity);
+    }
+
+    [Xunit.Fact]
+    [Xunit.Trait("Category", "Integration")]
     public async Task Names_are_unique_using_existing_normalized_database_index()
     {
         await using var fixture = await MaintenancePostgreSqlDatabase.CreateAsync();

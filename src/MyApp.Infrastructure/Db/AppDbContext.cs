@@ -335,27 +335,48 @@ namespace MyApp.Infrastructure.Db {
         private static void ConfigureStockViews(ModelBuilder modelBuilder) {
             modelBuilder.Entity<FullStockRecord>(entity => {
                 entity.HasNoKey();
-                entity.ToView("v_full_ost");
+                // Source views may expose "Количество" as numeric or text.
+                // Normalize it in the SQL query before Npgsql materializes a string.
+                // Keep this as a composable query so the repositories still use LINQ.
+                entity.ToSqlQuery(
+                    """
+                    SELECT v."Наименование", v."Ед.изм.",
+                           v."Количество"::text AS "Количество"
+                    FROM v_full_ost AS v
+                    """);
                 entity.Property(x => x.Name).HasColumnName("Наименование");
                 entity.Property(x => x.Unit).HasColumnName("Ед.изм.");
                 entity.Property(x => x.Quantity).HasColumnName("Количество");
             });
             modelBuilder.Entity<MechanicalStockRecord>(entity => {
                 entity.HasNoKey();
-                entity.ToView("v_meh_ost");
+                entity.ToSqlQuery(
+                    """
+                    SELECT v."Наименование", v."Ед.изм.",
+                           v."Количество"::text AS "Количество"
+                    FROM v_meh_ost AS v
+                    """);
                 entity.Property(x => x.Name).HasColumnName("Наименование");
                 entity.Property(x => x.Unit).HasColumnName("Ед.изм.");
                 entity.Property(x => x.Quantity).HasColumnName("Количество");
             });
             modelBuilder.Entity<FullStockLegacyRecord>(entity => {
                 entity.HasNoKey();
-                entity.ToView("full_ost");
+                entity.ToSqlQuery(
+                    """
+                    SELECT v.name, v.amount::text AS amount
+                    FROM full_ost AS v
+                    """);
                 entity.Property(x => x.Name).HasColumnName("name");
                 entity.Property(x => x.Amount).HasColumnName("amount");
             });
             modelBuilder.Entity<MechanicalStockLegacyRecord>(entity => {
                 entity.HasNoKey();
-                entity.ToView("meh_ost");
+                entity.ToSqlQuery(
+                    """
+                    SELECT v.name, v.amount::text AS amount
+                    FROM meh_ost AS v
+                    """);
                 entity.Property(x => x.Name).HasColumnName("name");
                 entity.Property(x => x.Amount).HasColumnName("amount");
             });

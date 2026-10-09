@@ -30,7 +30,8 @@ internal sealed class RequirementPostgreSqlDatabase : IAsyncDisposable
             .Options);
 
     public static async Task<RequirementPostgreSqlDatabase> CreateAsync(
-        decimal stock = 10m)
+        decimal stock = 10m,
+        bool numericViews = false)
     {
         var connectionString = Environment.GetEnvironmentVariable("MYAPP_TEST_POSTGRES");
         if (string.IsNullOrWhiteSpace(connectionString))
@@ -54,7 +55,7 @@ internal sealed class RequirementPostgreSqlDatabase : IAsyncDisposable
 
         try
         {
-            await fixture.InitializeAsync(stock);
+            await fixture.InitializeAsync(stock, numericViews);
             return fixture;
         }
         catch
@@ -64,11 +65,14 @@ internal sealed class RequirementPostgreSqlDatabase : IAsyncDisposable
         }
     }
 
-    private async Task InitializeAsync(decimal quantity)
+    private async Task InitializeAsync(decimal quantity, bool numericViews)
     {
         await using var dataSource = NpgsqlDataSource.Create(scopedConnectionString);
+        // A production view can return numeric while older test fixtures
+        // return text. Both must work with the same EF stock projections.
+        var stockCast = numericViews ? "" : "::text";
         await using var command = dataSource.CreateCommand(
-            """
+            $"""
             CREATE TABLE app_users (id uuid PRIMARY KEY);
             CREATE TABLE component_requirements (
                 id uuid PRIMARY KEY,
@@ -96,14 +100,14 @@ internal sealed class RequirementPostgreSqlDatabase : IAsyncDisposable
             );
             CREATE VIEW v_full_ost AS
                 SELECT name AS "Наименование", 'pcs'::text AS "Ед.изм.",
-                       quantity::text AS "Количество" FROM stock_fixture;
+                       quantity{{stockCast}} AS "Количество" FROM stock_fixture;
             CREATE VIEW v_meh_ost AS
                 SELECT name AS "Наименование", 'pcs'::text AS "Ед.изм.",
-                       quantity::text AS "Количество" FROM stock_fixture;
+                       quantity{{stockCast}} AS "Количество" FROM stock_fixture;
             CREATE VIEW full_ost AS
-                SELECT name, quantity::text AS amount FROM stock_fixture;
+                SELECT name, quantity{{stockCast}} AS amount FROM stock_fixture;
             CREATE VIEW meh_ost AS
-                SELECT name, quantity::text AS amount FROM stock_fixture;
+                SELECT name, quantity{{stockCast}} AS amount FROM stock_fixture;
 
             CREATE FUNCTION edit_csv_tab(
                 file_name text, search_text text, new_value numeric)

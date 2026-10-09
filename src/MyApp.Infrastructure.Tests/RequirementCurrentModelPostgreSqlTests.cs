@@ -50,6 +50,59 @@ public sealed class RequirementCurrentModelPostgreSqlTests
 
     [Xunit.Fact]
     [Xunit.Trait("Category", "Integration")]
+    public async Task Numeric_stock_views_are_accepted_when_issuing_and_restoring()
+    {
+        await using var fixture = await RequirementPostgreSqlDatabase.CreateAsync(
+            numericViews: true);
+        var user = Guid.NewGuid();
+        await fixture.ExecuteAsync(
+            "INSERT INTO app_users(id) VALUES (@id)", ("id", user));
+
+        Guid id;
+        await using (var db = fixture.CreateContext())
+        {
+            var repository = new RequirementJournalRepository(db);
+            await repository.SaveAsync(
+                user, "Author", "Issuer",
+                Request(Item("Filter", 2m)), CancellationToken.None);
+            id = Xunit.Assert.Single(
+                await repository.GetRecentAsync(CancellationToken.None)).Id;
+        }
+        Xunit.Assert.Equal(8m, await fixture.StockAsync());
+
+        await using (var db = fixture.CreateContext())
+        {
+            var repository = new RequirementJournalRepository(db);
+            Xunit.Assert.True(await repository.DeleteAsync(
+                id, CancellationToken.None));
+        }
+        Xunit.Assert.Equal(10m, await fixture.StockAsync());
+        Xunit.Assert.Equal(0L, await fixture.CountAsync());
+    }
+
+    [Xunit.Fact]
+    [Xunit.Trait("Category", "Integration")]
+    public async Task Numeric_stock_views_reject_overdraw_before_writing()
+    {
+        await using var fixture = await RequirementPostgreSqlDatabase.CreateAsync(
+            stock: 2m, numericViews: true);
+        var user = Guid.NewGuid();
+        await fixture.ExecuteAsync(
+            "INSERT INTO app_users(id) VALUES (@id)", ("id", user));
+        await using var db = fixture.CreateContext();
+        var repository = new RequirementJournalRepository(db);
+
+        var error = await Xunit.Assert.ThrowsAsync<InvalidOperationException>(
+            () => repository.SaveAsync(
+                user, "Author", "Issuer", Request(Item("Filter", 3m)),
+                CancellationToken.None));
+        Xunit.Assert.Contains("Недостаточный остаток", error.Message);
+        Xunit.Assert.Equal(2m, await fixture.StockAsync());
+        Xunit.Assert.Equal(0L, await fixture.CountAsync());
+    }
+
+    [Xunit.Fact]
+    [Xunit.Trait("Category", "Integration")]
     public async Task Stale_client_balance_cannot_overdraw_stock()
     {
         await using var fixture = await RequirementPostgreSqlDatabase.CreateAsync(2m);
