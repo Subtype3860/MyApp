@@ -43,9 +43,12 @@ mounted share.**
 
 On each push to the integration branch,
 `.github/workflows/integration-ci.yml` now builds:
-- `myapp-api-net10.tar.gz`: framework-dependent .NET 10 published DLLs;
-  excludes `appsettings*.json` so production settings are NOT replaced.
-  Requires ASP.NET Core runtime 10.x on the server.
+- `myapp-api-linux-x64-selfcontained.tar.gz`: autonomous .NET 10
+  `linux-x64` executable (`MyApp.API`) with the runtime included.
+  It does not require a system `dotnet` command. The archive excludes
+  `appsettings*.json` so deployment must preserve the *existing* live
+  configuration. This is a multi-file self-contained deployment: extract
+  the **complete archive**, not only the executable.
 - `myapp-frontend.tar.gz`: static assets from Vite `dist/`.
 - `.sha256` checksum files for the two archives.
 
@@ -87,3 +90,59 @@ or inaccessible, the template endpoint cannot return a PDF. After
 deployment, confirm the path on Fedora is correct for the remote share.
 The endpoint has been enhanced to identify missing, unreadable and invalid
 files; this code change has not yet been deployed to the Fedora host.
+
+## Observations from read-only Fedora diagnostics (2026-10-09)
+
+- Fedora Linux 41 x86_64, SELinux Enforcing, 30 GB available.
+- `myapp.service` runs as `myapp:myapp`, working directory
+  `/opt/myapp/api`; `/proc/<MainPID>/exe` resolves to
+  `/opt/myapp/api/MyApp.API`.
+- No `dotnet` binary was discovered in root's PATH. This is why the
+  candidate package was changed to **self-contained `linux-x64`**;
+  confirm the active binary's format before switching.
+- nginx listens publicly on 80/443; backend listens on localhost:5296.
+- The live frontend is in `/opt/myapp/www`, and multiple
+  `api.backup-*` and `www.backup-*` directories exist.
+- The app's process SELinux context is `unconfined_service_t`;
+  the mounted network share is CIFS with `cifs_t`. The presented
+  AVC events concerned `sshd-session` reading `localtime`, **not**
+  MyApp opening the PDF.
+- `/mnt/dietpi/data/t.pdf` is a regular PDF readable by Unix
+  permissions for user `myapp`; a successful direct HTTP endpoint
+  response and systemd runtime visibility are **not yet verified**.
+- The source installation directory `/opt/myapp` is mode 777.
+  Review ownership/permissions before deployment; do not alter it
+  until exact service and asset locations are confirmed.
+
+### Next read-only commands
+
+These commands do not access credential files and do not restart services:
+
+```bash
+file /opt/myapp/api/MyApp.API
+ls -ld /opt/myapp/api /opt/myapp/www
+python3 - <<'PY'
+import json
+from pathlib import Path
+p = Path('/opt/myapp/api/MyApp.API.runtimeconfig.json')
+if p.exists():
+    x = json.loads(p.read_text()).get('runtimeOptions', {})
+    print('TFM:', x.get('tfm'))
+    print('Framework:', x.get('framework'))
+    print('Frameworks:', x.get('frameworks'))
+    print('Included frameworks:', x.get('includedFrameworks'))
+PY
+systemctl show myapp.service -p ExecStart -p WorkingDirectory -p User
+```
+
+**Review the last line before sharing:** `ExecStart` may contain private
+command-line arguments and must be redacted if it does.
+
+Do not expose full systemd units or nginx configuration without reviewing
+them for secrets. Do not treat repeated `sshd_t` AVCs as evidence of
+`myapp.service` file access denial.
+
+Before activating the new backend, identify whether the production
+`DatabaseInitializer` will modify schemas, take a verified database backup
+and decide on a maintenance/rollback window. The user must approve the
+actual production switch separately.

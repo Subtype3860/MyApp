@@ -45,15 +45,24 @@ jobs:
         env:
           MYAPP_TEST_POSTGRES: Host=localhost;Port=5432;Database=myapp_test;Username=postgres;Password=postgres
         run: dotnet test src/MyApp.Infrastructure.Tests/MyApp.Infrastructure.Tests.csproj --configuration Release --no-build --no-restore --filter "Category=Integration"
-      - name: Package .NET 10 release candidate (configuration excluded)
+      - name: Package standalone Fedora-compatible .NET 10 linux-x64 release
         if: github.event_name == 'push'
         shell: bash
         run: |
           set -euo pipefail
-          dotnet publish src/MyApp.API/MyApp.API.csproj --configuration Release --no-restore --output "$RUNNER_TEMP/myapp-api-publish" -p:UseAppHost=false
+          dotnet publish src/MyApp.API/MyApp.API.csproj \
+            --configuration Release \
+            --runtime linux-x64 \
+            --self-contained true \
+            --output "$RUNNER_TEMP/myapp-api-publish" \
+            -p:UseAppHost=true \
+            -p:PublishSingleFile=false
+          test -x "$RUNNER_TEMP/myapp-api-publish/MyApp.API"
+          file "$RUNNER_TEMP/myapp-api-publish/MyApp.API" | grep -E 'ELF 64-bit.*x86-64'
           find "$RUNNER_TEMP/myapp-api-publish" -maxdepth 1 -type f -name 'appsettings*.json' -delete
-          tar -czf "$RUNNER_TEMP/myapp-api-net10.tar.gz" -C "$RUNNER_TEMP/myapp-api-publish" .
-          (cd "$RUNNER_TEMP" && sha256sum myapp-api-net10.tar.gz > myapp-api-net10.tar.gz.sha256)
+          tar -czf "$RUNNER_TEMP/myapp-api-linux-x64-selfcontained.tar.gz" \
+            -C "$RUNNER_TEMP/myapp-api-publish" .
+          (cd "$RUNNER_TEMP" && sha256sum myapp-api-linux-x64-selfcontained.tar.gz > myapp-api-linux-x64-selfcontained.tar.gz.sha256)
       - name: Upload .NET 10 release candidate
         if: github.event_name == 'push'
         uses: actions/upload-artifact@v4
@@ -62,8 +71,8 @@ jobs:
           if-no-files-found: error
           retention-days: 14
           path: |
-            ${{ runner.temp }}/myapp-api-net10.tar.gz
-            ${{ runner.temp }}/myapp-api-net10.tar.gz.sha256
+            ${{ runner.temp }}/myapp-api-linux-x64-selfcontained.tar.gz
+            ${{ runner.temp }}/myapp-api-linux-x64-selfcontained.tar.gz.sha256
 
   frontend:
     name: Vue frontend
