@@ -3703,3 +3703,71 @@ button {
   }
 
 }
+
+/* Repair timeline: fault, self-contained stages, then a separate entry form. */
+.repair-timeline-card { width: 100%; min-width: 0; padding: 24px; }
+.repair-overview-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 24px; }
+.repair-overview-header h2 { margin: 0; font-size: 22px; line-height: 1.35; }
+.repair-overview-meta { display: flex; flex-wrap: wrap; gap: 8px 20px; margin: 10px 0 0; color: var(--text-secondary); font-size: 14px; }
+.repair-overview-header .repair-status-badge { flex-shrink: 0; }
+.repair-fault-panel, .repair-timeline-panel, .repair-new-stage { padding: 20px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg-main); }
+.repair-timeline-card h3 { margin: 0 0 14px; font-size: 18px; line-height: 1.4; }
+.repair-fault-panel { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 24px; }
+.repair-fault-panel p, .repair-stage-content p { margin: 0; font-size: 16px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
+.repair-timeline-media { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.repair-timeline-media button { min-height: 48px; }
+.repair-stage-count { display: inline-block; margin-left: 10px; padding: 4px 10px; border: 1px solid var(--border); border-radius: 20px; color: var(--text-secondary); font-size: 12px; font-weight: 500; }
+.repair-timeline { list-style: none; padding: 0 0 0 24px; margin: 20px 0 0 8px; border-left: 2px solid var(--border); }
+.repair-timeline-item { position: relative; margin-bottom: 12px; min-width: 0; }
+.repair-timeline-item:last-child { margin-bottom: 0; }
+.repair-timeline-item::before { content: ''; position: absolute; width: 12px; height: 12px; left: -33px; top: 24px; border: 2px solid var(--text-secondary); border-radius: 50%; background: var(--bg-main); }
+.repair-timeline-item:has(details[open])::before { border-color: var(--accent); background: var(--accent); }
+.repair-timeline-stage { border: 1px solid var(--border); border-radius: 10px; background: var(--bg-surface); }
+.repair-timeline-stage[open] { border-color: color-mix(in srgb, var(--accent) 50%, var(--border)); }
+.repair-timeline-stage summary { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 18px; min-height: 68px; padding: 16px 76px 16px 16px; cursor: pointer; list-style: none; }
+.repair-timeline-stage summary::-webkit-details-marker, .repair-new-stage summary::-webkit-details-marker { display: none; }
+.repair-stage-date { font-size: 16px; font-weight: 650; }
+.repair-stage-excerpt { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-secondary); font-size: 14px; }
+.repair-timeline-stage[open] .repair-stage-excerpt { display: none; }
+.repair-stage-chevron { margin-left: auto; color: var(--accent); }
+.repair-timeline-stage[open] > summary .repair-stage-chevron, .repair-new-stage[open] > summary .repair-stage-chevron { transform: rotate(180deg); }
+.repair-stage-content { padding: 0 16px 20px; }
+.repair-stage-content .repair-timeline-media { margin-top: 16px; }
+.repair-timeline-delete { position: absolute; top: 10px; right: 10px; color: var(--text-secondary); border-color: var(--border); }
+.repair-timeline-delete:hover:not(:disabled) { color: var(--system-red); border-color: var(--system-red); }
+.repair-timeline-delete svg { width: 21px; height: 21px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.repair-new-stage { margin-top: 24px; }
+.repair-new-stage > summary { display: flex; align-items: center; gap: 12px; min-height: 48px; font-size: 18px; font-weight: 650; cursor: pointer; list-style: none; }
+.repair-new-stage-open, .repair-new-stage[open] .repair-new-stage-closed { display: none; }
+.repair-new-stage[open] .repair-new-stage-open { display: inline; }
+.repair-new-stage-form { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 24px; margin-top: 18px; }
+.repair-new-stage-description { min-width: 0; }
+.repair-new-stage-description > label { display: block; margin-bottom: 10px; font-size: 16px; }
+.repair-new-stage-description textarea { display: block; width: 100%; min-height: 120px; padding: 12px; border: 1px solid var(--border); border-radius: 9px; background: var(--bg-surface); color: var(--text-main); font: inherit; font-size: 16px; line-height: 1.5; resize: vertical; }
+.repair-new-stage-actions { display: flex; flex-direction: column; gap: 20px; }
+.repair-status-options { display: grid; gap: 4px; min-width: 0; padding: 0; margin: 0; border: 0; }
+.repair-status-options legend { padding: 0; margin-bottom: 8px; font-size: 16px; }
+.repair-status-options label { display: flex; align-items: center; gap: 10px; min-height: 44px; font-size: 16px; cursor: pointer; }
+.repair-status-options input { width: 18px; height: 18px; accent-color: var(--accent); }
+.repair-save-stage { align-self: flex-end; min-height: 48px; height: auto; padding: 12px 22px; margin-top: auto; }
+.repair-timeline-card summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 8px; }
+@media (max-width: 760px) {
+  .repair-timeline-card { padding: 16px 12px; }
+  .repair-overview-header { flex-wrap: wrap; }
+  .repair-overview-header h2 { font-size: 20px; }
+  .repair-overview-meta { flex-direction: column; }
+  .repair-fault-panel { align-items: stretch; flex-direction: column; }
+  .repair-fault-panel, .repair-timeline-panel, .repair-new-stage { padding: 16px 12px; }
+  .repair-timeline { padding-left: 16px; margin-left: 4px; }
+  .repair-timeline-item::before { left: -25px; width: 12px; height: 12px; }
+  .repair-timeline-stage summary { gap: 6px; padding-left: 12px; padding-right: 64px; }
+  .repair-stage-date { font-size: 14px; }
+  .repair-stage-excerpt { order: 3; flex-basis: 100%; }
+  .repair-timeline-delete { right: 6px; }
+  .repair-stage-content { padding: 0 12px 16px; }
+  .repair-timeline-media button { flex: 1; padding-inline: 12px; }
+  .repair-new-stage-form { grid-template-columns: minmax(0, 1fr); }
+  .repair-save-stage { width: 100%; }
+  .repair-new-stage:not([open]) { background: var(--accent); color: #052c32; }
+  .repair-new-stage:not([open]) .repair-stage-chevron { color: inherit; }
+}
