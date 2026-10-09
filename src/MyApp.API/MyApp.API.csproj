@@ -4,8 +4,9 @@
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <AllowMissingPrunePackageData>true</AllowMissingPrunePackageData>
     <UserSecretsId>82a773f8-5e77-4ebd-8f0c-bdd7125dfa67</UserSecretsId>
+    <!-- Локальный .NET 10 SDK не содержит данных prune для Microsoft.AspNetCore.App. -->
+    <AllowMissingPrunePackageData>true</AllowMissingPrunePackageData>
   </PropertyGroup>
 
   <ItemGroup>

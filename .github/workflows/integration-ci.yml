@@ -1,0 +1,110 @@
+name: Integration branch build
+
+on:
+  push:
+    branches:
+      - refactor/integration-auth-shell
+  pull_request:
+    branches:
+      - subtype3860-auth-navigation-shell
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    name: .NET 10 backend
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: myapp_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d myapp_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Restore
+        run: dotnet restore src/MyApp.API.sln
+      - name: Build
+        run: dotnet build src/MyApp.API.sln --configuration Release --no-restore
+      - name: Run unit tests
+        run: dotnet test src/MyApp.API.sln --configuration Release --no-build --no-restore --filter "Category!=Integration"
+      - name: Run PostgreSQL integration tests
+        env:
+          MYAPP_TEST_POSTGRES: Host=localhost;Port=5432;Database=myapp_test;Username=postgres;Password=postgres
+        run: dotnet test src/MyApp.Infrastructure.Tests/MyApp.Infrastructure.Tests.csproj --configuration Release --no-build --no-restore --filter "Category=Integration"
+      - name: Package standalone Fedora-compatible .NET 10 linux-x64 release
+        if: github.event_name == 'push'
+        shell: bash
+        run: |
+          set -euo pipefail
+          dotnet publish src/MyApp.API/MyApp.API.csproj \
+            --configuration Release \
+            --runtime linux-x64 \
+            --self-contained true \
+            --output "$RUNNER_TEMP/myapp-api-publish" \
+            -p:UseAppHost=true \
+            -p:PublishSingleFile=false
+          test -x "$RUNNER_TEMP/myapp-api-publish/MyApp.API"
+          file "$RUNNER_TEMP/myapp-api-publish/MyApp.API" | grep -E 'ELF 64-bit.*x86-64'
+          find "$RUNNER_TEMP/myapp-api-publish" -maxdepth 1 -type f -name 'appsettings*.json' -delete
+          tar -czf "$RUNNER_TEMP/myapp-api-linux-x64-selfcontained.tar.gz" \
+            -C "$RUNNER_TEMP/myapp-api-publish" .
+          (cd "$RUNNER_TEMP" && sha256sum myapp-api-linux-x64-selfcontained.tar.gz > myapp-api-linux-x64-selfcontained.tar.gz.sha256)
+      - name: Upload .NET 10 release candidate
+        if: github.event_name == 'push'
+        uses: actions/upload-artifact@v4
+        with:
+          name: myapp-api-${{ github.sha }}
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            ${{ runner.temp }}/myapp-api-linux-x64-selfcontained.tar.gz
+            ${{ runner.temp }}/myapp-api-linux-x64-selfcontained.tar.gz.sha256
+
+  frontend:
+    name: Vue frontend
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install dependencies
+        run: npm ci
+      - name: Build
+        run: npm run build
+      - name: Package Vue release candidate
+        if: github.event_name == 'push'
+        shell: bash
+        run: |
+          set -euo pipefail
+          tar -czf "$RUNNER_TEMP/myapp-frontend.tar.gz" -C dist .
+          (cd "$RUNNER_TEMP" && sha256sum myapp-frontend.tar.gz > myapp-frontend.tar.gz.sha256)
+      - name: Upload Vue release candidate
+        if: github.event_name == 'push'
+        uses: actions/upload-artifact@v4
+        with:
+          name: myapp-frontend-${{ github.sha }}
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            ${{ runner.temp }}/myapp-frontend.tar.gz
+            ${{ runner.temp }}/myapp-frontend.tar.gz.sha256

@@ -1,0 +1,108 @@
+{
+  "foundWithRepairs": {
+    "vehicle": {
+      "typeName": "КАМАЗ",
+      "modelName": "5320",
+      "garageNumber": 901,
+      "stateNumber": "А123ВС77",
+      "vin": "XTC5320L123456789"
+    },
+    "requests": [
+      {
+        "id": "defect-102",
+        "date": "2026-10-06T10:15:00Z",
+        "dateLabel": "06.10.2026, 16:15",
+        "description": "Потеря мощности двигателя",
+        "photos": [
+          {
+            "id": "defect-photo-7",
+            "fileName": "engine.jpg",
+            "contentType": "image/jpeg",
+            "size": 420000,
+            "source": "defect"
+          }
+        ],
+        "videos": [],
+        "works": [
+          {
+            "id": "work-201",
+            "date": "2026-10-06T11:00:00Z",
+            "dateLabel": "06.10.2026, 17:00",
+            "name": "Диагностика двигателя",
+            "status": "completed",
+            "performer": "Иванов Иван",
+            "photos": [
+              {
+                "id": "work-photo-12",
+                "fileName": "diagnostics.jpg",
+                "contentType": "image/jpeg",
+                "size": 315000,
+                "source": "work"
+              }
+            ],
+            "videos": []
+          },
+          {
+            "id": "work-202",
+            "date": "2026-10-06T12:30:00Z",
+            "dateLabel": "06.10.2026, 18:30",
+            "name": "Проверка топливной системы",
+            "status": "in_progress",
+            "performer": "Петров Пётр",
+            "photos": [],
+            "videos": [
+              {
+                "id": "work-video-18",
+                "fileName": "fuel-check.mp4",
+                "contentType": "video/mp4",
+                "size": 2840000,
+                "source": "work"
+              }
+            ]
+          },
+          {
+            "id": "work-203",
+            "date": "2026-10-06T13:00:00Z",
+            "dateLabel": "06.10.2026, 19:00",
+            "name": "Очистка воздушного фильтра",
+            "status": "completed",
+            "performer": "Иванов Иван",
+            "photos": [],
+            "videos": []
+          }
+        ]
+      },
+      {
+        "id": "defect-098",
+        "date": "2026-09-15T08:30:00Z",
+        "dateLabel": "15.09.2026, 14:30",
+        "description": "Неисправность тормозной системы",
+        "photos": [],
+        "videos": [],
+        "works": [
+          {
+            "id": "work-188",
+            "date": "2026-09-16T09:45:00Z",
+            "dateLabel": "16.09.2026, 15:45",
+            "name": "Замена тормозных колодок",
+            "status": "completed",
+            "performer": "Сидоров Сергей",
+            "photos": [],
+            "videos": []
+          }
+        ]
+      }
+    ]
+  },
+  "foundWithoutRepairs": {
+    "vehicle": {
+      "typeName": "Sany",
+      "modelName": "SET150",
+      "garageNumber": 1204,
+      "stateNumber": "В456ОР",
+      "vin": "LSV12345678901234"
+    },
+    "requests": []
+  },
+  "notFound": null
+}

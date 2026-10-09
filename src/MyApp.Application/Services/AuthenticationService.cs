@@ -1,6 +1,7 @@
 using MyApp.Application.Abstractions;
 using MyApp.Application.Common;
 using MyApp.Application.DTO;
+using MyApp.Application.Security;
 
 namespace MyApp.Application.Services;
 
@@ -24,7 +25,15 @@ public sealed class AuthenticationService(
             return ServiceResult<AuthResponse>.Unauthorized();
         }
 
+        var permissions = user.Role.Equals(
+            "administrator",
+            StringComparison.OrdinalIgnoreCase)
+            ? Permissions.All
+            : Permissions.Expand(user.Permissions.Split(
+                ',',
+                StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+
         return ServiceResult<AuthResponse>.Success(
-            new AuthResponse(tokenProvider.Create(user), user.Role));
+            new AuthResponse(tokenProvider.Create(user), user.Role, permissions));
     }
 }

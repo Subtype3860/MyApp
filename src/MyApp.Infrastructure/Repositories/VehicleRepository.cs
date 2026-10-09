@@ -1,49 +1,54 @@
+using System.Data;
+using Microsoft.EntityFrameworkCore;
 using MyApp.Application.Abstractions;
 using MyApp.Application.DTO;
-using Npgsql;
+using MyApp.Application.Storage;
+using MyApp.Infrastructure.Db;
+using MyApp.Infrastructure.Db.Entities;
 
 namespace MyApp.Infrastructure.Repositories;
 
-public sealed class VehicleRepository(NpgsqlDataSource dataSource) : IVehicleRepository
+/// <summary>
+/// Реализация <see cref="IVehicleRepository"/> на EF Core для журналов
+/// техники и связанных медиафайлов.
+/// </summary>
+public sealed class VehicleRepository(
+    AppDbContext dbContext,
+    IMediaStorageService mediaStorage,
+    MediaStorageOptions mediaStorageOptions) : IVehicleRepository
 {
-    private const string ImageDirectory = "/mnt/dietpi/img";
-    private const string VideoDirectory = "/mnt/dietpi/video";
-    private const string VehicleSelect =
-        """
-        SELECT
-            vehicles.id,
-            COALESCE(groups.full_name, ''),
-            COALESCE(types.full_name, ''),
-            COALESCE(models.full_name, ''),
-            vehicles.gar_number,
-            COALESCE(vehicles.gos_number, ''),
-            COALESCE(vehicles.vim, '')
-        FROM number_car AS vehicles
-        LEFT JOIN model_car AS models ON models.id = vehicles.car_mode_id
-        LEFT JOIN type_car AS types ON types.id = models.car_type_id
-        LEFT JOIN group_car AS groups ON groups.id = types.car_group_id
-        """;
-
     public async Task<IReadOnlyList<VehicleResponse>> GetVehiclesAsync(
         CancellationToken cancellationToken)
     {
-        await using var command = dataSource.CreateCommand(
-            VehicleSelect +
-            """
+        var vehicles = await (
+            from vehicle in dbContext.Vehicles.AsNoTracking()
+            join modelValue in dbContext.VehicleModels.AsNoTracking()
+                on vehicle.CarModeId equals modelValue.Id into models
+            from model in models.DefaultIfEmpty()
+            join typeValue in dbContext.VehicleTypes.AsNoTracking()
+                on (model == null ? null : model.CarTypeId)
+                equals (Guid?)typeValue.Id into types
+            from type in types.DefaultIfEmpty()
+            join groupValue in dbContext.VehicleGroups.AsNoTracking()
+                on (type == null ? null : type.CarGroupId)
+                equals (Guid?)groupValue.Id into groups
+            from vehicleGroup in groups.DefaultIfEmpty()
+            orderby vehicleGroup == null ? string.Empty : vehicleGroup.FullName,
+                type == null ? string.Empty : type.FullName,
+                model == null ? string.Empty : model.FullName,
+                vehicle.GarageNumber == null,
+                vehicle.GarageNumber
+            select new VehicleResponse(
+                vehicle.Id,
+                vehicleGroup == null ? string.Empty : vehicleGroup.FullName,
+                type == null ? string.Empty : type.FullName,
+                model == null ? string.Empty : model.FullName,
+                vehicle.GarageNumber,
+                vehicle.StateNumber ?? string.Empty,
+                vehicle.Vin ?? string.Empty))
+            .ToListAsync(cancellationToken);
 
-            ORDER BY
-                COALESCE(groups.full_name, ''),
-                COALESCE(types.full_name, ''),
-                COALESCE(models.full_name, ''),
-                vehicles.gar_number NULLS LAST
-            """);
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        var result = new List<VehicleResponse>();
-        while (await reader.ReadAsync(cancellationToken))
-        {
-            result.Add(ReadVehicle(reader));
-        }
-        return result;
+        return vehicles;
     }
 
     public async Task<VehicleJournalResponse?> GetJournalAsync(
@@ -70,289 +75,370 @@ public sealed class VehicleRepository(NpgsqlDataSource dataSource) : IVehicleRep
             vehicle, purchases, defects, hours, works);
     }
 
-    public async Task<bool> VehicleExistsAsync(
-        Guid vehicleId,
+    public async Task<IReadOnlyList<VehicleJournalResponse>> GetRepairJournalsAsync(
         CancellationToken cancellationToken)
     {
-        await using var command = dataSource.CreateCommand(
-            "SELECT EXISTS (SELECT 1 FROM number_car WHERE id = @vehicleId)");
-        command.Parameters.AddWithValue("vehicleId", vehicleId);
-        return (bool)(await command.ExecuteScalarAsync(cancellationToken) ?? false);
+        var vehicles = await GetVehiclesAsync(cancellationToken);
+        if (vehicles.Count == 0)
+        {
+            return [];
+        }
+
+        var vehicleIds = vehicles.Select(vehicle => vehicle.Id).ToArray();
+        var defects = await GetDefectResponsesAsync(
+            dbContext.VehicleDefects.AsNoTracking()
+                .Where(defect => vehicleIds.Contains(defect.VehicleId))
+                .OrderByDescending(defect => defect.CreatedAt),
+            cancellationToken);
+        var works = await GetWorkResponsesAsync(
+            dbContext.VehicleWorks.AsNoTracking()
+                .Where(work => vehicleIds.Contains(work.VehicleId))
+                .OrderByDescending(work => work.CreatedAt),
+            cancellationToken);
+        var defectsByVehicle = defects
+            .GroupBy(defect => defect.VehicleId)
+            .ToDictionary(group => group.Key, group => (IReadOnlyList<VehicleDefectResponse>)group
+                .Select(item => item.Response)
+                .ToArray());
+        var worksByVehicle = works
+            .GroupBy(work => work.VehicleId)
+            .ToDictionary(group => group.Key, group => (IReadOnlyList<VehicleWorkResponse>)group
+                .Select(item => item.Response)
+                .ToArray());
+
+        return vehicles.Select(vehicle => new VehicleJournalResponse(
+            vehicle,
+            [],
+            defectsByVehicle.GetValueOrDefault(vehicle.Id) ?? [],
+            [],
+            worksByVehicle.GetValueOrDefault(vehicle.Id) ?? [])).ToArray();
     }
 
-    public Task<Guid> AddPurchaseAsync(
+    public Task<bool> VehicleExistsAsync(
+        Guid vehicleId,
+        CancellationToken cancellationToken) =>
+        dbContext.Vehicles.AsNoTracking()
+            .AnyAsync(vehicle => vehicle.Id == vehicleId, cancellationToken);
+
+    public async Task<Guid> AddPurchaseAsync(
         Guid vehicleId,
         VehiclePurchaseRequest request,
         Guid createdBy,
-        CancellationToken cancellationToken) =>
-        InsertAsync(
-            """
-            INSERT INTO vehicle_purchase_requests (
-                id, vehicle_id, request_date, request_number, item_name,
-                quantity, status, note, created_by)
-            VALUES (
-                @id, @vehicleId, @date, @number, @item, @quantity,
-                @status, @note, @createdBy)
-            """,
-            vehicleId,
-            createdBy,
-            cancellationToken,
-            ("date", request.RequestDate),
-            ("number", request.RequestNumber),
-            ("item", request.ItemName),
-            ("quantity", request.Quantity),
-            ("status", request.Status),
-            ("note", request.Note));
+        CancellationToken cancellationToken)
+    {
+        var entity = new VehiclePurchaseRequestRecord
+        {
+            Id = Guid.NewGuid(),
+            VehicleId = vehicleId,
+            RequestDate = request.RequestDate,
+            RequestNumber = request.RequestNumber,
+            ItemName = request.ItemName,
+            Quantity = request.Quantity,
+            Status = request.Status,
+            Note = request.Note,
+            CreatedBy = createdBy
+        };
+        dbContext.VehiclePurchaseRequests.Add(entity);
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return entity.Id;
+    }
 
-    public Task<Guid> AddDefectAsync(
+    public async Task<Guid> AddDefectAsync(
         Guid vehicleId,
         VehicleDefectRequest request,
         Guid createdBy,
-        CancellationToken cancellationToken) =>
-        InsertAsync(
-            """
-            INSERT INTO vehicle_defects (
-                id, vehicle_id, node_name, failure_reason, error_code,
-                symptoms, downtime_started_at, created_by)
-            VALUES (
-                @id, @vehicleId, @nodeName, @failureReason, @errorCode,
-                @symptoms, @downtimeStartedAt, @createdBy)
-            """,
-            vehicleId,
-            createdBy,
-            cancellationToken,
-            ("nodeName", string.Empty),
-            ("failureReason", request.Symptoms),
-            ("errorCode", request.ErrorCode ?? string.Empty),
-            ("symptoms", request.Symptoms),
-            ("downtimeStartedAt", request.DowntimeStartedAt));
-
-    public async Task<bool> DefectExistsAsync(
-        Guid defectId,
         CancellationToken cancellationToken)
     {
-        await using var command = dataSource.CreateCommand(
-            "SELECT EXISTS (SELECT 1 FROM vehicle_defects WHERE id = @defectId)");
-        command.Parameters.AddWithValue("defectId", defectId);
-        return (bool)(await command.ExecuteScalarAsync(cancellationToken) ?? false);
+        var entity = new VehicleDefectRecord
+        {
+            Id = Guid.NewGuid(),
+            VehicleId = vehicleId,
+            NodeName = string.Empty,
+            FailureReason = request.Symptoms,
+            ErrorCode = request.ErrorCode ?? string.Empty,
+            Symptoms = request.Symptoms,
+            DowntimeStartedAt = request.DowntimeStartedAt,
+            CreatedBy = createdBy
+        };
+        dbContext.VehicleDefects.Add(entity);
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return entity.Id;
     }
 
-    public async Task<bool> DefectBelongsToVehicleAsync(
+    public Task<bool> DefectExistsAsync(
+        Guid defectId,
+        CancellationToken cancellationToken) =>
+        dbContext.VehicleDefects.AsNoTracking()
+            .AnyAsync(defect => defect.Id == defectId, cancellationToken);
+
+    public Task<bool> DefectBelongsToVehicleAsync(
         Guid defectId,
         Guid vehicleId,
-        CancellationToken cancellationToken)
-    {
-        await using var command = dataSource.CreateCommand(
-            """
-            SELECT EXISTS (
-                SELECT 1
-                FROM vehicle_defects
-                WHERE id = @defectId AND vehicle_id = @vehicleId)
-            """);
-        command.Parameters.AddWithValue("defectId", defectId);
-        command.Parameters.AddWithValue("vehicleId", vehicleId);
-        return (bool)(await command.ExecuteScalarAsync(cancellationToken) ?? false);
-    }
+        CancellationToken cancellationToken) =>
+        dbContext.VehicleDefects.AsNoTracking()
+            .AnyAsync(
+                defect => defect.Id == defectId && defect.VehicleId == vehicleId,
+                cancellationToken);
 
     public async Task<bool> ClaimDefectAsync(
         Guid defectId,
         Guid userId,
         CancellationToken cancellationToken)
     {
-        await using var command = dataSource.CreateCommand(
-            """
-            UPDATE vehicle_defects
-            SET assigned_to = @userId, repair_started_at = NOW()
-            WHERE id = @defectId
-              AND assigned_to IS NULL
-              AND NOT EXISTS (
-                  SELECT 1 FROM vehicle_works
-                  WHERE defect_id = @defectId AND completed_at IS NOT NULL)
-            """);
-        command.Parameters.AddWithValue("defectId", defectId);
-        command.Parameters.AddWithValue("userId", userId);
-        return await command.ExecuteNonQueryAsync(cancellationToken) == 1;
+        var now = DateTimeOffset.UtcNow;
+        var updated = await dbContext.VehicleDefects
+            .Where(defect =>
+                defect.Id == defectId &&
+                defect.AssignedTo == null &&
+                !dbContext.VehicleWorks.Any(work =>
+                    work.DefectId == defectId && work.CompletedAt != null))
+            .ExecuteUpdateAsync(
+                setters => setters
+                    .SetProperty(defect => defect.AssignedTo, userId)
+                    .SetProperty(defect => defect.RepairStartedAt, now),
+                cancellationToken);
+        return updated == 1;
     }
 
-    public async Task<bool> IsDefectCreatorAsync(
+    public Task<bool> IsDefectCreatorAsync(
         Guid defectId,
         Guid userId,
-        CancellationToken cancellationToken)
-    {
-        await using var command = dataSource.CreateCommand(
-            "SELECT EXISTS (SELECT 1 FROM vehicle_defects WHERE id = @id AND created_by = @userId)");
-        command.Parameters.AddWithValue("id", defectId);
-        command.Parameters.AddWithValue("userId", userId);
-        return (bool)(await command.ExecuteScalarAsync(cancellationToken) ?? false);
-    }
+        CancellationToken cancellationToken) =>
+        dbContext.VehicleDefects.AsNoTracking()
+            .AnyAsync(
+                defect => defect.Id == defectId && defect.CreatedBy == userId,
+                cancellationToken);
 
-    public async Task<int> GetDefectPhotoCountAsync(
+    public Task<int> GetDefectPhotoCountAsync(
         Guid defectId,
-        CancellationToken cancellationToken)
-    {
-        await using var command = dataSource.CreateCommand(
-            "SELECT COUNT(*) FROM vehicle_defect_photos WHERE defect_id = @defectId");
-        command.Parameters.AddWithValue("defectId", defectId);
-        return Convert.ToInt32(
-            await command.ExecuteScalarAsync(cancellationToken));
-    }
+        CancellationToken cancellationToken) =>
+        dbContext.VehicleDefectPhotos.AsNoTracking()
+            .CountAsync(photo => photo.DefectId == defectId, cancellationToken);
 
     public Task<IReadOnlyList<Guid>> AddDefectPhotosAsync(
         Guid defectId,
         IReadOnlyList<VehicleWorkPhotoUpload> photos,
         CancellationToken cancellationToken) =>
         AddPhotosAsync(
-            "vehicle_defect_photos",
-            "defect_id",
-            defectId,
             photos,
-            ImageDirectory,
+            mediaStorage.SavePhotoAsync,
+            (id, item, path) => new VehicleDefectPhotoRecord
+            {
+                Id = id,
+                DefectId = defectId,
+                FileName = SafeFileName(item.FileName),
+                ContentType = item.ContentType,
+                StoragePath = path,
+                Size = item.Content.LongLength
+            },
+            entity => dbContext.VehicleDefectPhotos.Add(entity),
             cancellationToken);
 
     public Task<VehicleWorkPhotoContent?> GetDefectPhotoAsync(
         Guid photoId,
         CancellationToken cancellationToken) =>
-        GetPhotoAsync("vehicle_defect_photos", photoId, cancellationToken);
+        GetMediaAsync(
+            dbContext.VehicleDefectPhotos.AsNoTracking(),
+            photoId,
+            entity => entity.FileName,
+            entity => entity.ContentType,
+            entity => entity.Content,
+            entity => entity.StoragePath,
+            cancellationToken);
 
     public Task<bool> DeleteDefectPhotoAsync(
         Guid photoId,
         CancellationToken cancellationToken) =>
-        DeletePhotoAsync("vehicle_defect_photos", photoId, cancellationToken);
+        DeleteMediaAsync(
+            dbContext.VehicleDefectPhotos,
+            photoId,
+            entity => entity.StoragePath,
+            cancellationToken);
 
     public Task<int> GetDefectVideoCountAsync(
         Guid defectId,
         CancellationToken cancellationToken) =>
-        GetMediaCountAsync(
-            "vehicle_defect_videos", "defect_id", defectId, cancellationToken);
+        dbContext.VehicleDefectVideos.AsNoTracking()
+            .CountAsync(video => video.DefectId == defectId, cancellationToken);
 
     public Task<IReadOnlyList<Guid>> AddDefectVideosAsync(
         Guid defectId,
         IReadOnlyList<VehicleMediaUpload> videos,
         CancellationToken cancellationToken) =>
         AddMediaAsync(
-            "vehicle_defect_videos", "defect_id", defectId, videos,
-            VideoDirectory, cancellationToken);
+            videos,
+            mediaStorage.SaveVideoAsync,
+            (id, item, path) => new VehicleDefectVideoRecord
+            {
+                Id = id,
+                DefectId = defectId,
+                FileName = SafeFileName(item.FileName),
+                ContentType = item.ContentType,
+                StoragePath = path,
+                Size = item.Content.LongLength
+            },
+            entity => dbContext.VehicleDefectVideos.Add(entity),
+            cancellationToken);
 
-    public Task<VehicleWorkPhotoContent?> GetDefectVideoAsync(
+    public Task<VehicleMediaStream?> GetDefectVideoStreamAsync(
         Guid videoId,
         CancellationToken cancellationToken) =>
-        GetPhotoAsync("vehicle_defect_videos", videoId, cancellationToken);
+        GetMediaStreamAsync(
+            dbContext.VehicleDefectVideos.AsNoTracking(),
+            videoId,
+            entity => entity.FileName,
+            entity => entity.ContentType,
+            entity => entity.Content,
+            entity => entity.StoragePath,
+            cancellationToken);
 
     public Task<bool> DeleteDefectVideoAsync(
         Guid videoId,
         CancellationToken cancellationToken) =>
-        DeletePhotoAsync("vehicle_defect_videos", videoId, cancellationToken);
+        DeleteMediaAsync(
+            dbContext.VehicleDefectVideos,
+            videoId,
+            entity => entity.StoragePath,
+            cancellationToken);
 
-    public Task<Guid> AddHoursAsync(
+    public async Task<Guid> AddHoursAsync(
         Guid vehicleId,
         VehicleHoursRequest request,
         Guid createdBy,
-        CancellationToken cancellationToken) =>
-        InsertAsync(
-            """
-            INSERT INTO vehicle_hour_readings (
-                id, vehicle_id, reading_date, engine_hours, note, created_by)
-            VALUES (
-                @id, @vehicleId, @date, @hours, @note, @createdBy)
-            """,
-            vehicleId,
-            createdBy,
-            cancellationToken,
-            ("date", request.ReadingDate),
-            ("hours", request.EngineHours),
-            ("note", request.Note));
+        CancellationToken cancellationToken)
+    {
+        var entity = new VehicleHourReadingRecord
+        {
+            Id = Guid.NewGuid(),
+            VehicleId = vehicleId,
+            ReadingDate = request.ReadingDate,
+            EngineHours = request.EngineHours,
+            Note = request.Note,
+            CreatedBy = createdBy
+        };
+        dbContext.VehicleHourReadings.Add(entity);
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return entity.Id;
+    }
 
+    /// <summary>
+    /// CSV import is serialized by reading date to avoid duplicate inserts
+    /// from simultaneous imports using this repository. Direct AddHoursAsync
+    /// calls and external SQL do not participate in the advisory lock.
+    /// </summary>
     public async Task ImportHoursAsync(
         DateOnly readingDate,
         IReadOnlyList<VehicleHoursImportItem> items,
         Guid createdBy,
         CancellationToken cancellationToken)
     {
-        await using var connection = await dataSource.OpenConnectionAsync(
+        await using var transaction = await dbContext.Database
+            .BeginTransactionAsync(cancellationToken);
+
+        // Keep MAX/UPSERT operations in this transaction and serialize all
+        // imports for one date. The lock is released automatically on commit
+        // or rollback, even if a row violates a database constraint.
+        const int lockNamespace = 4386203;
+        await dbContext.Database.ExecuteSqlInterpolatedAsync(
+            $"SELECT pg_advisory_xact_lock({lockNamespace}, {readingDate.DayNumber})",
             cancellationToken);
-        await using var transaction = await connection.BeginTransactionAsync(
-            cancellationToken);
+
+        // A blank CSV cell carries forward the most recent value on or before
+        // the import date. Fetch one most-recent row for each distinct vehicle
+        // in a SINGLE PostgreSQL query rather than querying inside the loop.
+        var blankVehicleIds = items
+            .Where(item => !item.EngineHours.HasValue)
+            .Select(item => item.VehicleId)
+            .Distinct()
+            .ToArray();
+        var carriedHours = new Dictionary<Guid, decimal>();
+        if (blankVehicleIds.Length > 0)
+        {
+            var lastReadings = await dbContext.VehicleHourReadings
+                .AsNoTracking()
+                .Where(reading =>
+                    blankVehicleIds.Contains(reading.VehicleId) &&
+                    reading.ReadingDate <= readingDate)
+                .GroupBy(reading => reading.VehicleId)
+                .Select(group => group
+                    .OrderByDescending(reading => reading.ReadingDate)
+                    .ThenByDescending(reading => reading.CreatedAt)
+                    .Select(reading => new {
+                        reading.VehicleId,
+                        reading.EngineHours
+                    })
+                    .First())
+                .ToArrayAsync(cancellationToken);
+
+            foreach (var reading in lastReadings)
+            {
+                carriedHours[reading.VehicleId] = reading.EngineHours;
+            }
+        }
+
         foreach (var item in items)
         {
-            var engineHours = item.EngineHours;
-            if (engineHours is null)
+            // Repeated rows for the same vehicle must observe earlier rows of
+            // this import, including an inserted or overwritten reading.
+            var engineHours = item.EngineHours ??
+                carriedHours.GetValueOrDefault(item.VehicleId);
+            var now = DateTimeOffset.UtcNow;
+            var updated = await dbContext.VehicleHourReadings
+                .Where(reading =>
+                    reading.VehicleId == item.VehicleId &&
+                    reading.ReadingDate == readingDate)
+                .ExecuteUpdateAsync(
+                    setters => setters
+                        .SetProperty(reading => reading.EngineHours, engineHours)
+                        .SetProperty(reading => reading.Note, "Импорт CSV")
+                        .SetProperty(reading => reading.CreatedBy, createdBy)
+                        .SetProperty(reading => reading.CreatedAt, now),
+                    cancellationToken);
+            if (updated > 0)
             {
-                await using var previous = connection.CreateCommand();
-                previous.Transaction = transaction;
-                previous.CommandText =
-                    """
-                    SELECT engine_hours
-                    FROM vehicle_hour_readings
-                    WHERE vehicle_id = @vehicleId
-                      AND reading_date <= @readingDate
-                    ORDER BY reading_date DESC, created_at DESC
-                    LIMIT 1
-                    """;
-                previous.Parameters.AddWithValue("vehicleId", item.VehicleId);
-                previous.Parameters.AddWithValue("readingDate", readingDate);
-                var value = await previous.ExecuteScalarAsync(cancellationToken);
-                engineHours = value is decimal hours ? hours : 0m;
-            }
-
-            await using var update = connection.CreateCommand();
-            update.Transaction = transaction;
-            update.CommandText =
-                """
-                UPDATE vehicle_hour_readings
-                SET engine_hours = @hours,
-                    note = 'Импорт CSV',
-                    created_by = @createdBy,
-                    created_at = NOW()
-                WHERE vehicle_id = @vehicleId
-                  AND reading_date = @readingDate
-                """;
-            update.Parameters.AddWithValue("hours", engineHours.Value);
-            update.Parameters.AddWithValue("createdBy", createdBy);
-            update.Parameters.AddWithValue("vehicleId", item.VehicleId);
-            update.Parameters.AddWithValue("readingDate", readingDate);
-            if (await update.ExecuteNonQueryAsync(cancellationToken) > 0)
-            {
+                carriedHours[item.VehicleId] = engineHours;
                 continue;
             }
 
-            await using var insert = connection.CreateCommand();
-            insert.Transaction = transaction;
-            insert.CommandText =
-                """
-                INSERT INTO vehicle_hour_readings (
-                    id, vehicle_id, reading_date, engine_hours, note, created_by)
-                VALUES (
-                    @id, @vehicleId, @readingDate, @hours, 'Импорт CSV', @createdBy)
-                """;
-            insert.Parameters.AddWithValue("id", Guid.NewGuid());
-            insert.Parameters.AddWithValue("vehicleId", item.VehicleId);
-            insert.Parameters.AddWithValue("readingDate", readingDate);
-            insert.Parameters.AddWithValue("hours", engineHours.Value);
-            insert.Parameters.AddWithValue("createdBy", createdBy);
-            await insert.ExecuteNonQueryAsync(cancellationToken);
+            dbContext.VehicleHourReadings.Add(new VehicleHourReadingRecord
+            {
+                Id = Guid.NewGuid(),
+                VehicleId = item.VehicleId,
+                ReadingDate = readingDate,
+                EngineHours = engineHours,
+                Note = "Импорт CSV",
+                CreatedBy = createdBy
+            });
+            await dbContext.SaveChangesAsync(cancellationToken);
+            carriedHours[item.VehicleId] = engineHours;
         }
         await transaction.CommitAsync(cancellationToken);
     }
 
-    public Task<Guid> AddWorkAsync(
+    public async Task<Guid> AddWorkAsync(
         Guid vehicleId,
         VehicleWorkRequest request,
         Guid createdBy,
-        CancellationToken cancellationToken) =>
-        InsertAsync(
-            """
-            INSERT INTO vehicle_works (
-                id, vehicle_id, work_date, description, engine_hours,
-                performer, note, defect_id, purchase_request_number, created_by)
-            VALUES (
-                @id, @vehicleId, CURRENT_DATE, @description, NULL,
-                '', '', @defectId, '', @createdBy)
-            """,
-            vehicleId,
-            createdBy,
-            cancellationToken,
-            ("description", request.Description),
-            ("defectId", request.DefectId));
+        CancellationToken cancellationToken)
+    {
+        var entity = new VehicleWorkRecord
+        {
+            Id = Guid.NewGuid(),
+            VehicleId = vehicleId,
+            WorkDate = DateOnly.FromDateTime(DateTime.UtcNow),
+            Description = request.Description,
+            Performer = string.Empty,
+            Note = string.Empty,
+            DefectId = request.DefectId,
+            FailureCause = string.Empty,
+            RepairStatus = "repaired",
+            RequiredParts = string.Empty,
+            CreatedBy = createdBy
+        };
+        dbContext.VehicleWorks.Add(entity);
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return entity.Id;
+    }
 
     public async Task<Guid?> CompleteDefectAsync(
         Guid defectId,
@@ -361,232 +447,736 @@ public sealed class VehicleRepository(NpgsqlDataSource dataSource) : IVehicleRep
         bool administrator,
         CancellationToken cancellationToken)
     {
-        var id = Guid.NewGuid();
-        await using var connection = await dataSource.OpenConnectionAsync(
-            cancellationToken);
-        await using var transaction = await connection.BeginTransactionAsync(
-            cancellationToken);
-        await using var select = connection.CreateCommand();
-        select.Transaction = transaction;
-        select.CommandText =
-            """
-            SELECT vehicle_id, assigned_to
-            FROM vehicle_defects
-            WHERE id = @defectId
-            FOR UPDATE
-            """;
-        select.Parameters.AddWithValue("defectId", defectId);
-        Guid vehicleId;
-        Guid? assignedTo;
-        await using (var reader = await select.ExecuteReaderAsync(cancellationToken))
-        {
-            if (!await reader.ReadAsync(cancellationToken))
-            {
-                return null;
-            }
-            vehicleId = reader.GetGuid(0);
-            assignedTo = reader.IsDBNull(1) ? null : reader.GetGuid(1);
-        }
-        if (!administrator && assignedTo != performedBy)
+        await using var transaction = await dbContext.Database
+            .BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
+        var defect = await dbContext.VehicleDefects
+            .AsNoTracking()
+            .SingleOrDefaultAsync(
+                entity => entity.Id == defectId, cancellationToken);
+        if (defect is null)
         {
             return null;
         }
 
-        await using var completed = connection.CreateCommand();
-        completed.Transaction = transaction;
-        completed.CommandText =
-            """
-            SELECT EXISTS (
-                SELECT 1 FROM vehicle_works
-                WHERE defect_id = @defectId AND completed_at IS NOT NULL)
-            """;
-        completed.Parameters.AddWithValue("defectId", defectId);
-        if ((bool)(await completed.ExecuteScalarAsync(cancellationToken) ?? false))
+        var completedAt = request.RepairDateTime ?? DateTimeOffset.UtcNow;
+        var entity = new VehicleWorkRecord
         {
-            return null;
-        }
-
-        await using var command = connection.CreateCommand();
-        command.Transaction = transaction;
-        command.CommandText =
-            """
-            INSERT INTO vehicle_works (
-                id, vehicle_id, work_date, description, engine_hours,
-                performer, note, defect_id, purchase_request_number,
-                failure_cause, repair_status, required_parts, performed_by,
-                completed_at, created_by)
-            VALUES (
-                @id, @vehicleId, CURRENT_DATE, @description, NULL,
-                '', '', @defectId, @requestNumber, @failureCause, @status,
-                @requiredParts, @performedBy, NOW(), @performedBy)
-            """;
-        command.Parameters.AddWithValue("id", id);
-        command.Parameters.AddWithValue("vehicleId", vehicleId);
-        command.Parameters.AddWithValue("defectId", defectId);
-        command.Parameters.AddWithValue("description", request.Description);
-        command.Parameters.AddWithValue("requestNumber", string.Empty);
-        command.Parameters.AddWithValue("failureCause", request.Cause);
-        command.Parameters.AddWithValue("status", request.Status!);
-        command.Parameters.AddWithValue(
-            "requiredParts", request.RequiredParts ?? string.Empty);
-        command.Parameters.AddWithValue("performedBy", performedBy);
-        await command.ExecuteNonQueryAsync(cancellationToken);
+            Id = Guid.NewGuid(),
+            VehicleId = defect.VehicleId,
+            WorkDate = DateOnly.FromDateTime(completedAt.Date),
+            Description = request.Description,
+            Performer = string.Empty,
+            Note = string.Empty,
+            DefectId = defectId,
+            FailureCause = request.Cause,
+            RepairStatus = request.Status!,
+            RequiredParts = request.RequiredParts ?? string.Empty,
+            PerformedBy = performedBy,
+            CompletedAt = completedAt,
+            CreatedBy = performedBy
+        };
+        dbContext.VehicleWorks.Add(entity);
+        await dbContext.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
-        return id;
+        return entity.Id;
     }
 
-    public async Task<bool> WorkExistsAsync(
+    public Task<bool> WorkExistsAsync(
         Guid workId,
-        CancellationToken cancellationToken)
-    {
-        await using var command = dataSource.CreateCommand(
-            "SELECT EXISTS (SELECT 1 FROM vehicle_works WHERE id = @workId)");
-        command.Parameters.AddWithValue("workId", workId);
-        return (bool)(await command.ExecuteScalarAsync(cancellationToken) ?? false);
-    }
+        CancellationToken cancellationToken) =>
+        dbContext.VehicleWorks.AsNoTracking()
+            .AnyAsync(work => work.Id == workId, cancellationToken);
 
-    public async Task<bool> IsWorkPerformerAsync(
+    public Task<bool> IsWorkPerformerAsync(
         Guid workId,
         Guid userId,
-        CancellationToken cancellationToken)
-    {
-        await using var command = dataSource.CreateCommand(
-            """
-            SELECT EXISTS (
-                SELECT 1 FROM vehicle_works
-                WHERE id = @id
-                  AND (performed_by = @userId OR created_by = @userId))
-            """);
-        command.Parameters.AddWithValue("id", workId);
-        command.Parameters.AddWithValue("userId", userId);
-        return (bool)(await command.ExecuteScalarAsync(cancellationToken) ?? false);
-    }
+        CancellationToken cancellationToken) =>
+        dbContext.VehicleWorks.AsNoTracking()
+            .AnyAsync(
+                work => work.Id == workId &&
+                    (work.PerformedBy == userId || work.CreatedBy == userId),
+                cancellationToken);
 
-    public async Task<bool> CanManageMediaAsync(
+    public Task<bool> CanManageMediaAsync(
         string category,
         Guid mediaId,
         Guid userId,
-        CancellationToken cancellationToken)
-    {
-        var (table, parentColumn, parentTable, ownerColumn) = category switch
+        CancellationToken cancellationToken) =>
+        category switch
         {
-            "defect-photo" => (
-                "vehicle_defect_photos", "defect_id",
-                "vehicle_defects", "created_by"),
-            "defect-video" => (
-                "vehicle_defect_videos", "defect_id",
-                "vehicle_defects", "created_by"),
-            "work-photo" => (
-                "vehicle_work_photos", "work_id",
-                "vehicle_works", "performed_by"),
-            "work-video" => (
-                "vehicle_work_videos", "work_id",
-                "vehicle_works", "performed_by"),
-            _ => (null, null, null, null)
+            "defect-photo" => dbContext.VehicleDefectPhotos.AsNoTracking()
+                .AnyAsync(photo => photo.Id == mediaId &&
+                    dbContext.VehicleDefects.Any(defect =>
+                        defect.Id == photo.DefectId &&
+                        defect.CreatedBy == userId), cancellationToken),
+            "defect-video" => dbContext.VehicleDefectVideos.AsNoTracking()
+                .AnyAsync(video => video.Id == mediaId &&
+                    dbContext.VehicleDefects.Any(defect =>
+                        defect.Id == video.DefectId &&
+                        defect.CreatedBy == userId), cancellationToken),
+            "work-photo" => dbContext.VehicleWorkPhotos.AsNoTracking()
+                .AnyAsync(photo => photo.Id == mediaId &&
+                    dbContext.VehicleWorks.Any(work =>
+                        work.Id == photo.WorkId &&
+                        work.PerformedBy == userId), cancellationToken),
+            "work-video" => dbContext.VehicleWorkVideos.AsNoTracking()
+                .AnyAsync(video => video.Id == mediaId &&
+                    dbContext.VehicleWorks.Any(work =>
+                        work.Id == video.WorkId &&
+                        work.PerformedBy == userId), cancellationToken),
+            _ => Task.FromResult(false)
         };
-        if (table is null)
-        {
-            return false;
-        }
-        await using var command = dataSource.CreateCommand(
-            $"""
-            SELECT EXISTS (
-                SELECT 1
-                FROM {table} AS media
-                JOIN {parentTable} AS parent
-                  ON parent.id = media.{parentColumn}
-                WHERE media.id = @mediaId
-                  AND parent.{ownerColumn} = @userId)
-            """);
-        command.Parameters.AddWithValue("mediaId", mediaId);
-        command.Parameters.AddWithValue("userId", userId);
-        return (bool)(await command.ExecuteScalarAsync(cancellationToken) ?? false);
-    }
 
-    public async Task<int> GetWorkPhotoCountAsync(
+    public Task<int> GetWorkPhotoCountAsync(
         Guid workId,
-        CancellationToken cancellationToken)
-    {
-        await using var command = dataSource.CreateCommand(
-            "SELECT COUNT(*) FROM vehicle_work_photos WHERE work_id = @workId");
-        command.Parameters.AddWithValue("workId", workId);
-        return Convert.ToInt32(
-            await command.ExecuteScalarAsync(cancellationToken));
-    }
+        CancellationToken cancellationToken) =>
+        dbContext.VehicleWorkPhotos.AsNoTracking()
+            .CountAsync(photo => photo.WorkId == workId, cancellationToken);
 
-    public async Task<IReadOnlyList<Guid>> AddWorkPhotosAsync(
+    public Task<IReadOnlyList<Guid>> AddWorkPhotosAsync(
         Guid workId,
         IReadOnlyList<VehicleWorkPhotoUpload> photos,
         CancellationToken cancellationToken) =>
-        await AddPhotosAsync(
-            "vehicle_work_photos",
-            "work_id",
-            workId,
+        AddPhotosAsync(
             photos,
-            ImageDirectory,
+            mediaStorage.SavePhotoAsync,
+            (id, item, path) => new VehicleWorkPhotoRecord
+            {
+                Id = id,
+                WorkId = workId,
+                FileName = SafeFileName(item.FileName),
+                ContentType = item.ContentType,
+                StoragePath = path,
+                Size = item.Content.LongLength
+            },
+            entity => dbContext.VehicleWorkPhotos.Add(entity),
             cancellationToken);
 
-    private async Task<IReadOnlyList<Guid>> AddPhotosAsync(
-        string table,
-        string parentColumn,
-        Guid parentId,
-        IReadOnlyList<VehicleWorkPhotoUpload> photos,
-        string directory,
+    public Task<VehicleWorkPhotoContent?> GetWorkPhotoAsync(
+        Guid photoId,
+        CancellationToken cancellationToken) =>
+        GetMediaAsync(
+            dbContext.VehicleWorkPhotos.AsNoTracking(),
+            photoId,
+            entity => entity.FileName,
+            entity => entity.ContentType,
+            entity => entity.Content,
+            entity => entity.StoragePath,
+            cancellationToken);
+
+    public Task<bool> DeleteWorkPhotoAsync(
+        Guid photoId,
+        CancellationToken cancellationToken) =>
+        DeleteMediaAsync(
+            dbContext.VehicleWorkPhotos,
+            photoId,
+            entity => entity.StoragePath,
+            cancellationToken);
+
+    public Task<int> GetWorkVideoCountAsync(
+        Guid workId,
+        CancellationToken cancellationToken) =>
+        dbContext.VehicleWorkVideos.AsNoTracking()
+            .CountAsync(video => video.WorkId == workId, cancellationToken);
+
+    public Task<IReadOnlyList<Guid>> AddWorkVideosAsync(
+        Guid workId,
+        IReadOnlyList<VehicleMediaUpload> videos,
+        CancellationToken cancellationToken) =>
+        AddMediaAsync(
+            videos,
+            mediaStorage.SaveVideoAsync,
+            (id, item, path) => new VehicleWorkVideoRecord
+            {
+                Id = id,
+                WorkId = workId,
+                FileName = SafeFileName(item.FileName),
+                ContentType = item.ContentType,
+                StoragePath = path,
+                Size = item.Content.LongLength
+            },
+            entity => dbContext.VehicleWorkVideos.Add(entity),
+            cancellationToken);
+
+    public Task<VehicleMediaStream?> GetWorkVideoStreamAsync(
+        Guid videoId,
+        CancellationToken cancellationToken) =>
+        GetMediaStreamAsync(
+            dbContext.VehicleWorkVideos.AsNoTracking(),
+            videoId,
+            entity => entity.FileName,
+            entity => entity.ContentType,
+            entity => entity.Content,
+            entity => entity.StoragePath,
+            cancellationToken);
+
+    public Task<bool> DeleteWorkVideoAsync(
+        Guid videoId,
+        CancellationToken cancellationToken) =>
+        DeleteMediaAsync(
+            dbContext.VehicleWorkVideos,
+            videoId,
+            entity => entity.StoragePath,
+            cancellationToken);
+
+    public async Task<Guid?> AddPartsRequestAsync(
+        Guid defectId,
+        VehiclePartsRequest request,
+        Guid createdBy,
         CancellationToken cancellationToken)
     {
-        var media = photos
-            .Select(photo => new VehicleMediaUpload(
-                photo.FileName, photo.ContentType, photo.Content))
-            .ToArray();
-        return await AddMediaAsync(
-            table, parentColumn, parentId, media, directory, cancellationToken);
+        await using var transaction = await dbContext.Database
+            .BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
+        var canAdd = await dbContext.VehicleDefects.AsNoTracking()
+            .AnyAsync(defect =>
+                defect.Id == defectId &&
+                dbContext.VehicleWorks.Any(work =>
+                    work.DefectId == defect.Id &&
+                    work.RepairStatus == "awaiting_parts"),
+                cancellationToken);
+        if (!canAdd)
+        {
+            return null;
+        }
+
+        var entity = new VehiclePartsRequestRecord
+        {
+            Id = Guid.NewGuid(),
+            DefectId = defectId,
+            RequestDate = request.RequestDate,
+            RequestNumber = request.RequestNumber,
+            Description = request.Description,
+            RequiredParts = request.RequiredParts ?? string.Empty,
+            CreatedBy = createdBy
+        };
+        dbContext.VehiclePartsRequests.Add(entity);
+        await dbContext.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return entity.Id;
     }
 
-    private async Task<IReadOnlyList<Guid>> AddMediaAsync(
-        string table,
-        string parentColumn,
-        Guid parentId,
-        IReadOnlyList<VehicleMediaUpload> media,
-        string directory,
+    public async Task<bool> UpdatePartsRequestAsync(
+        Guid requestId,
+        VehiclePartsRequest request,
         CancellationToken cancellationToken)
     {
-        Directory.CreateDirectory(directory);
-        var writtenPaths = new List<string>(media.Count);
-        await using var connection = await dataSource.OpenConnectionAsync(
+        var updatedRows = await dbContext.VehiclePartsRequests
+            .Where(partsRequest => partsRequest.Id == requestId)
+            .ExecuteUpdateAsync(
+                setters => setters
+                    .SetProperty(
+                        partsRequest => partsRequest.RequestDate,
+                        request.RequestDate)
+                    .SetProperty(
+                        partsRequest => partsRequest.RequestNumber,
+                        request.RequestNumber)
+                    .SetProperty(
+                        partsRequest => partsRequest.Description,
+                        request.Description)
+                    .SetProperty(
+                        partsRequest => partsRequest.RequiredParts,
+                        request.RequiredParts ?? string.Empty),
+                cancellationToken);
+        return updatedRows > 0;
+    }
+
+    public async Task<IReadOnlyList<VehiclePartsRequestResponse>> GetPartsRequestsAsync(
+        Guid defectId,
+        CancellationToken cancellationToken)
+    {
+        return await dbContext.VehiclePartsRequests.AsNoTracking()
+            .Where(request => request.DefectId == defectId)
+            .OrderBy(request => request.CreatedAt)
+            .Select(request => new VehiclePartsRequestResponse(
+                request.Id,
+                request.DefectId,
+                request.RequestNumber,
+                request.RequestDate,
+                request.Description,
+                request.RequiredParts,
+                request.CreatedAt))
+            .ToListAsync(cancellationToken);
+    }
+
+    public async Task<bool> DeletePartsRequestAsync(
+        Guid requestId,
+        CancellationToken cancellationToken) =>
+        await dbContext.VehiclePartsRequests
+            .Where(request => request.Id == requestId)
+            .ExecuteDeleteAsync(cancellationToken) > 0;
+
+    public async Task<bool> DeleteEntryAsync(
+        string category,
+        Guid id,
+        CancellationToken cancellationToken)
+    {
+        IReadOnlyList<string> paths = category switch
+        {
+            "defects" => await GetDefectMediaPathsAsync(id, cancellationToken),
+            "works" => await GetWorkMediaPathsAsync(id, cancellationToken),
+            _ => []
+        };
+
+        var deleted = category switch
+        {
+            "purchases" => await dbContext.VehiclePurchaseRequests
+                .Where(entry => entry.Id == id)
+                .ExecuteDeleteAsync(cancellationToken),
+            "defects" => await dbContext.VehicleDefects
+                .Where(entry => entry.Id == id)
+                .ExecuteDeleteAsync(cancellationToken),
+            "hours" => await dbContext.VehicleHourReadings
+                .Where(entry => entry.Id == id)
+                .ExecuteDeleteAsync(cancellationToken),
+            "works" => await dbContext.VehicleWorks
+                .Where(entry => entry.Id == id)
+                .ExecuteDeleteAsync(cancellationToken),
+            _ => 0
+        };
+        if (deleted == 0)
+        {
+            return false;
+        }
+
+        foreach (var path in paths)
+        {
+            DeleteFile(path);
+        }
+        return true;
+    }
+
+    private async Task<VehicleResponse?> GetVehicleAsync(
+        Guid vehicleId,
+        CancellationToken cancellationToken) =>
+        await (
+            from vehicle in dbContext.Vehicles.AsNoTracking()
+            join modelValue in dbContext.VehicleModels.AsNoTracking()
+                on vehicle.CarModeId equals modelValue.Id into models
+            from model in models.DefaultIfEmpty()
+            join typeValue in dbContext.VehicleTypes.AsNoTracking()
+                on (model == null ? null : model.CarTypeId)
+                equals (Guid?)typeValue.Id into types
+            from type in types.DefaultIfEmpty()
+            join groupValue in dbContext.VehicleGroups.AsNoTracking()
+                on (type == null ? null : type.CarGroupId)
+                equals (Guid?)groupValue.Id into groups
+            from vehicleGroup in groups.DefaultIfEmpty()
+            where vehicle.Id == vehicleId
+            select new VehicleResponse(
+                vehicle.Id,
+                vehicleGroup == null ? string.Empty : vehicleGroup.FullName,
+                type == null ? string.Empty : type.FullName,
+                model == null ? string.Empty : model.FullName,
+                vehicle.GarageNumber,
+                vehicle.StateNumber ?? string.Empty,
+                vehicle.Vin ?? string.Empty))
+            .SingleOrDefaultAsync(cancellationToken);
+
+    private async Task<IReadOnlyList<VehiclePurchaseResponse>> GetPurchasesAsync(
+        Guid vehicleId,
+        DateOnly? from,
+        DateOnly? to,
+        CancellationToken cancellationToken)
+    {
+        var query = dbContext.VehiclePurchaseRequests.AsNoTracking()
+            .Where(request => request.VehicleId == vehicleId);
+        if (from.HasValue)
+        {
+            query = query.Where(request => request.RequestDate >= from.Value);
+        }
+        if (to.HasValue)
+        {
+            query = query.Where(request => request.RequestDate <= to.Value);
+        }
+
+        return await query
+            .OrderByDescending(request => request.RequestDate)
+            .ThenByDescending(request => request.CreatedAt)
+            .Select(request => new VehiclePurchaseResponse(
+                request.Id,
+                request.RequestDate,
+                request.RequestNumber,
+                request.ItemName,
+                request.Quantity,
+                request.Status,
+                request.Note,
+                request.CreatedAt))
+            .ToListAsync(cancellationToken);
+    }
+
+    private async Task<IReadOnlyList<(Guid VehicleId, VehicleDefectResponse Response)>>
+        GetDefectResponsesAsync(
+            IQueryable<VehicleDefectRecord> query,
+            CancellationToken cancellationToken)
+    {
+        var defects = await query.ToListAsync(cancellationToken);
+        if (defects.Count == 0)
+        {
+            return [];
+        }
+
+        var userIds = defects.Select(defect => defect.CreatedBy)
+            .Concat(defects.Where(defect => defect.AssignedTo.HasValue)
+                .Select(defect => defect.AssignedTo!.Value))
+            .Distinct()
+            .ToArray();
+        var userNames = await GetUserNamesAsync(userIds, cancellationToken);
+        var defectIds = defects.Select(defect => defect.Id).ToArray();
+        var latestCompletedWorks = await dbContext.VehicleWorks.AsNoTracking()
+            .Where(work =>
+                work.DefectId.HasValue &&
+                defectIds.Contains(work.DefectId.Value) &&
+                work.CompletedAt.HasValue)
+            .OrderByDescending(work => work.CompletedAt)
+            .Select(work => new
+            {
+                DefectId = work.DefectId!.Value,
+                work.RepairStatus,
+                work.CompletedAt
+            })
+            .ToListAsync(cancellationToken);
+        var latestByDefect = latestCompletedWorks
+            .GroupBy(work => work.DefectId)
+            .ToDictionary(group => group.Key, group => group.First());
+        var photos = await dbContext.VehicleDefectPhotos.AsNoTracking()
+            .Where(photo => defectIds.Contains(photo.DefectId))
+            .OrderBy(photo => photo.CreatedAt)
+            .ThenBy(photo => photo.Id)
+            .Select(photo => new
+            {
+                photo.DefectId,
+                photo.Id,
+                photo.FileName,
+                photo.ContentType,
+                photo.Size,
+                ContentLength = photo.Content == null
+                    ? 0L
+                    : (long)photo.Content.Length
+            })
+            .ToListAsync(cancellationToken);
+        var videos = await dbContext.VehicleDefectVideos.AsNoTracking()
+            .Where(video => defectIds.Contains(video.DefectId))
+            .OrderBy(video => video.CreatedAt)
+            .ThenBy(video => video.Id)
+            .Select(video => new
+            {
+                video.DefectId,
+                Response = new VehicleMediaResponse(
+                    video.Id, video.FileName, video.ContentType, video.Size)
+            })
+            .ToListAsync(cancellationToken);
+        var photosByDefect = photos.GroupBy(photo => photo.DefectId)
+            .ToDictionary(
+                group => group.Key,
+                group => (IReadOnlyList<VehicleWorkPhotoResponse>)group
+                    .Select(item => new VehicleWorkPhotoResponse(
+                        item.Id,
+                        item.FileName,
+                        item.ContentType,
+                        item.Size == 0 ? item.ContentLength : item.Size))
+                    .ToArray());
+        var videosByDefect = videos.GroupBy(video => video.DefectId)
+            .ToDictionary(
+                group => group.Key,
+                group => (IReadOnlyList<VehicleMediaResponse>)group
+                    .Select(item => item.Response)
+                    .ToArray());
+
+        return defects.Select(defect =>
+        {
+            var createdByName = userNames.TryGetValue(defect.CreatedBy, out var creator)
+                ? creator
+                : string.Empty;
+            var assignedToName = defect.AssignedTo is Guid assignedId &&
+                userNames.TryGetValue(assignedId, out var assignee)
+                    ? assignee
+                    : string.Empty;
+            var status = latestByDefect.TryGetValue(defect.Id, out var completed)
+                ? completed.RepairStatus
+                : defect.AssignedTo is null ? "new" : "in_progress";
+            var response = new VehicleDefectResponse(
+                defect.Id,
+                defect.ErrorCode,
+                defect.Symptoms,
+                status,
+                defect.CreatedAt,
+                defect.DowntimeStartedAt,
+                defect.CreatedBy,
+                createdByName,
+                defect.AssignedTo,
+                assignedToName,
+                defect.RepairStartedAt,
+                photosByDefect.GetValueOrDefault(defect.Id) ?? [],
+                videosByDefect.GetValueOrDefault(defect.Id) ?? [],
+                defect.NodeName,
+                defect.FailureReason);
+            return (defect.VehicleId, response);
+        }).ToArray();
+    }
+
+    private async Task<IReadOnlyList<VehicleHoursResponse>> GetHoursAsync(
+        Guid vehicleId,
+        DateOnly? from,
+        DateOnly? to,
+        CancellationToken cancellationToken)
+    {
+        var query = dbContext.VehicleHourReadings.AsNoTracking()
+            .Where(reading => reading.VehicleId == vehicleId);
+        if (from.HasValue)
+        {
+            query = query.Where(reading => reading.ReadingDate >= from.Value);
+        }
+        if (to.HasValue)
+        {
+            query = query.Where(reading => reading.ReadingDate <= to.Value);
+        }
+        return await query
+            .OrderByDescending(reading => reading.ReadingDate)
+            .ThenByDescending(reading => reading.CreatedAt)
+            .Select(reading => new VehicleHoursResponse(
+                reading.Id,
+                reading.ReadingDate,
+                reading.EngineHours,
+                reading.Note,
+                reading.CreatedAt))
+            .ToListAsync(cancellationToken);
+    }
+
+    private async Task<IReadOnlyList<(Guid VehicleId, VehicleWorkResponse Response)>>
+        GetWorkResponsesAsync(
+            IQueryable<VehicleWorkRecord> query,
+            CancellationToken cancellationToken)
+    {
+        var works = await query.ToListAsync(cancellationToken);
+        if (works.Count == 0)
+        {
+            return [];
+        }
+
+        var userIds = works.Where(work => work.PerformedBy.HasValue)
+            .Select(work => work.PerformedBy!.Value)
+            .Distinct()
+            .ToArray();
+        var userNames = await GetUserNamesAsync(userIds, cancellationToken);
+        var defectIds = works.Where(work => work.DefectId.HasValue)
+            .Select(work => work.DefectId!.Value)
+            .Distinct()
+            .ToArray();
+        var defectNames = await dbContext.VehicleDefects.AsNoTracking()
+            .Where(defect => defectIds.Contains(defect.Id))
+            .ToDictionaryAsync(defect => defect.Id, defect => defect.NodeName,
+                cancellationToken);
+        var workIds = works.Select(work => work.Id).ToArray();
+        var photos = await dbContext.VehicleWorkPhotos.AsNoTracking()
+            .Where(photo => workIds.Contains(photo.WorkId))
+            .OrderBy(photo => photo.CreatedAt)
+            .ThenBy(photo => photo.Id)
+            .Select(photo => new
+            {
+                photo.WorkId,
+                photo.Id,
+                photo.FileName,
+                photo.ContentType,
+                photo.Size,
+                ContentLength = photo.Content == null
+                    ? 0L
+                    : (long)photo.Content.Length
+            })
+            .ToListAsync(cancellationToken);
+        var videos = await dbContext.VehicleWorkVideos.AsNoTracking()
+            .Where(video => workIds.Contains(video.WorkId))
+            .OrderBy(video => video.CreatedAt)
+            .ThenBy(video => video.Id)
+            .Select(video => new
+            {
+                video.WorkId,
+                Response = new VehicleMediaResponse(
+                    video.Id, video.FileName, video.ContentType, video.Size)
+            })
+            .ToListAsync(cancellationToken);
+        var requests = defectIds.Length == 0
+            ? []
+            : await dbContext.VehiclePartsRequests.AsNoTracking()
+                .Where(request => defectIds.Contains(request.DefectId))
+                .OrderBy(request => request.CreatedAt)
+                .Select(request => new
+                {
+                    request.DefectId,
+                    Response = new VehiclePartsRequestResponse(
+                        request.Id,
+                        request.DefectId,
+                        request.RequestNumber,
+                        request.RequestDate,
+                        request.Description,
+                        request.RequiredParts,
+                        request.CreatedAt)
+                })
+                .ToListAsync(cancellationToken);
+        var photosByWork = photos.GroupBy(photo => photo.WorkId)
+            .ToDictionary(
+                group => group.Key,
+                group => (IReadOnlyList<VehicleWorkPhotoResponse>)group
+                    .Select(item => new VehicleWorkPhotoResponse(
+                        item.Id,
+                        item.FileName,
+                        item.ContentType,
+                        item.Size == 0 ? item.ContentLength : item.Size))
+                    .ToArray());
+        var videosByWork = videos.GroupBy(video => video.WorkId)
+            .ToDictionary(
+                group => group.Key,
+                group => (IReadOnlyList<VehicleMediaResponse>)group
+                    .Select(item => item.Response)
+                    .ToArray());
+        var requestsByDefect = requests.GroupBy(request => request.DefectId)
+            .ToDictionary(
+                group => group.Key,
+                group => (IReadOnlyList<VehiclePartsRequestResponse>)group
+                    .Select(item => item.Response)
+                    .ToArray());
+
+        return works.Select(work =>
+        {
+            var performerName = work.PerformedBy is Guid performerId &&
+                userNames.TryGetValue(performerId, out var performer)
+                    ? performer
+                    : string.Empty;
+            var defectNodeName = work.DefectId is Guid workDefectId &&
+                defectNames.TryGetValue(workDefectId, out var nodeName)
+                    ? nodeName
+                    : string.Empty;
+            var workRequests = work.DefectId is Guid partsDefectId
+                ? requestsByDefect.GetValueOrDefault(partsDefectId)
+                : null;
+            var response = new VehicleWorkResponse(
+                work.Id,
+                work.DefectId,
+                defectNodeName,
+                work.Description,
+                work.CreatedAt,
+                photosByWork.GetValueOrDefault(work.Id) ?? [],
+                work.FailureCause,
+                work.RepairStatus,
+                work.RequiredParts,
+                work.PerformedBy,
+                performerName,
+                work.CompletedAt,
+                workRequests,
+                videosByWork.GetValueOrDefault(work.Id) ?? []);
+            return (work.VehicleId, response);
+        }).ToArray();
+    }
+
+    private async Task<IReadOnlyList<VehicleDefectResponse>> GetDefectsAsync(
+        Guid vehicleId,
+        DateOnly? from,
+        DateOnly? to,
+        CancellationToken cancellationToken)
+    {
+        var query = dbContext.VehicleDefects.AsNoTracking()
+            .Where(defect => defect.VehicleId == vehicleId);
+        query = ApplyCreatedAtRange(query, from, to);
+        var result = await GetDefectResponsesAsync(
+            query.OrderByDescending(defect => defect.CreatedAt),
             cancellationToken);
-        await using var transaction = await connection.BeginTransactionAsync(
+        return result.Select(item => item.Response).ToArray();
+    }
+
+    private async Task<IReadOnlyList<VehicleWorkResponse>> GetWorksAsync(
+        Guid vehicleId,
+        DateOnly? from,
+        DateOnly? to,
+        CancellationToken cancellationToken)
+    {
+        var query = dbContext.VehicleWorks.AsNoTracking()
+            .Where(work => work.VehicleId == vehicleId);
+        query = ApplyCreatedAtRange(query, from, to);
+        var result = await GetWorkResponsesAsync(
+            query.OrderByDescending(work => work.CreatedAt),
             cancellationToken);
-        var ids = new List<Guid>(media.Count);
+        return result.Select(item => item.Response).ToArray();
+    }
+
+    private IQueryable<VehicleDefectRecord> ApplyCreatedAtRange(
+        IQueryable<VehicleDefectRecord> query,
+        DateOnly? from,
+        DateOnly? to)
+    {
+        if (from.HasValue)
+        {
+            var start = from.Value.ToDateTime(TimeOnly.MinValue);
+            query = query.Where(defect => defect.CreatedAt.Date >= start);
+        }
+        if (to.HasValue)
+        {
+            var end = to.Value.AddDays(1).ToDateTime(TimeOnly.MinValue);
+            query = query.Where(defect => defect.CreatedAt.Date < end);
+        }
+        return query;
+    }
+
+    private IQueryable<VehicleWorkRecord> ApplyCreatedAtRange(
+        IQueryable<VehicleWorkRecord> query,
+        DateOnly? from,
+        DateOnly? to)
+    {
+        if (from.HasValue)
+        {
+            var start = from.Value.ToDateTime(TimeOnly.MinValue);
+            query = query.Where(work => work.CreatedAt.Date >= start);
+        }
+        if (to.HasValue)
+        {
+            var end = to.Value.AddDays(1).ToDateTime(TimeOnly.MinValue);
+            query = query.Where(work => work.CreatedAt.Date < end);
+        }
+        return query;
+    }
+
+    private Task<IReadOnlyList<Guid>> AddPhotosAsync<TEntity>(
+        IReadOnlyList<VehicleWorkPhotoUpload> photos,
+        Func<byte[], string, CancellationToken, Task<string>> saveAsync,
+        Func<Guid, VehicleMediaUpload, string, TEntity> create,
+        Action<TEntity> add,
+        CancellationToken cancellationToken)
+        where TEntity : class
+    {
+        var uploads = photos.Select(photo =>
+            new VehicleMediaUpload(
+                photo.FileName, photo.ContentType, photo.Content)).ToArray();
+        return AddMediaAsync(
+            uploads,
+            saveAsync,
+            create,
+            add,
+            cancellationToken);
+    }
+
+    private async Task<IReadOnlyList<Guid>> AddMediaAsync<TEntity>(
+        IReadOnlyList<VehicleMediaUpload> items,
+        Func<byte[], string, CancellationToken, Task<string>> saveAsync,
+        Func<Guid, VehicleMediaUpload, string, TEntity> create,
+        Action<TEntity> add,
+        CancellationToken cancellationToken)
+        where TEntity : class
+    {
+        var writtenPaths = new List<string>(items.Count);
+        await using var transaction = await dbContext.Database
+            .BeginTransactionAsync(cancellationToken);
         try
         {
-            foreach (var item in media)
+            var ids = new List<Guid>(items.Count);
+            foreach (var item in items)
             {
                 var id = Guid.NewGuid();
                 var extension = GetSafeExtension(item.FileName, item.ContentType);
-                var path = Path.Combine(directory, $"{Guid.NewGuid():N}{extension}");
-                await File.WriteAllBytesAsync(path, item.Content, cancellationToken);
+                var path = await saveAsync(
+                    item.Content, $"upload{extension}", cancellationToken);
                 writtenPaths.Add(path);
-                await using var command = connection.CreateCommand();
-                command.Transaction = transaction;
-                command.CommandText =
-                    $"""
-                    INSERT INTO {table} (
-                        id, {parentColumn}, file_name, content_type,
-                        content, storage_path, size)
-                    VALUES (
-                        @id, @parentId, @fileName, @contentType,
-                        NULL, @storagePath, @size)
-                    """;
-                command.Parameters.AddWithValue("id", id);
-                command.Parameters.AddWithValue("parentId", parentId);
-                command.Parameters.AddWithValue(
-                    "fileName", SafeFileName(item.FileName));
-                command.Parameters.AddWithValue("contentType", item.ContentType);
-                command.Parameters.AddWithValue("storagePath", path);
-                command.Parameters.AddWithValue("size", (long)item.Content.Length);
-                await command.ExecuteNonQueryAsync(cancellationToken);
+                add(create(id, item, path));
                 ids.Add(id);
             }
+            await dbContext.SaveChangesAsync(cancellationToken);
             await transaction.CommitAsync(cancellationToken);
             return ids;
         }
@@ -601,614 +1191,170 @@ public sealed class VehicleRepository(NpgsqlDataSource dataSource) : IVehicleRep
         }
     }
 
-    public async Task<VehicleWorkPhotoContent?> GetWorkPhotoAsync(
-        Guid photoId,
-        CancellationToken cancellationToken) =>
-        await GetPhotoAsync("vehicle_work_photos", photoId, cancellationToken);
-
-    private async Task<VehicleWorkPhotoContent?> GetPhotoAsync(
-        string table,
-        Guid photoId,
+    private async Task<VehicleWorkPhotoContent?> GetMediaAsync<TEntity>(
+        IQueryable<TEntity> query,
+        Guid id,
+        Func<TEntity, string> fileName,
+        Func<TEntity, string> contentType,
+        Func<TEntity, byte[]?> content,
+        Func<TEntity, string?> storagePath,
         CancellationToken cancellationToken)
+        where TEntity : class
     {
-        await using var command = dataSource.CreateCommand(
-            $"""
-            SELECT file_name, content_type, content, storage_path
-            FROM {table}
-            WHERE id = @photoId
-            """);
-        command.Parameters.AddWithValue("photoId", photoId);
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        return await reader.ReadAsync(cancellationToken)
-            ? await ReadMediaContentAsync(reader, cancellationToken)
+        var entity = await query.SingleOrDefaultAsync(
+            item => EF.Property<Guid>(item, "Id") == id, cancellationToken);
+        if (entity is null)
+        {
+            return null;
+        }
+
+        return await ReadMediaContentAsync(
+            fileName(entity),
+            contentType(entity),
+            content(entity),
+            storagePath(entity),
+            cancellationToken);
+    }
+
+    private async Task<VehicleMediaStream?> GetMediaStreamAsync<TEntity>(
+        IQueryable<TEntity> query,
+        Guid id,
+        Func<TEntity, string> fileName,
+        Func<TEntity, string> contentType,
+        Func<TEntity, byte[]?> content,
+        Func<TEntity, string?> storagePath,
+        CancellationToken cancellationToken)
+        where TEntity : class
+    {
+        var entity = await query.SingleOrDefaultAsync(
+            item => EF.Property<Guid>(item, "Id") == id,
+            cancellationToken);
+        if (entity is null)
+        {
+            return null;
+        }
+
+        var storedPath = storagePath(entity);
+        if (storedPath is not null)
+        {
+            if (!IsManagedPath(storedPath))
+            {
+                return null;
+            }
+
+            try
+            {
+                var stream = new FileStream(
+                    storedPath,
+                    FileMode.Open,
+                    FileAccess.Read,
+                    FileShare.Read,
+                    bufferSize: 81920,
+                    FileOptions.Asynchronous | FileOptions.SequentialScan);
+                return new VehicleMediaStream(
+                    fileName(entity),
+                    contentType(entity),
+                    stream);
+            }
+            catch (FileNotFoundException)
+            {
+                return null;
+            }
+            catch (DirectoryNotFoundException)
+            {
+                return null;
+            }
+        }
+
+        return content(entity) is { } bytes
+            ? new VehicleMediaStream(
+                fileName(entity),
+                contentType(entity),
+                new MemoryStream(bytes, writable: false))
             : null;
     }
 
-    public async Task<bool> DeleteWorkPhotoAsync(
-        Guid photoId,
-        CancellationToken cancellationToken) =>
-        await DeletePhotoAsync("vehicle_work_photos", photoId, cancellationToken);
-
-    private async Task<bool> DeletePhotoAsync(
-        string table,
-        Guid photoId,
+    private async Task<bool> DeleteMediaAsync<TEntity>(
+        DbSet<TEntity> set,
+        Guid id,
+        Func<TEntity, string?> storagePath,
         CancellationToken cancellationToken)
+        where TEntity : class
     {
-        await using var connection = await dataSource.OpenConnectionAsync(
-            cancellationToken);
-        await using var transaction = await connection.BeginTransactionAsync(
-            cancellationToken);
-        await using var command = connection.CreateCommand();
-        command.Transaction = transaction;
-        command.CommandText =
-            $"DELETE FROM {table} WHERE id = @photoId RETURNING storage_path";
-        command.Parameters.AddWithValue("photoId", photoId);
-        var path = await command.ExecuteScalarAsync(cancellationToken);
-        if (path is null)
+        var entity = await set.SingleOrDefaultAsync(
+            item => EF.Property<Guid>(item, "Id") == id, cancellationToken);
+        if (entity is null)
         {
             return false;
         }
-        await transaction.CommitAsync(cancellationToken);
-        if (path is string storagePath)
+
+        set.Remove(entity);
+        await dbContext.SaveChangesAsync(cancellationToken);
+        if (storagePath(entity) is string path)
         {
-            DeleteFile(storagePath);
+            DeleteFile(path);
         }
         return true;
     }
 
-    public Task<int> GetWorkVideoCountAsync(
-        Guid workId,
-        CancellationToken cancellationToken) =>
-        GetMediaCountAsync(
-            "vehicle_work_videos", "work_id", workId, cancellationToken);
-
-    public Task<IReadOnlyList<Guid>> AddWorkVideosAsync(
-        Guid workId,
-        IReadOnlyList<VehicleMediaUpload> videos,
-        CancellationToken cancellationToken) =>
-        AddMediaAsync(
-            "vehicle_work_videos", "work_id", workId, videos,
-            VideoDirectory, cancellationToken);
-
-    public Task<VehicleWorkPhotoContent?> GetWorkVideoAsync(
-        Guid videoId,
-        CancellationToken cancellationToken) =>
-        GetPhotoAsync("vehicle_work_videos", videoId, cancellationToken);
-
-    public Task<bool> DeleteWorkVideoAsync(
-        Guid videoId,
-        CancellationToken cancellationToken) =>
-        DeletePhotoAsync("vehicle_work_videos", videoId, cancellationToken);
-
-    public async Task<bool> UpdatePartsRequestAsync(
-        Guid workId,
-        VehiclePartsRequest request,
-        CancellationToken cancellationToken)
-    {
-        await using var command = dataSource.CreateCommand(
-            """
-            UPDATE vehicle_works
-            SET purchase_request_number = @number,
-                purchase_request_date = @date,
-                purchase_request_file_name = @fileName,
-                purchase_request_content_type = @contentType,
-                purchase_request_content = @content
-            WHERE id = @workId AND repair_status = 'awaiting_parts'
-            """);
-        command.Parameters.AddWithValue("workId", workId);
-        command.Parameters.AddWithValue("number", request.RequestNumber);
-        command.Parameters.AddWithValue("date", request.RequestDate);
-        AddNullable(command, "fileName", NpgsqlTypes.NpgsqlDbType.Varchar, request.FileName);
-        AddNullable(command, "contentType", NpgsqlTypes.NpgsqlDbType.Varchar, request.ContentType);
-        AddNullable(command, "content", NpgsqlTypes.NpgsqlDbType.Bytea, request.Content);
-        return await command.ExecuteNonQueryAsync(cancellationToken) == 1;
-    }
-
-    public async Task<VehicleRequestFileContent?> GetPartsRequestFileAsync(
-        Guid workId,
-        CancellationToken cancellationToken)
-    {
-        await using var command = dataSource.CreateCommand(
-            """
-            SELECT purchase_request_file_name,
-                   purchase_request_content_type,
-                   purchase_request_content
-            FROM vehicle_works
-            WHERE id = @workId AND purchase_request_content IS NOT NULL
-            """);
-        command.Parameters.AddWithValue("workId", workId);
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        return await reader.ReadAsync(cancellationToken)
-            ? new VehicleRequestFileContent(
-                reader.GetString(0), reader.GetString(1),
-                reader.GetFieldValue<byte[]>(2))
-            : null;
-    }
-
-    public async Task<bool> DeletePartsRequestAsync(
-        Guid workId,
-        CancellationToken cancellationToken)
-    {
-        await using var command = dataSource.CreateCommand(
-            """
-            UPDATE vehicle_works
-            SET purchase_request_number = NULL,
-                purchase_request_date = NULL,
-                purchase_request_file_name = NULL,
-                purchase_request_content_type = NULL,
-                purchase_request_content = NULL
-            WHERE id = @workId
-            """);
-        command.Parameters.AddWithValue("workId", workId);
-        return await command.ExecuteNonQueryAsync(cancellationToken) == 1;
-    }
-
-    public async Task<bool> DeleteEntryAsync(
-        string category,
-        Guid id,
-        CancellationToken cancellationToken)
-    {
-        var table = category switch
-        {
-            "purchases" => "vehicle_purchase_requests",
-            "defects" => "vehicle_defects",
-            "hours" => "vehicle_hour_readings",
-            "works" => "vehicle_works",
-            _ => null
-        };
-        if (table is null)
-        {
-            return false;
-        }
-
-        var paths = category switch
-        {
-            "defects" => await GetDefectMediaPathsAsync(id, cancellationToken),
-            "works" => await GetWorkMediaPathsAsync(id, cancellationToken),
-            _ => []
-        };
-        if (paths.Any(path => !IsManagedPath(path)))
-        {
-            throw new InvalidOperationException(
-                "A repair media file is outside the managed storage directories.");
-        }
-        await using var command = dataSource.CreateCommand(
-            $"DELETE FROM {table} WHERE id = @id");
-        command.Parameters.AddWithValue("id", id);
-        var deleted = await command.ExecuteNonQueryAsync(cancellationToken) > 0;
-        if (deleted)
-        {
-            foreach (var path in paths)
-            {
-                DeleteManagedFile(path);
-            }
-        }
-        return deleted;
-    }
-
-    private async Task<VehicleResponse?> GetVehicleAsync(
-        Guid vehicleId,
-        CancellationToken cancellationToken)
-    {
-        await using var command = dataSource.CreateCommand(
-            VehicleSelect + "\nWHERE vehicles.id = @vehicleId");
-        command.Parameters.AddWithValue("vehicleId", vehicleId);
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        return await reader.ReadAsync(cancellationToken)
-            ? ReadVehicle(reader)
-            : null;
-    }
-
-    private async Task<IReadOnlyList<VehiclePurchaseResponse>> GetPurchasesAsync(
-        Guid vehicleId,
-        DateOnly? from,
-        DateOnly? to,
-        CancellationToken cancellationToken)
-    {
-        await using var command = CreateRangeCommand(
-            """
-            SELECT id, request_date, request_number, item_name, quantity,
-                   status, note, created_at
-            FROM vehicle_purchase_requests
-            WHERE vehicle_id = @vehicleId
-              AND (@from IS NULL OR request_date >= @from)
-              AND (@to IS NULL OR request_date <= @to)
-            ORDER BY request_date DESC, created_at DESC
-            """,
-            vehicleId,
-            from,
-            to);
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        var result = new List<VehiclePurchaseResponse>();
-        while (await reader.ReadAsync(cancellationToken))
-        {
-            result.Add(new VehiclePurchaseResponse(
-                reader.GetGuid(0),
-                reader.GetFieldValue<DateOnly>(1),
-                reader.GetString(2),
-                reader.GetString(3),
-                reader.GetDecimal(4),
-                reader.GetString(5),
-                reader.GetString(6),
-                reader.GetFieldValue<DateTimeOffset>(7)));
-        }
-        return result;
-    }
-
-    private async Task<IReadOnlyList<VehicleDefectResponse>> GetDefectsAsync(
-        Guid vehicleId,
-        DateOnly? from,
-        DateOnly? to,
-        CancellationToken cancellationToken)
-    {
-        await using var command = CreateRangeCommand(
-            """
-            SELECT defects.id, defects.error_code, defects.symptoms,
-                   COALESCE(completed.repair_status,
-                       CASE WHEN defects.assigned_to IS NULL
-                           THEN 'new' ELSE 'in_progress' END),
-                   defects.created_at, defects.downtime_started_at,
-                   defects.created_by,
-                   CONCAT_WS(' ', creators.last_name, creators.first_name,
-                       NULLIF(creators.middle_name, '')),
-                   defects.assigned_to,
-                   COALESCE(CONCAT_WS(' ', assignees.last_name,
-                       assignees.first_name, NULLIF(assignees.middle_name, '')), ''),
-                   defects.repair_started_at, defects.node_name,
-                   defects.failure_reason
-            FROM vehicle_defects AS defects
-            JOIN app_users AS creators ON creators.id = defects.created_by
-            LEFT JOIN app_users AS assignees ON assignees.id = defects.assigned_to
-            LEFT JOIN LATERAL (
-                SELECT works.repair_status
-                FROM vehicle_works AS works
-                WHERE works.defect_id = defects.id
-                  AND works.completed_at IS NOT NULL
-                ORDER BY works.completed_at DESC
-                LIMIT 1
-            ) AS completed ON TRUE
-            WHERE defects.vehicle_id = @vehicleId
-              AND (@from IS NULL OR defects.created_at::date >= @from)
-              AND (@to IS NULL OR defects.created_at::date <= @to)
-            ORDER BY defects.created_at DESC
-            """,
-            vehicleId,
-            from,
-            to);
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        var result = new List<VehicleDefectResponse>();
-        while (await reader.ReadAsync(cancellationToken))
-        {
-            result.Add(new VehicleDefectResponse(
-                reader.GetGuid(0),
-                reader.GetString(1),
-                reader.GetString(2),
-                reader.GetString(3),
-                reader.GetFieldValue<DateTimeOffset>(4),
-                reader.GetFieldValue<DateTimeOffset>(5),
-                reader.GetGuid(6),
-                reader.GetString(7),
-                reader.IsDBNull(8) ? null : reader.GetGuid(8),
-                reader.GetString(9),
-                reader.IsDBNull(10)
-                    ? null
-                    : reader.GetFieldValue<DateTimeOffset>(10),
-                [],
-                [],
-                reader.GetString(11),
-                reader.GetString(12)));
-        }
-        await reader.DisposeAsync();
-
-        await using var photoCommand = CreateRangeCommand(
-            """
-            SELECT photos.defect_id, photos.id, photos.file_name,
-                   photos.content_type,
-                   COALESCE(NULLIF(photos.size, 0), OCTET_LENGTH(photos.content), 0)
-            FROM vehicle_defect_photos AS photos
-            JOIN vehicle_defects AS defects ON defects.id = photos.defect_id
-            WHERE defects.vehicle_id = @vehicleId
-              AND (@from IS NULL OR defects.created_at::date >= @from)
-              AND (@to IS NULL OR defects.created_at::date <= @to)
-            ORDER BY photos.created_at, photos.id
-            """,
-            vehicleId,
-            from,
-            to);
-        await using var photoReader = await photoCommand.ExecuteReaderAsync(
-            cancellationToken);
-        var photosByDefect = new Dictionary<Guid, List<VehicleWorkPhotoResponse>>();
-        while (await photoReader.ReadAsync(cancellationToken))
-        {
-            var defectId = photoReader.GetGuid(0);
-            if (!photosByDefect.TryGetValue(defectId, out var photos))
-            {
-                photos = [];
-                photosByDefect[defectId] = photos;
-            }
-            photos.Add(new VehicleWorkPhotoResponse(
-                photoReader.GetGuid(1),
-                photoReader.GetString(2),
-                photoReader.GetString(3),
-                photoReader.GetInt32(4)));
-        }
-        await using var videoCommand = CreateRangeCommand(
-            """
-            SELECT videos.defect_id, videos.id, videos.file_name,
-                   videos.content_type, videos.size
-            FROM vehicle_defect_videos AS videos
-            JOIN vehicle_defects AS defects ON defects.id = videos.defect_id
-            WHERE defects.vehicle_id = @vehicleId
-              AND (@from IS NULL OR defects.created_at::date >= @from)
-              AND (@to IS NULL OR defects.created_at::date <= @to)
-            ORDER BY videos.created_at, videos.id
-            """,
-            vehicleId, from, to);
-        await using var videoReader = await videoCommand.ExecuteReaderAsync(
-            cancellationToken);
-        var videosByDefect = await ReadMediaByParentAsync(
-            videoReader, cancellationToken);
-        return result
-            .Select(defect => defect with
-            {
-                Photos = photosByDefect.GetValueOrDefault(defect.Id) ?? [],
-                Videos = videosByDefect.GetValueOrDefault(defect.Id) ?? []
-            })
-            .ToArray();
-    }
-
-    private async Task<IReadOnlyList<VehicleHoursResponse>> GetHoursAsync(
-        Guid vehicleId,
-        DateOnly? from,
-        DateOnly? to,
-        CancellationToken cancellationToken)
-    {
-        await using var command = CreateRangeCommand(
-            """
-            SELECT id, reading_date, engine_hours, note, created_at
-            FROM vehicle_hour_readings
-            WHERE vehicle_id = @vehicleId
-              AND (@from IS NULL OR reading_date >= @from)
-              AND (@to IS NULL OR reading_date <= @to)
-            ORDER BY reading_date DESC, created_at DESC
-            """,
-            vehicleId,
-            from,
-            to);
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        var result = new List<VehicleHoursResponse>();
-        while (await reader.ReadAsync(cancellationToken))
-        {
-            result.Add(new VehicleHoursResponse(
-                reader.GetGuid(0),
-                reader.GetFieldValue<DateOnly>(1),
-                reader.GetDecimal(2),
-                reader.GetString(3),
-                reader.GetFieldValue<DateTimeOffset>(4)));
-        }
-        return result;
-    }
-
-    private async Task<IReadOnlyList<VehicleWorkResponse>> GetWorksAsync(
-        Guid vehicleId,
-        DateOnly? from,
-        DateOnly? to,
-        CancellationToken cancellationToken)
-    {
-        await using var command = CreateRangeCommand(
-            """
-            SELECT works.id, works.defect_id, COALESCE(defects.node_name, ''),
-                   works.description, works.purchase_request_number,
-                   works.created_at, works.failure_cause, works.repair_status,
-                   works.required_parts, works.performed_by,
-                   COALESCE(CONCAT_WS(' ', performers.last_name,
-                       performers.first_name, NULLIF(performers.middle_name, '')), ''),
-                   works.completed_at, works.purchase_request_date,
-                   COALESCE(works.purchase_request_file_name, ''),
-                   COALESCE(works.purchase_request_content_type, ''),
-                   works.purchase_request_content IS NOT NULL
-            FROM vehicle_works AS works
-            LEFT JOIN vehicle_defects AS defects ON defects.id = works.defect_id
-            LEFT JOIN app_users AS performers ON performers.id = works.performed_by
-            WHERE works.vehicle_id = @vehicleId
-              AND (@from IS NULL OR works.created_at::date >= @from)
-              AND (@to IS NULL OR works.created_at::date <= @to)
-            ORDER BY works.created_at DESC
-            """,
-            vehicleId,
-            from,
-            to);
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        var result = new List<VehicleWorkResponse>();
-        while (await reader.ReadAsync(cancellationToken))
-        {
-            result.Add(new VehicleWorkResponse(
-                reader.GetGuid(0),
-                reader.IsDBNull(1) ? null : reader.GetGuid(1),
-                reader.GetString(2),
-                reader.GetString(3),
-                reader.GetString(4),
-                reader.GetFieldValue<DateTimeOffset>(5),
-                [],
-                reader.GetString(6),
-                reader.GetString(7),
-                reader.GetString(8),
-                reader.IsDBNull(9) ? null : reader.GetGuid(9),
-                reader.GetString(10),
-                reader.IsDBNull(11)
-                    ? null
-                    : reader.GetFieldValue<DateTimeOffset>(11),
-                reader.GetString(4),
-                reader.IsDBNull(12)
-                    ? null
-                    : reader.GetFieldValue<DateOnly>(12),
-                reader.GetString(13),
-                reader.GetString(14),
-                reader.GetBoolean(15),
-                []));
-        }
-        await reader.DisposeAsync();
-
-        await using var photoCommand = CreateRangeCommand(
-            """
-            SELECT photos.work_id, photos.id, photos.file_name,
-                   photos.content_type,
-                   COALESCE(NULLIF(photos.size, 0), OCTET_LENGTH(photos.content), 0)
-            FROM vehicle_work_photos AS photos
-            JOIN vehicle_works AS works ON works.id = photos.work_id
-            WHERE works.vehicle_id = @vehicleId
-              AND (@from IS NULL OR works.created_at::date >= @from)
-              AND (@to IS NULL OR works.created_at::date <= @to)
-            ORDER BY photos.created_at, photos.id
-            """,
-            vehicleId,
-            from,
-            to);
-        await using var photoReader = await photoCommand.ExecuteReaderAsync(
-            cancellationToken);
-        var photosByWork = new Dictionary<Guid, List<VehicleWorkPhotoResponse>>();
-        while (await photoReader.ReadAsync(cancellationToken))
-        {
-            var workId = photoReader.GetGuid(0);
-            if (!photosByWork.TryGetValue(workId, out var photos))
-            {
-                photos = [];
-                photosByWork[workId] = photos;
-            }
-            photos.Add(new VehicleWorkPhotoResponse(
-                photoReader.GetGuid(1),
-                photoReader.GetString(2),
-                photoReader.GetString(3),
-                photoReader.GetInt32(4)));
-        }
-        await using var videoCommand = CreateRangeCommand(
-            """
-            SELECT videos.work_id, videos.id, videos.file_name,
-                   videos.content_type, videos.size
-            FROM vehicle_work_videos AS videos
-            JOIN vehicle_works AS works ON works.id = videos.work_id
-            WHERE works.vehicle_id = @vehicleId
-              AND (@from IS NULL OR works.created_at::date >= @from)
-              AND (@to IS NULL OR works.created_at::date <= @to)
-            ORDER BY videos.created_at, videos.id
-            """,
-            vehicleId, from, to);
-        await using var videoReader = await videoCommand.ExecuteReaderAsync(
-            cancellationToken);
-        var videosByWork = await ReadMediaByParentAsync(
-            videoReader, cancellationToken);
-        return result
-            .Select(work => work with
-            {
-                Photos = photosByWork.GetValueOrDefault(work.Id) ?? [],
-                Videos = videosByWork.GetValueOrDefault(work.Id) ?? []
-            })
-            .ToArray();
-    }
-
-    private NpgsqlCommand CreateRangeCommand(
-        string sql,
-        Guid vehicleId,
-        DateOnly? from,
-        DateOnly? to)
-    {
-        var command = dataSource.CreateCommand(sql);
-        command.Parameters.AddWithValue("vehicleId", vehicleId);
-        command.Parameters.AddWithValue(
-            "from",
-            NpgsqlTypes.NpgsqlDbType.Date,
-            from is null ? DBNull.Value : from.Value);
-        command.Parameters.AddWithValue(
-            "to",
-            NpgsqlTypes.NpgsqlDbType.Date,
-            to is null ? DBNull.Value : to.Value);
-        return command;
-    }
-
-    private async Task<int> GetMediaCountAsync(
-        string table,
-        string parentColumn,
-        Guid parentId,
-        CancellationToken cancellationToken)
-    {
-        await using var command = dataSource.CreateCommand(
-            $"SELECT COUNT(*) FROM {table} WHERE {parentColumn} = @parentId");
-        command.Parameters.AddWithValue("parentId", parentId);
-        return Convert.ToInt32(
-            await command.ExecuteScalarAsync(cancellationToken));
-    }
-
-    private Task<IReadOnlyList<string>> GetDefectMediaPathsAsync(
+    private async Task<IReadOnlyList<string>> GetDefectMediaPathsAsync(
         Guid defectId,
-        CancellationToken cancellationToken) =>
-        GetPathsAsync(
-            """
-            SELECT storage_path FROM vehicle_defect_photos
-            WHERE defect_id = @id AND storage_path IS NOT NULL
-            UNION ALL
-            SELECT storage_path FROM vehicle_defect_videos
-            WHERE defect_id = @id
-            UNION ALL
-            SELECT photos.storage_path
-            FROM vehicle_work_photos AS photos
-            JOIN vehicle_works AS works ON works.id = photos.work_id
-            WHERE works.defect_id = @id AND photos.storage_path IS NOT NULL
-            UNION ALL
-            SELECT videos.storage_path
-            FROM vehicle_work_videos AS videos
-            JOIN vehicle_works AS works ON works.id = videos.work_id
-            WHERE works.defect_id = @id
-            """,
-            defectId,
-            cancellationToken);
-
-    private Task<IReadOnlyList<string>> GetWorkMediaPathsAsync(
-        Guid workId,
-        CancellationToken cancellationToken) =>
-        GetPathsAsync(
-            """
-            SELECT storage_path FROM vehicle_work_photos
-            WHERE work_id = @id AND storage_path IS NOT NULL
-            UNION ALL
-            SELECT storage_path FROM vehicle_work_videos
-            WHERE work_id = @id
-            """,
-            workId,
-            cancellationToken);
-
-    private async Task<IReadOnlyList<string>> GetPathsAsync(
-        string sql,
-        Guid id,
         CancellationToken cancellationToken)
     {
-        await using var command = dataSource.CreateCommand(sql);
-        command.Parameters.AddWithValue("id", id);
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        var result = new List<string>();
-        while (await reader.ReadAsync(cancellationToken))
+        var workIds = await dbContext.VehicleWorks.AsNoTracking()
+            .Where(work => work.DefectId == defectId)
+            .Select(work => work.Id)
+            .ToArrayAsync(cancellationToken);
+        var paths = await dbContext.VehicleDefectPhotos.AsNoTracking()
+            .Where(photo => photo.DefectId == defectId && photo.StoragePath != null)
+            .Select(photo => photo.StoragePath!)
+            .ToListAsync(cancellationToken);
+        paths.AddRange(await dbContext.VehicleDefectVideos.AsNoTracking()
+            .Where(video => video.DefectId == defectId)
+            .Select(video => video.StoragePath)
+            .ToListAsync(cancellationToken));
+        if (workIds.Length > 0)
         {
-            result.Add(reader.GetString(0));
+            paths.AddRange(await dbContext.VehicleWorkPhotos.AsNoTracking()
+                .Where(photo => workIds.Contains(photo.WorkId) &&
+                    photo.StoragePath != null)
+                .Select(photo => photo.StoragePath!)
+                .ToListAsync(cancellationToken));
+            paths.AddRange(await dbContext.VehicleWorkVideos.AsNoTracking()
+                .Where(video => workIds.Contains(video.WorkId))
+                .Select(video => video.StoragePath)
+                .ToListAsync(cancellationToken));
         }
-        return result;
+        return paths;
     }
 
-    private static async Task<VehicleWorkPhotoContent?> ReadMediaContentAsync(
-        NpgsqlDataReader reader,
+    private async Task<IReadOnlyList<string>> GetWorkMediaPathsAsync(
+        Guid workId,
         CancellationToken cancellationToken)
     {
-        var fileName = reader.GetString(0);
-        var contentType = reader.GetString(1);
-        if (!reader.IsDBNull(2))
+        var photoPaths = await dbContext.VehicleWorkPhotos.AsNoTracking()
+            .Where(photo => photo.WorkId == workId && photo.StoragePath != null)
+            .Select(photo => photo.StoragePath!)
+            .ToListAsync(cancellationToken);
+        photoPaths.AddRange(await dbContext.VehicleWorkVideos.AsNoTracking()
+            .Where(video => video.WorkId == workId)
+            .Select(video => video.StoragePath)
+            .ToListAsync(cancellationToken));
+        return photoPaths;
+    }
+
+    private async Task<VehicleWorkPhotoContent?> ReadMediaContentAsync(
+        string fileName,
+        string mimeType,
+        byte[]? content,
+        string? path,
+        CancellationToken cancellationToken)
+    {
+        if (content is not null)
         {
-            return new(
-                fileName, contentType, reader.GetFieldValue<byte[]>(2));
+            return new(fileName, mimeType, content);
         }
-        if (reader.IsDBNull(3))
-        {
-            return null;
-        }
-        var path = reader.GetString(3);
-        if (!IsManagedPath(path))
+        if (path is null || !IsManagedPath(path))
         {
             return null;
         }
@@ -1216,7 +1362,7 @@ public sealed class VehicleRepository(NpgsqlDataSource dataSource) : IVehicleRep
         {
             return new(
                 fileName,
-                contentType,
+                mimeType,
                 await File.ReadAllBytesAsync(path, cancellationToken),
                 path);
         }
@@ -1230,32 +1376,78 @@ public sealed class VehicleRepository(NpgsqlDataSource dataSource) : IVehicleRep
         }
     }
 
-    private static async Task<Dictionary<Guid, List<VehicleMediaResponse>>>
-        ReadMediaByParentAsync(
-            NpgsqlDataReader reader,
-            CancellationToken cancellationToken)
+    private void DeleteFile(string path)
     {
-        var result = new Dictionary<Guid, List<VehicleMediaResponse>>();
-        while (await reader.ReadAsync(cancellationToken))
+        if (!IsManagedPath(path))
         {
-            var parentId = reader.GetGuid(0);
-            if (!result.TryGetValue(parentId, out var media))
-            {
-                media = [];
-                result[parentId] = media;
-            }
-            media.Add(new(
-                reader.GetGuid(1),
-                reader.GetString(2),
-                reader.GetString(3),
-                reader.GetInt64(4)));
+            return;
         }
-        return result;
+        try
+        {
+            if (File.Exists(path))
+            {
+                File.Delete(path);
+            }
+        }
+        catch (IOException)
+        {
+            // Database deletion is already committed; filesystem cleanup is best effort.
+        }
+        catch (UnauthorizedAccessException)
+        {
+            // Database deletion is already committed; filesystem cleanup is best effort.
+        }
     }
 
-    private static string GetSafeExtension(
-        string fileName,
-        string contentType)
+    private bool IsManagedPath(string path)
+    {
+        var fullPath = Path.GetFullPath(path);
+        return IsWithinDirectory(fullPath, mediaStorageOptions.PhotoDirectory) ||
+               IsWithinDirectory(fullPath, mediaStorageOptions.VideoDirectory) ||
+               IsWithinDirectory(fullPath, mediaStorageOptions.StagingPhotoDirectory) ||
+               IsWithinDirectory(fullPath, mediaStorageOptions.StagingVideoDirectory);
+    }
+
+    private static bool IsWithinDirectory(string path, string directory) =>
+        path.StartsWith(
+            Path.GetFullPath(directory) + Path.DirectorySeparatorChar,
+            StringComparison.Ordinal);
+
+    private async Task<IReadOnlyDictionary<Guid, string>> GetUserNamesAsync(
+        Guid[] userIds,
+        CancellationToken cancellationToken)
+    {
+        if (userIds.Length == 0)
+        {
+            return new Dictionary<Guid, string>();
+        }
+
+        var users = await dbContext.Users.AsNoTracking()
+            .Where(user => userIds.Contains(user.Id))
+            .Select(user => new
+            {
+                user.Id,
+                user.LastName,
+                user.FirstName,
+                user.MiddleName
+            })
+            .ToListAsync(cancellationToken);
+        return users.ToDictionary(
+            user => user.Id,
+            user => FormatUserName(
+                user.LastName, user.FirstName, user.MiddleName));
+    }
+
+    private static string FormatUserName(
+        string lastName,
+        string firstName,
+        string middleName) =>
+        string.Join(
+            ' ',
+            new[] { lastName, firstName, middleName }
+                .Where(part => !string.IsNullOrEmpty(part)));
+
+    private static string GetSafeExtension(string fileName, string contentType)
     {
         var allowed = contentType.ToLowerInvariant() switch
         {
@@ -1279,99 +1471,4 @@ public sealed class VehicleRepository(NpgsqlDataSource dataSource) : IVehicleRep
         name = new string(name.Where(character => !char.IsControl(character)).ToArray());
         return name.Length <= 255 ? name : name[..255];
     }
-
-    private static void DeleteFile(string path)
-    {
-        if (!IsManagedPath(path))
-        {
-            return;
-        }
-        try
-        {
-            if (File.Exists(path))
-            {
-                File.Delete(path);
-            }
-        }
-        catch (IOException)
-        {
-            // Metadata deletion must not be rolled back after it is committed.
-        }
-        catch (UnauthorizedAccessException)
-        {
-            // A later maintenance pass can remove an inaccessible orphan.
-        }
-    }
-
-    private static void DeleteManagedFile(string path)
-    {
-        if (!IsManagedPath(path))
-        {
-            throw new InvalidOperationException(
-                "A repair media file is outside the managed storage directories.");
-        }
-        if (File.Exists(path))
-        {
-            File.Delete(path);
-        }
-    }
-
-    private static bool IsManagedPath(string path)
-    {
-        var fullPath = Path.GetFullPath(path);
-        return fullPath.StartsWith(
-                   Path.GetFullPath(ImageDirectory) + Path.DirectorySeparatorChar,
-                   StringComparison.Ordinal) ||
-               fullPath.StartsWith(
-                   Path.GetFullPath(VideoDirectory) + Path.DirectorySeparatorChar,
-                   StringComparison.Ordinal);
-    }
-
-    private static void AddNullable(
-        NpgsqlCommand command,
-        string name,
-        NpgsqlTypes.NpgsqlDbType type,
-        object? value) =>
-        command.Parameters.Add(name, type).Value = value ?? DBNull.Value;
-
-    private async Task<Guid> InsertAsync(
-        string sql,
-        Guid vehicleId,
-        Guid createdBy,
-        CancellationToken cancellationToken,
-        params (string Name, object? Value)[] parameters)
-    {
-        var id = Guid.NewGuid();
-        await using var command = dataSource.CreateCommand(sql);
-        command.Parameters.AddWithValue("id", id);
-        command.Parameters.AddWithValue("vehicleId", vehicleId);
-        command.Parameters.AddWithValue("createdBy", createdBy);
-        foreach (var (name, value) in parameters)
-        {
-            if (value is null)
-            {
-                command.Parameters.Add(
-                    name,
-                    name == "resolvedDate"
-                        ? NpgsqlTypes.NpgsqlDbType.Date
-                        : NpgsqlTypes.NpgsqlDbType.Numeric).Value = DBNull.Value;
-            }
-            else
-            {
-                command.Parameters.AddWithValue(name, value);
-            }
-        }
-        await command.ExecuteNonQueryAsync(cancellationToken);
-        return id;
-    }
-
-    private static VehicleResponse ReadVehicle(NpgsqlDataReader reader) =>
-        new(
-            reader.GetGuid(0),
-            reader.GetString(1),
-            reader.GetString(2),
-            reader.GetString(3),
-            reader.IsDBNull(4) ? null : reader.GetInt32(4),
-            reader.GetString(5),
-            reader.GetString(6));
 }

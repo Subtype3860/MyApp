@@ -11,7 +11,17 @@ namespace MyApp.API.Extensions
         public static IServiceCollection AddJwtAuthentication(this IServiceCollection services, IConfiguration config)
         {
             var jwt = config.GetRequiredSection("Jwt");
-            var keyValue = jwt.GetValue<string>("Key") ?? throw new InvalidOperationException("Configuration value 'Jwt:Key' is required.");
+            var keyValue = jwt.GetValue<string>("Key");
+            if (string.IsNullOrWhiteSpace(keyValue))
+            {
+                throw new InvalidOperationException(
+                    "Configuration value 'Jwt:Key' must be provided and must not be empty.");
+            }
+            if (Encoding.UTF8.GetByteCount(keyValue) < 32)
+            {
+                throw new InvalidOperationException(
+                    "Configuration value 'Jwt:Key' must contain at least 32 bytes.");
+            }
             var issuer = jwt.GetValue<string>("Issuer") ?? throw new InvalidOperationException("Configuration value 'Jwt:Issuer' is required.");
             var audience = jwt.GetValue<string>("Audience") ?? throw new InvalidOperationException("Configuration value 'Jwt:Audience' is required.");
             var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(keyValue));

@@ -22,9 +22,11 @@ const props = defineProps({
 
 const users = ref([])
 const professions = ref([])
+const permissionCatalog = ref([])
 const editingUserId = ref(null)
 const editingProfessionId = ref(null)
 const professionName = ref('')
+const mediaRetentionDays = ref(1)
 const isLoading = ref(false)
 const isSubmitting = ref(false)
 const errorMessage = ref('')
@@ -47,6 +49,7 @@ const editUserForm = reactive({
   password: '',
   professionId: '',
   role: 'user',
+  permissions: [],
 })
 
 const transliterationMap = {
@@ -138,6 +141,19 @@ async function loadUsers() {
   }
 }
 
+async function loadPermissionCatalog() {
+  try {
+    const response = await fetch('/api/admin/users/permissions', {
+      headers: authHeaders(),
+    })
+    if (!response.ok) throw new Error('Не удалось загрузить каталог прав.')
+    permissionCatalog.value = await response.json()
+  } catch (error) {
+    errorMessage.value =
+      error instanceof Error ? error.message : 'Не удалось загрузить каталог прав.'
+  }
+}
+
 async function registerUser() {
   isSubmitting.value = true
   errorMessage.value = ''
@@ -177,6 +193,7 @@ function editUser(user) {
     password: '',
     professionId: user.positionId,
     role: user.role,
+    permissions: [...(user.permissions || [])],
   })
   errorMessage.value = ''
   successMessage.value = ''
@@ -231,6 +248,48 @@ async function loadProfessions() {
       error instanceof Error ? error.message : 'Не удалось загрузить профессии.'
   } finally {
     isLoading.value = false
+  }
+}
+
+async function loadMediaStorageSettings() {
+  isLoading.value = true
+  errorMessage.value = ''
+  try {
+    const response = await fetch('/api/admin/media-storage', {
+      headers: authHeaders(),
+    })
+    if (!response.ok) {
+      throw new Error(await readError(response, 'Не удалось загрузить настройки хранения медиа.'))
+    }
+    const settings = await response.json()
+    mediaRetentionDays.value = settings.retentionDays
+  } catch (error) {
+    errorMessage.value =
+      error instanceof Error ? error.message : 'Не удалось загрузить настройки хранения медиа.'
+  } finally {
+    isLoading.value = false
+  }
+}
+
+async function saveMediaStorageSettings() {
+  isSubmitting.value = true
+  errorMessage.value = ''
+  successMessage.value = ''
+  try {
+    const response = await fetch('/api/admin/media-storage', {
+      method: 'PUT',
+      headers: authHeaders(true),
+      body: JSON.stringify({ retentionDays: mediaRetentionDays.value }),
+    })
+    if (!response.ok) {
+      throw new Error(await readError(response, 'Не удалось сохранить настройки хранения медиа.'))
+    }
+    successMessage.value = 'Срок хранения медиафайлов сохранён.'
+  } catch (error) {
+    errorMessage.value =
+      error instanceof Error ? error.message : 'Не удалось сохранить настройки хранения медиа.'
+  } finally {
+    isSubmitting.value = false
   }
 }
 
@@ -320,6 +379,7 @@ function sectionTitle(section) {
     'material-groups': 'Группы материалов',
     maintenance: 'Шаблоны ТО',
     'csv-files': 'Загрузка CSV',
+    'media-storage': 'Хранение медиафайлов',
   }[section]
 }
 
@@ -334,11 +394,14 @@ watch(
     if (section === 'users') {
       loadUsers()
       ensureProfessionsLoaded()
+      loadPermissionCatalog()
     } else if (section === 'registration') {
       registrationForm.password = buildTemporaryPassword()
       ensureProfessionsLoaded()
     } else if (section === 'professions') {
       loadProfessions()
+    } else if (section === 'media-storage') {
+      loadMediaStorageSettings()
     }
   },
   { immediate: true },
@@ -418,6 +481,36 @@ watch(
             <option value="administrator">Администратор</option>
           </select>
         </label>
+        <fieldset class="user-permissions">
+          <legend>Что пользователь может просматривать</legend>
+          <template v-for="menu in permissionCatalog" :key="menu.key">
+            <label class="permission-option permission-option--menu">
+              <input
+                v-model="editUserForm.permissions"
+                type="checkbox"
+                :value="menu.key"
+                :disabled="editUserForm.role === 'administrator'"
+              />
+              <span>{{ menu.label }}</span>
+            </label>
+            <label
+              v-for="item in menu.children || []"
+              :key="item.key"
+              class="permission-option permission-option--submenu"
+            >
+              <input
+                v-model="editUserForm.permissions"
+                type="checkbox"
+                :value="item.key"
+                :disabled="editUserForm.role === 'administrator'"
+              />
+              <span>{{ item.label }}</span>
+            </label>
+          </template>
+          <small v-if="editUserForm.role === 'administrator'">
+            Администратор получает доступ ко всем разделам.
+          </small>
+        </fieldset>
         <label>
           <span>Новый пароль</span>
           <input v-model="editUserForm.password" type="password" minlength="6" />
@@ -631,7 +724,43 @@ watch(
     >
       <MaintenanceTemplatesSettings :token="token" />
     </section>
-    <section v-else class="macos-glass-panel settings-panel">
+    <section
+      v-else-if="selectedSection === 'media-storage'"
+      class="macos-glass-panel settings-panel"
+    >
+      <div class="settings-section-header">
+        <div>
+          <h2>Временное хранение медиафайлов</h2>
+          <p>
+            После загрузки фото и видео хранятся на локальном диске, чтобы не ждать записи
+            на сетевое хранилище. Затем фоновая задача переносит их в постоянные папки.
+          </p>
+        </div>
+      </div>
+      <form class="profession-form" @submit.prevent="saveMediaStorageSettings">
+        <label>
+          <span>Хранить локально, дней (от 1 до 180)</span>
+          <input
+            v-model.number="mediaRetentionDays"
+            type="number"
+            min="1"
+            max="180"
+            required
+          />
+        </label>
+        <button class="primary-button" type="submit" :disabled="isSubmitting || isLoading">
+          {{ isSubmitting ? 'Сохранение...' : 'Сохранить' }}
+        </button>
+      </form>
+      <p v-if="isLoading" class="table-message">Загрузка настроек...</p>
+      <p v-if="errorMessage" class="form-message form-message--error" role="alert">
+        {{ errorMessage }}
+      </p>
+      <p v-if="successMessage" class="form-message form-message--success" role="status">
+        {{ successMessage }}
+      </p>
+    </section>
+    <section v-else-if="selectedSection === 'csv-files'" class="macos-glass-panel settings-panel">
       <CsvFilesSettings :token="token" />
     </section>
   </main>
