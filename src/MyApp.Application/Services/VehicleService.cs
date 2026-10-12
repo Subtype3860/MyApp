@@ -18,6 +18,85 @@ public sealed class VehicleService(
     IVehicleRepository repository,
     IUserRepository userRepository) : IVehicleService
 {
+    private Task<bool> CanManageFleetAsync(Guid userId, CancellationToken cancellationToken) =>
+        HasProfessionAsync(userId, ["Механик", "Старший механик"], cancellationToken);
+
+    public async Task<VehicleCatalogOptions> GetVehicleCatalogOptionsAsync(Guid userId, CancellationToken cancellationToken) =>
+        (await repository.GetVehicleCatalogOptionsAsync(cancellationToken)) with { CanManage = await CanManageFleetAsync(userId, cancellationToken) };
+
+    public async Task<ServiceResult<Guid>> SaveVehicleCatalogAsync(Guid? id, VehicleCatalogRequest request, Guid userId, CancellationToken cancellationToken)
+    {
+        if (!await CanManageFleetAsync(userId, cancellationToken)) return ServiceResult<Guid>.Forbidden("Управлять парком техники может механик или администратор.");
+        request = request with { GroupName = Clean(request.GroupName), TypeName = Clean(request.TypeName), ModelName = Clean(request.ModelName), StateNumber = Clean(request.StateNumber), Vin = Clean(request.Vin) };
+        var errors = new Dictionary<string, string[]>();
+        if (request.GroupName.Length is < 1 or > 50) errors["groupName"] = ["Укажите группу техники (до 50 символов)."];
+        if (request.TypeName.Length is < 1 or > 50) errors["typeName"] = ["Укажите тип техники (до 50 символов)."];
+        if (request.ModelName.Length is < 1 or > 50) errors["modelName"] = ["Укажите модель (до 50 символов)."];
+        if (request.StateNumber.Length > 15) errors["stateNumber"] = ["Госномер должен содержать не больше 15 символов."];
+        if (request.Vin.Length > 20) errors["vin"] = ["VIN должен содержать не больше 20 символов."];
+        if (request.GarageNumber < 0) errors["garageNumber"] = ["Гаражный номер не может быть отрицательным."];
+        if (request.GarageNumber is null && request.StateNumber.Length == 0 && request.Vin.Length == 0) errors["vehicle"] = ["Укажите гаражный номер, госномер или VIN."];
+        return errors.Count > 0 ? ServiceResult<Guid>.Validation(errors) : await repository.SaveVehicleCatalogAsync(id, request, cancellationToken);
+    }
+
+    public async Task<ServiceResult<bool>> ArchiveVehicleAsync(Guid id, Guid userId, CancellationToken cancellationToken)
+    {
+        if (!await CanManageFleetAsync(userId, cancellationToken)) return ServiceResult<bool>.Forbidden("Удалять технику из парка может механик или администратор.");
+        return await repository.ArchiveVehicleAsync(id, cancellationToken) ? ServiceResult<bool>.Success(true) : ServiceResult<bool>.NotFound();
+    }
+
+    public Task<IReadOnlyList<VehicleWorkResponse>> GetAuxiliaryWorksAsync(CancellationToken cancellationToken) =>
+        repository.GetAuxiliaryWorksAsync(cancellationToken);
+    public Task<bool> AuxiliaryWorkExistsAsync(Guid workId, CancellationToken cancellationToken) =>
+        repository.AuxiliaryWorkExistsAsync(workId, cancellationToken);
+    public Task<bool> AuxiliaryMediaExistsAsync(Guid mediaId, bool video, CancellationToken cancellationToken) =>
+        repository.AuxiliaryMediaExistsAsync(mediaId, video, cancellationToken);
+
+    public async Task<ServiceResult<Guid>> AddAuxiliaryWorkAsync(AuxiliaryWorkRequest request, Guid userId, CancellationToken cancellationToken)
+    {
+        if (await userRepository.FindByIdAsync(userId, cancellationToken) is null) return ServiceResult<Guid>.Unauthorized();
+        request = request with { Title = Clean(request.Title), Description = Clean(request.Description), Location = Clean(request.Location).ToUpperInvariant() };
+        var errors = new Dictionary<string, string[]>();
+        if (request.Title.Length is < 1 or > 160) errors["title"] = ["Название должно содержать от 1 до 160 символов."];
+        if (request.Description.Length is < 1 or > 4000) errors["description"] = ["Описание должно содержать от 1 до 4000 символов."];
+        if (request.Location is not ("КАРЬЕР" or "РММ")) errors["location"] = ["Выберите место работ: КАРЬЕР или РММ."];
+        if (request.PerformedAt == default || request.PerformedAt > DateTimeOffset.UtcNow.AddMinutes(5)) errors["performedAt"] = ["Укажите дату и время выполненной работы; будущее время недопустимо."];
+        return errors.Count > 0 ? ServiceResult<Guid>.Validation(errors)
+            : ServiceResult<Guid>.Success(await repository.AddAuxiliaryWorkAsync(request, userId, cancellationToken));
+    }
+
+    public async Task<ServiceResult<IReadOnlyList<VehicleWorkParticipantResponse>>> GetWorkParticipantsAsync(Guid workId, CancellationToken cancellationToken)
+    {
+        if (!await repository.WorkExistsAsync(workId, cancellationToken))
+            return ServiceResult<IReadOnlyList<VehicleWorkParticipantResponse>>.NotFound();
+        return ServiceResult<IReadOnlyList<VehicleWorkParticipantResponse>>.Success(await repository.GetWorkParticipantsAsync(workId, cancellationToken));
+    }
+
+    public async Task<ServiceResult<bool>> RequestWorkParticipationAsync(Guid workId, Guid userId, CancellationToken cancellationToken)
+    {
+        if (await userRepository.FindByIdAsync(userId, cancellationToken) is null)
+            return ServiceResult<bool>.Unauthorized();
+        if (!await repository.WorkExistsAsync(workId, cancellationToken))
+            return ServiceResult<bool>.NotFound();
+        return await repository.RequestWorkParticipationAsync(workId, userId, cancellationToken)
+            ? ServiceResult<bool>.Success(true)
+            : ServiceResult<bool>.Conflict("Ваше участие уже подтверждено или ожидает подтверждения механика.");
+    }
+
+    public async Task<ServiceResult<bool>> ReviewWorkParticipationAsync(Guid workId, Guid participantId, bool approved, Guid reviewerId, CancellationToken cancellationToken)
+    {
+        var reviewer = await userRepository.FindByIdAsync(reviewerId, cancellationToken);
+        if (reviewer is null) return ServiceResult<bool>.Unauthorized();
+        // Profession is checked against the database, including for administrators.
+        if (!reviewer.Profession.Name.Trim().Equals("Механик", StringComparison.OrdinalIgnoreCase))
+            return ServiceResult<bool>.BadRequest("Подтверждать участие в работе может только механик.");
+        if (!await repository.WorkExistsAsync(workId, cancellationToken))
+            return ServiceResult<bool>.NotFound();
+        return await repository.ReviewWorkParticipationAsync(workId, participantId, approved, reviewerId, cancellationToken)
+            ? ServiceResult<bool>.Success(true)
+            : ServiceResult<bool>.Conflict("Заявка уже рассмотрена или не найдена. Обновите список исполнителей.");
+    }
+
     private const int MaximumPhotosPerEntry = 10;
     private const int MaximumPhotoSize = 8 * 1024 * 1024;
     private const int MaximumVideoSize = 100 * 1024 * 1024;
@@ -66,8 +145,8 @@ public sealed class VehicleService(
     }
 
     public Task<IReadOnlyList<VehicleResponse>> GetVehiclesAsync(
-        CancellationToken cancellationToken) =>
-        repository.GetVehiclesAsync(cancellationToken);
+        CancellationToken cancellationToken, bool includeArchived = false) =>
+        repository.GetVehiclesAsync(cancellationToken, includeArchived);
 
     public Task<VehicleJournalResponse?> GetJournalAsync(
         Guid vehicleId,
@@ -77,8 +156,8 @@ public sealed class VehicleService(
         repository.GetJournalAsync(vehicleId, from, to, cancellationToken);
 
     public Task<IReadOnlyList<VehicleJournalResponse>> GetRepairJournalsAsync(
-        CancellationToken cancellationToken) =>
-        repository.GetRepairJournalsAsync(cancellationToken);
+        CancellationToken cancellationToken, bool includeArchived = false) =>
+        repository.GetRepairJournalsAsync(cancellationToken, includeArchived);
 
     public Task<ServiceResult<Guid>> AddPurchaseAsync(
         Guid vehicleId,
@@ -209,12 +288,18 @@ public sealed class VehicleService(
             "defect-video", videoId, userId,
             repository.DeleteDefectVideoAsync, cancellationToken);
 
-    public Task<ServiceResult<Guid>> AddHoursAsync(
+    public async Task<ServiceResult<Guid>> AddHoursAsync(
         Guid vehicleId,
         VehicleHoursRequest request,
         Guid createdBy,
-        CancellationToken cancellationToken) =>
-        CreateAsync(
+        CancellationToken cancellationToken)
+    {
+        if (request.EngineNumber is < 0 or > 2) return ServiceResult<Guid>.BadRequest("Номер ДВС должен быть 1 или 2.");
+        if (request.EngineNumber == 2) {
+            var vehicle = (await repository.GetVehiclesAsync(cancellationToken)).FirstOrDefault(x => x.Id == vehicleId);
+            if (vehicle?.EngineCount != 2) return ServiceResult<Guid>.BadRequest("У этой техники один ДВС.");
+        }
+        return await CreateAsync(
             vehicleId,
             request.EngineHours < 0
                 ? "Моточасы не могут быть отрицательными."
@@ -225,6 +310,7 @@ public sealed class VehicleService(
                 createdBy,
                 cancellationToken),
             cancellationToken);
+    }
 
     public async Task<VehicleHoursImportResponse> ImportHoursAsync(
         Stream file,
@@ -241,7 +327,7 @@ public sealed class VehicleService(
             ? ReadExcelRows(file, errors)
             : await ReadCsvRowsAsync(file, errors, cancellationToken);
         var vehicles = await repository.GetVehiclesAsync(cancellationToken);
-        var importedByVehicle = new Dictionary<Guid, VehicleHoursImportItem>();
+        var importedByVehicle = new Dictionary<(Guid VehicleId, int EngineNumber), VehicleHoursImportItem>();
 
         foreach (var row in rows)
         {
@@ -267,16 +353,27 @@ public sealed class VehicleService(
                     $"Найдено несколько машин «{row.Model}» с гаражным № {row.GarageNumber}."));
                 continue;
             }
-            if (importedByVehicle.ContainsKey(matches[0].Id))
+            if (matches[0].EngineCount == 1 && rows.Any(other => other.Line == row.Line && other.EngineNumber == 2))
+            {
+                if (row.EngineNumber == 1) errors.Add(new(row.Line, "У этой техники один ДВС."));
+                continue;
+            }
+            var number = row.EngineNumber;
+            if (number == 0) {
+                if (matches[0].EngineCount == 2) { errors.Add(new(row.Line, "Для самосвала укажите ДВС № 1 и № 2: отдельными колонками или через /.") ); continue; }
+                number = 1;
+            }
+            if (number > matches[0].EngineCount) { errors.Add(new(row.Line, "У этой техники один ДВС.")); continue; }
+            if (importedByVehicle.ContainsKey((matches[0].Id, number)))
             {
                 errors.Add(new(
                     row.Line,
                     "Эта машина уже указана в импортируемом файле."));
                 continue;
             }
-            importedByVehicle[matches[0].Id] = new(
+            importedByVehicle[(matches[0].Id, number)] = new(
                 matches[0].Id,
-                row.EngineHours);
+                row.EngineHours, number);
         }
 
         if (importedByVehicle.Count > 0)
@@ -298,6 +395,7 @@ public sealed class VehicleService(
         Guid createdBy,
         CancellationToken cancellationToken)
     {
+        if (!await repository.VehicleExistsAsync(vehicleId, cancellationToken)) return ServiceResult<Guid>.NotFound();
         if (!await repository.DefectBelongsToVehicleAsync(
                 request.DefectId, vehicleId, cancellationToken))
         {
@@ -349,6 +447,13 @@ public sealed class VehicleService(
                 "Задача не назначена вам или уже завершена.");
     }
 
+    public async Task<bool> UpdateHistoryEntryAsync(string category, Guid id, string description, Guid userId, CancellationToken cancellationToken)
+    {
+        var user = await userRepository.FindByIdAsync(userId, cancellationToken);
+        if (user is null || !IsAdministrator(user) || string.IsNullOrWhiteSpace(description)) return false;
+        return await repository.UpdateHistoryEntryAsync(category, id, description.Trim(), cancellationToken);
+    }
+
     public async Task<bool> DeleteEntryAsync(
         string category,
         Guid id,
@@ -358,7 +463,7 @@ public sealed class VehicleService(
         if (category == "defects" &&
             !await CanManageDefectAsync(id, userId, cancellationToken) ||
             category == "works" &&
-            !await CanManageWorkAsync(id, userId, cancellationToken))
+            !await CanDeleteWorkAsync(id, userId, cancellationToken))
         {
             return false;
         }
@@ -443,17 +548,7 @@ public sealed class VehicleService(
             return ServiceResult<Guid>.Unauthorized();
         }
 
-        var errors = new Dictionary<string, string[]>();
-        if (Clean(request.RequestNumber).Length is < 1 or > 100)
-        {
-            errors[nameof(request.RequestNumber)] =
-                ["Укажите номер заявки длиной не более 100 символов."];
-        }
-        if (request.Description.Trim().Length is < 1 or > 5000)
-        {
-            errors[nameof(request.Description)] =
-                ["Укажите описание заявки длиной от 1 до 5000 символов."];
-        }
+        var errors = ValidatePartsRequest(request);
         if (errors.Count > 0)
         {
             return ServiceResult<Guid>.Validation(errors);
@@ -529,6 +624,10 @@ public sealed class VehicleService(
             errors[nameof(request.Description)] =
                 ["Укажите описание заявки длиной от 1 до 5000 символов."];
         }
+        if (request.CompletedDate.HasValue && request.CompletedDate.Value < request.RequestDate)
+        {
+            errors[nameof(request.CompletedDate)] = ["Дата выполнения не может быть раньше даты заявки."];
+        }
         return errors;
     }
 
@@ -577,11 +676,14 @@ public sealed class VehicleService(
     private static string? ValidateDefect(
         VehicleDefectRequest request,
         string symptoms,
-        DateTimeOffset downtimeStartedAt) =>
+        DateTimeOffset? downtimeStartedAt) =>
         ValidateText(symptoms, "Симптомы")
         ?? (Clean(request.ErrorCode).Length > 100
             ? "Код ошибки не должен превышать 100 символов."
-            : downtimeStartedAt == default
+            : request.OperationalState is not ("operating" or "stopped")
+                ? "Укажите, работает машина или остановлена."
+                : request.OperationalState == "operating" ? null
+                : downtimeStartedAt is null || downtimeStartedAt == default(DateTimeOffset)
                 ? "Укажите время начала простоя."
                 : downtimeStartedAt > DateTimeOffset.UtcNow.AddMinutes(5)
                     ? "Время начала простоя не может быть в будущем."
@@ -600,7 +702,15 @@ public sealed class VehicleService(
             repairDateTime > DateTimeOffset.UtcNow.AddMinutes(5)
                 ? "Дата и время ремонта не могут быть в будущем."
                 : null;
-        return description ?? failure ?? repairDateTimeError ??
+        var operationalError = request.OperationalState is not (null or "operating" or "stopped")
+            ? "Укажите, работает машина или остановлена."
+            : request.OperationalState == "stopped" && request.DowntimeStartedAt is null
+                ? "Укажите время начала простоя."
+                : request.DowntimeStartedAt > DateTimeOffset.UtcNow.AddMinutes(5)
+                    ? "Время начала простоя не может быть в будущем." : null;
+        var locationError = Clean(request.Location) is not ("" or "КАРЬЕР" or "РММ")
+            ? "Место работ должно быть КАРЬЕР или РММ." : null;
+        return description ?? failure ?? repairDateTimeError ?? operationalError ?? locationError ??
             (status is not ("repaired" or "faulty" or "awaiting_parts")
                 ? "Статус должен быть repaired, faulty или awaiting_parts."
                 : status == "awaiting_parts" &&
@@ -677,32 +787,25 @@ public sealed class VehicleService(
             }
             firstDataLine = false;
 
-            if (columns.Count != 3)
-            {
-                errors.Add(new(
-                    lineNumber,
-                    "Ожидаются 3 колонки: garage_number;model;engine_hours."));
-                continue;
-            }
-            if (!int.TryParse(columns[0].Trim(), out var garageNumber))
-            {
-                errors.Add(new(lineNumber, "Некорректный гаражный номер."));
-                continue;
-            }
-            if (!TryParseEngineHours(columns[2], out var engineHours))
-            {
-                errors.Add(new(lineNumber, "Некорректное значение моточасов."));
-                continue;
-            }
-
-            rows.Add(new(
-                lineNumber,
-                garageNumber,
-                columns[1].Trim(),
-                engineHours));
+            AddImportedHoursRow(columns, lineNumber, rows, errors);
         }
 
         return rows;
+    }
+
+    private static void AddImportedHoursRow(IReadOnlyList<string> columns, int line, List<VehicleHoursImportRow> rows, List<VehicleHoursImportError> errors)
+    {
+        if (columns.Count is not (3 or 4) || !int.TryParse(columns[0].Trim(), out var garage)) {
+            errors.Add(new(line, "Ожидаются колонки: garage_number;model;engine_1;engine_2 (или три колонки с моточасами).")); return;
+        }
+        var values = columns.Count == 4 ? new[] { columns[2], columns[3] } : columns[2].Split('/');
+        if (values.Length > 2) { errors.Add(new(line, "Укажите не более двух ДВС.")); return; }
+        var parsed = new decimal?[values.Length];
+        for (var i=0;i<values.Length;i++) if (!TryParseEngineHours(values[i], out parsed[i])) {errors.Add(new(line, "Некорректное значение моточасов.")); return;}
+        for (var i=0;i<values.Length;i++) {
+            if (values.Length==2 && parsed[i] is null) continue;
+            rows.Add(new(line, garage, columns[1].Trim(), parsed[i], values.Length==2 ? i+1 : 0));
+        }
     }
 
     private static IReadOnlyList<VehicleHoursImportRow> ReadExcelRows(
@@ -731,25 +834,16 @@ public sealed class VehicleService(
                 {
                     continue;
                 }
-                if (!TryMapExcelVehicle(equipment, out var garageNumber, out var model))
-                {
-                    errors.Add(new(
-                        lineNumber,
-                        $"Неизвестное обозначение техники «{equipment}»."));
-                    continue;
+                if (equipment.Equals("garage_number", StringComparison.OrdinalIgnoreCase)) continue;
+                if (reader.FieldCount >= 3 && int.TryParse(equipment, out _)) {
+                    var columns=Enumerable.Range(0, Math.Min(4, reader.FieldCount)).Select(i=>Convert.ToString(reader.GetValue(i),CultureInfo.InvariantCulture) ?? "").ToArray();
+                    AddImportedHoursRow(columns,lineNumber,rows,errors); continue;
                 }
-
-                var rawHours = reader.FieldCount > 1
-                    ? Convert.ToString(
-                        reader.GetValue(1),
-                        CultureInfo.InvariantCulture)
-                    : null;
-                if (!TryParseEngineHours(rawHours, out var engineHours))
-                {
-                    errors.Add(new(lineNumber, "Некорректное значение моточасов."));
-                    continue;
+                if (!TryMapExcelVehicle(equipment, out var garageNumber, out var model)) {
+                    errors.Add(new(lineNumber, $"Неизвестное обозначение техники «{equipment}».")); continue;
                 }
-                rows.Add(new(lineNumber, garageNumber, model, engineHours));
+                var rawHours=reader.FieldCount>1 ? Convert.ToString(reader.GetValue(1),CultureInfo.InvariantCulture) ?? "" : "";
+                AddImportedHoursRow(new[]{garageNumber.ToString(CultureInfo.InvariantCulture),model,rawHours},lineNumber,rows,errors);
             }
         }
         catch (HeaderException)
@@ -966,6 +1060,13 @@ public sealed class VehicleService(
                  defectId, userId, cancellationToken));
     }
 
+    private async Task<bool> CanDeleteWorkAsync(Guid workId, Guid userId, CancellationToken cancellationToken)
+    {
+        var user = await userRepository.FindByIdAsync(userId, cancellationToken);
+        return user is not null && (IsAdministrator(user) ||
+            await repository.IsWorkCreatorAsync(workId, userId, cancellationToken));
+    }
+
     private async Task<bool> CanManageWorkAsync(
         Guid workId,
         Guid userId,
@@ -974,9 +1075,10 @@ public sealed class VehicleService(
         var user = await userRepository.FindByIdAsync(userId, cancellationToken);
         return user is not null &&
             (IsAdministrator(user) ||
+             await repository.AuxiliaryWorkExistsAsync(workId, cancellationToken) &&
+             await repository.IsWorkCreatorAsync(workId, userId, cancellationToken) ||
              ExecutorProfessions.Contains(user.Profession.Name.Trim()) &&
-             await repository.IsWorkPerformerAsync(
-                 workId, userId, cancellationToken));
+             await repository.IsWorkPerformerAsync(workId, userId, cancellationToken));
     }
 
     private async Task<ServiceResult<bool>> DeleteMediaAsync(
@@ -1003,5 +1105,6 @@ public sealed class VehicleService(
         int Line,
         int GarageNumber,
         string Model,
-        decimal? EngineHours);
+        decimal? EngineHours,
+        int EngineNumber = 0);
 }

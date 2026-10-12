@@ -67,23 +67,28 @@ internal sealed class VehiclePartsPostgreSqlDatabase : IAsyncDisposable
         await ExecuteAsync(
             """
             CREATE TABLE app_users (id uuid PRIMARY KEY);
-            CREATE TABLE number_car (id uuid PRIMARY KEY);
+            CREATE TABLE number_car (id uuid PRIMARY KEY, is_archived boolean NOT NULL DEFAULT false);
             CREATE TABLE vehicle_defects (
                 id uuid PRIMARY KEY,
                 vehicle_id uuid NOT NULL REFERENCES number_car(id),
-                created_by uuid NOT NULL REFERENCES app_users(id)
+                created_by uuid NOT NULL REFERENCES app_users(id),
+                operational_state text NOT NULL DEFAULT 'stopped',
+                downtime_started_at timestamptz
             );
             CREATE TABLE vehicle_works (
                 id uuid PRIMARY KEY,
                 vehicle_id uuid NOT NULL REFERENCES number_car(id),
                 defect_id uuid REFERENCES vehicle_defects(id),
                 repair_status varchar(30) NOT NULL,
-                created_by uuid NOT NULL REFERENCES app_users(id)
+                created_by uuid NOT NULL REFERENCES app_users(id),
+                operational_state text NOT NULL DEFAULT 'stopped',
+                downtime_started_at timestamptz
             );
             CREATE TABLE vehicle_parts_requests (
                 id uuid PRIMARY KEY,
                 defect_id uuid NOT NULL REFERENCES vehicle_defects(id) ON DELETE CASCADE,
                 request_date date NOT NULL,
+                completed_date date,
                 request_number varchar(100) NOT NULL DEFAULT '',
                 description text NOT NULL DEFAULT '',
                 required_parts text NOT NULL DEFAULT '',

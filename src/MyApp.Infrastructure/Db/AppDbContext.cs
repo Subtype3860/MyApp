@@ -5,6 +5,10 @@ using MyApp.Infrastructure.Db.Entities;
 
 namespace MyApp.Infrastructure.Db {
     public class AppDbContext : DbContext {
+        public DbSet<VehicleEngineSettings> VehicleEngineSettings => Set<VehicleEngineSettings>();
+        public DbSet<GtoUserSettings> GtoUserSettings => Set<GtoUserSettings>();
+        public DbSet<GtoVehicleSettings> GtoVehicleSettings => Set<GtoVehicleSettings>();
+        public DbSet<GtoDefectSettings> GtoDefectSettings => Set<GtoDefectSettings>();
         public DbSet<User> Users => Set<User>();
         public DbSet<Profession> Professions => Set<Profession>();
         public DbSet<GroupCarRecord> VehicleGroups => Set<GroupCarRecord>();
@@ -18,6 +22,7 @@ namespace MyApp.Infrastructure.Db {
         public DbSet<VehicleHourReadingRecord> VehicleHourReadings =>
             Set<VehicleHourReadingRecord>();
         public DbSet<VehicleWorkRecord> VehicleWorks => Set<VehicleWorkRecord>();
+        public DbSet<VehicleWorkParticipantRecord> VehicleWorkParticipants => Set<VehicleWorkParticipantRecord>();
         public DbSet<VehicleWorkPhotoRecord> VehicleWorkPhotos =>
             Set<VehicleWorkPhotoRecord>();
         public DbSet<VehicleDefectPhotoRecord> VehicleDefectPhotos =>
@@ -103,6 +108,7 @@ namespace MyApp.Infrastructure.Db {
                 entity.Property(x => x.RequestDate)
                     .HasColumnName("request_date")
                     .HasColumnType("date");
+                entity.Property(x => x.CompletedDate).HasColumnName("completed_date").HasColumnType("date");
                 entity.Property(x => x.RequestNumber)
                     .HasColumnName("request_number")
                     .HasMaxLength(100);
@@ -121,6 +127,29 @@ namespace MyApp.Infrastructure.Db {
                 entity.HasKey(x => x.Id);
                 entity.Property(x => x.Id).HasColumnName("id");
                 entity.Property(x => x.FullName).HasColumnName("full_name");
+                entity.Property(x => x.ReportSortOrder).HasColumnName("report_sort_order").HasDefaultValue(0);
+            });
+            modelBuilder.Entity<VehicleEngineSettings>(entity => {
+                entity.ToTable("vehicle_engine_settings"); entity.HasKey(x => new { x.VehicleId, x.EngineNumber });
+                entity.Property(x => x.VehicleId).HasColumnName("vehicle_id");
+                entity.Property(x => x.EngineNumber).HasColumnName("engine_number");
+                entity.Property(x => x.HoursAtReplacement).HasColumnName("hours_at_replacement");
+            });
+            modelBuilder.Entity<GtoUserSettings>(entity => {
+                entity.ToTable("gto_user_settings"); entity.HasKey(x => x.UserId);
+                entity.Property(x => x.UserId).HasColumnName("user_id");
+                entity.Property(x => x.Organisation).HasColumnName("organisation").HasMaxLength(200);
+                entity.Property(x => x.Site).HasColumnName("site").HasMaxLength(200);
+            });
+            modelBuilder.Entity<GtoVehicleSettings>(entity => {
+                entity.ToTable("gto_vehicle_settings"); entity.HasKey(x => x.VehicleId);
+                entity.Property(x => x.VehicleId).HasColumnName("vehicle_id");
+                entity.Property(x => x.Climate).HasColumnName("climate").HasMaxLength(20);
+            });
+            modelBuilder.Entity<GtoDefectSettings>(entity => {
+                entity.ToTable("gto_defect_settings"); entity.HasKey(x => x.DefectId);
+                entity.Property(x => x.DefectId).HasColumnName("defect_id");
+                entity.Property(x => x.PlannedRelease).HasColumnName("planned_release").HasMaxLength(2000);
             });
             modelBuilder.Entity<TypeCarRecord>(entity => {
                 entity.ToTable("type_car");
@@ -128,6 +157,8 @@ namespace MyApp.Infrastructure.Db {
                 entity.Property(x => x.Id).HasColumnName("id");
                 entity.Property(x => x.FullName).HasColumnName("full_name");
                 entity.Property(x => x.CarGroupId).HasColumnName("car_group_id");
+                entity.Property(x => x.IconPath).HasColumnName("icon_path").HasMaxLength(255);
+                entity.HasOne<GroupCarRecord>().WithMany().HasForeignKey(x => x.CarGroupId).OnDelete(DeleteBehavior.Restrict);
             });
             modelBuilder.Entity<ModelCarRecord>(entity => {
                 entity.ToTable("model_car");
@@ -135,12 +166,15 @@ namespace MyApp.Infrastructure.Db {
                 entity.Property(x => x.Id).HasColumnName("id");
                 entity.Property(x => x.FullName).HasColumnName("full_name");
                 entity.Property(x => x.CarTypeId).HasColumnName("car_type_id");
+                entity.HasOne<TypeCarRecord>().WithMany().HasForeignKey(x => x.CarTypeId).OnDelete(DeleteBehavior.Restrict);
             });
             modelBuilder.Entity<NumberCarRecord>(entity => {
                 entity.ToTable("number_car");
                 entity.HasKey(x => x.Id);
                 entity.Property(x => x.Id).HasColumnName("id");
+                entity.Property(x => x.IsArchived).HasColumnName("is_archived");
                 entity.Property(x => x.CarModeId).HasColumnName("car_mode_id");
+                entity.HasOne<ModelCarRecord>().WithMany().HasForeignKey(x => x.CarModeId).OnDelete(DeleteBehavior.Restrict);
                 entity.Property(x => x.GarageNumber).HasColumnName("gar_number");
                 entity.Property(x => x.StateNumber).HasColumnName("gos_number");
                 entity.Property(x => x.Vin).HasColumnName("vim");
@@ -165,6 +199,7 @@ namespace MyApp.Infrastructure.Db {
                 entity.Property(x => x.ErrorCode).HasColumnName("error_code");
                 entity.Property(x => x.Symptoms).HasColumnName("symptoms");
                 entity.Property(x => x.DowntimeStartedAt).HasColumnName("downtime_started_at");
+                entity.Property(x => x.OperationalState).HasColumnName("operational_state");
                 entity.Property(x => x.AssignedTo).HasColumnName("assigned_to");
                 entity.Property(x => x.RepairStartedAt).HasColumnName("repair_started_at");
                 entity.Property(x => x.CreatedBy).HasColumnName("created_by");
@@ -175,14 +210,18 @@ namespace MyApp.Infrastructure.Db {
                 entity.Property(x => x.VehicleId).HasColumnName("vehicle_id");
                 entity.Property(x => x.ReadingDate).HasColumnName("reading_date").HasColumnType("date");
                 entity.Property(x => x.EngineHours).HasColumnName("engine_hours");
+                entity.Property(x => x.EngineNumber).HasColumnName("engine_number");
                 entity.Property(x => x.Note).HasColumnName("note");
                 entity.Property(x => x.CreatedBy).HasColumnName("created_by");
             });
             ConfigureCreatedAt(modelBuilder.Entity<VehicleWorkRecord>(), "vehicle_works");
             modelBuilder.Entity<VehicleWorkRecord>(entity => {
                 entity.Property(x => x.VehicleId).HasColumnName("vehicle_id");
+                entity.Property(x => x.WorkKind).HasColumnName("work_kind");
+                entity.Property(x => x.Title).HasColumnName("title");
                 entity.Property(x => x.WorkDate).HasColumnName("work_date").HasColumnType("date");
                 entity.Property(x => x.Description).HasColumnName("description");
+                entity.Property(x => x.Location).HasColumnName("location");
                 entity.Property(x => x.EngineHours).HasColumnName("engine_hours");
                 entity.Property(x => x.Performer).HasColumnName("performer");
                 entity.Property(x => x.Note).HasColumnName("note");
@@ -192,7 +231,24 @@ namespace MyApp.Infrastructure.Db {
                 entity.Property(x => x.RequiredParts).HasColumnName("required_parts");
                 entity.Property(x => x.PerformedBy).HasColumnName("performed_by");
                 entity.Property(x => x.CompletedAt).HasColumnName("completed_at");
+                entity.Property(x => x.OperationalState).HasColumnName("operational_state");
+                entity.Property(x => x.DowntimeStartedAt).HasColumnName("downtime_started_at");
                 entity.Property(x => x.CreatedBy).HasColumnName("created_by");
+            });
+            modelBuilder.Entity<VehicleWorkParticipantRecord>(entity => {
+                entity.ToTable("vehicle_work_participants");
+                entity.HasKey(x => x.Id);
+                entity.Property(x => x.Id).HasColumnName("id");
+                entity.Property(x => x.WorkId).HasColumnName("work_id");
+                entity.Property(x => x.UserId).HasColumnName("user_id");
+                entity.Property(x => x.Status).HasColumnName("status");
+                entity.Property(x => x.RequestedAt).HasColumnName("requested_at");
+                entity.Property(x => x.ReviewedBy).HasColumnName("reviewed_by");
+                entity.Property(x => x.ReviewedAt).HasColumnName("reviewed_at");
+                entity.HasIndex(x => new { x.WorkId, x.UserId }).IsUnique();
+                entity.HasOne<VehicleWorkRecord>().WithMany().HasForeignKey(x => x.WorkId).OnDelete(DeleteBehavior.Cascade);
+                entity.HasOne<User>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Restrict);
+                entity.HasOne<User>().WithMany().HasForeignKey(x => x.ReviewedBy).OnDelete(DeleteBehavior.Restrict);
             });
             ConfigureMedia<VehicleWorkPhotoRecord>(modelBuilder, "vehicle_work_photos",
                 entity => {

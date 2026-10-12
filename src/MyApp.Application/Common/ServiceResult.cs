@@ -7,7 +7,8 @@ public enum ServiceResultStatus
     BadRequest,
     Conflict,
     NotFound,
-    Unauthorized
+    Unauthorized,
+    Forbidden
 }
 
 public sealed record ServiceResult<T>(
@@ -31,6 +32,9 @@ public sealed record ServiceResult<T>(
 
     public static ServiceResult<T> NotFound() =>
         new(ServiceResultStatus.NotFound);
+
+    public static ServiceResult<T> Forbidden(string message) =>
+        new(ServiceResultStatus.Forbidden, Message: message);
 
     public static ServiceResult<T> Unauthorized() =>
         new(ServiceResultStatus.Unauthorized);

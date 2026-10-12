@@ -5,6 +5,8 @@ public static class Permissions
     public const string HomeView = "menu.home";
     public const string TablesView = "menu.tables";
     public const string VehiclesView = "menu.vehicles";
+    public const string AuxiliaryWorksView = "menu.auxiliary_works";
+    public const string AuxiliaryWorksRead = "auxiliary-works.read";
     public const string RequirementsView = "menu.requirements";
     public const string MaintenanceView = "menu.maintenance";
 
@@ -23,8 +25,9 @@ public static class Permissions
             new("vehicles.works", "Ремонт"),
             new("vehicles.parts_request", "Заявка на закупку ЗЧ"),
             new("vehicles.hours", "Моточасы"),
-            new("vehicles.report", "Отчёт")
+            new("vehicles.report", "Отчёты")
         ]),
+        new(AuxiliaryWorksView, "Вспомогательные работы"),
         new(RequirementsView, "Выписанные требования"),
         new(MaintenanceView, "Техническое обслуживание")
     ];

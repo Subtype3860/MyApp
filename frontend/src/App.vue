@@ -11,6 +11,8 @@ import SelectedComponentsView from './components/SelectedComponentsView.vue'
 import SettingsView from './components/SettingsView.vue'
 import TablesView from './components/TablesView.vue'
 import VehicleJournalView from './components/VehicleJournalView.vue'
+import AuxiliaryWorksView from './components/AuxiliaryWorksView.vue'
+import IdleSessionWarning from './components/IdleSessionWarning.vue'
 
 const TOKEN_KEY = 'myapp.authToken'
 const ROLE_KEY = 'myapp.userRole'
@@ -58,10 +60,11 @@ function navigate(page) {
   currentPage.value = page
   closeMobileMenu()
 }
-const currentPage = ref('home')
+const hasReportLink = new URLSearchParams(window.location.search).has('reportWork')
+const currentPage = ref(hasReportLink ? (new URLSearchParams(window.location.search).get('reportSource') === 'auxiliary' ? 'auxiliary-works' : 'reports') : 'home')
 const currentTable = ref('v_full_ost')
 const currentSettings = ref('users')
-const currentVehicleSection = ref('defects')
+const currentVehicleSection = ref(hasReportLink ? 'report' : 'defects')
 const selectedComponentRows = ref([])
 const selectedResponsibleEmployee = ref(null)
 const profileVersion = ref(0)
@@ -101,6 +104,11 @@ function handleSessionExpired(event) {
   handleLogout()
 }
 
+function handleIdleExpired() {
+  sessionExpiredMessage.value = ''
+  handleLogout()
+}
+
 window.addEventListener('myapp:session-expired', handleSessionExpired)
 onBeforeUnmount(() => {
   window.removeEventListener('myapp:session-expired', handleSessionExpired)
@@ -127,7 +135,7 @@ function openSettings(section) {
 function openVehicleSection(section) {
   closeMobileMenu()
   currentVehicleSection.value = section
-  currentPage.value = 'vehicles'
+  currentPage.value = ['report', 'gtoForecast'].includes(section) ? 'reports' : 'vehicles'
 }
 
 function openSelectedComponents() {
@@ -172,6 +180,7 @@ function updateSelectedComponentRows(rows) {
   />
 
   <div v-else class="app-shell">
+    <IdleSessionWarning @expired="handleIdleExpired" />
     <header class="mobile-topbar" :inert="mobileMenuOpen">
       <BrandIdentity />
       <button
@@ -260,8 +269,10 @@ function updateSelectedComponentRows(rows) {
         @apply-template="applyMaintenanceTemplate"
         @show-selected="openSelectedComponents"
       />
+      <AuxiliaryWorksView v-else-if="currentPage === 'auxiliary-works'" :token="token" :navigation-collapsed="isNavigationCollapsed" />
+
       <VehicleJournalView
-        v-else-if="currentPage === 'vehicles'"
+        v-else-if="currentPage === 'vehicles' || currentPage === 'reports'"
         :navigation-collapsed="isNavigationCollapsed"
         :section="currentVehicleSection"
         :token="token"

@@ -28,11 +28,40 @@ public class VehicleController : ControllerBase
     /// <summary>Возвращает список всей техники.</summary>
     [HttpGet]
     public async Task<IActionResult> GetVehicles(
+        [FromQuery] bool includeArchived,
         [FromServices] IVehicleService service,
         CancellationToken cancellationToken)
     {
-        var vehicles = await service.GetVehiclesAsync(cancellationToken);
+        var vehicles = await service.GetVehiclesAsync(cancellationToken, includeArchived);
         return Ok(vehicles);
+    }
+
+    [HttpGet("fleet-options")]
+    public async Task<IActionResult> FleetOptions([FromServices] IVehicleService service, CancellationToken cancellationToken)
+    {
+        if (!TryGetUserId(out var userId)) return Unauthorized();
+        return Ok(await service.GetVehicleCatalogOptionsAsync(userId, cancellationToken));
+    }
+
+    [HttpPost]
+    public async Task<IActionResult> CreateVehicle([FromBody] VehicleCatalogRequest request, [FromServices] IVehicleService service, CancellationToken cancellationToken)
+    {
+        if (!TryGetUserId(out var userId)) return Unauthorized();
+        return this.ToActionResult(await service.SaveVehicleCatalogAsync(null, request, userId, cancellationToken), id => Created($"/api/vehicles/{id}/journal", new { id }));
+    }
+
+    [HttpPut("{vehicleId:guid}")]
+    public async Task<IActionResult> UpdateVehicle(Guid vehicleId, [FromBody] VehicleCatalogRequest request, [FromServices] IVehicleService service, CancellationToken cancellationToken)
+    {
+        if (!TryGetUserId(out var userId)) return Unauthorized();
+        return this.ToActionResult(await service.SaveVehicleCatalogAsync(vehicleId, request, userId, cancellationToken), id => Ok(new { id }));
+    }
+
+    [HttpDelete("{vehicleId:guid}")]
+    public async Task<IActionResult> RemoveVehicle(Guid vehicleId, [FromServices] IVehicleService service, CancellationToken cancellationToken)
+    {
+        if (!TryGetUserId(out var userId)) return Unauthorized();
+        return this.ToActionResult(await service.ArchiveVehicleAsync(vehicleId, userId, cancellationToken), _ => NoContent());
     }
 
     /// <summary>Возвращает журнал техники (закупки, неисправности, моточасы, работы) за период.</summary>
@@ -51,10 +80,11 @@ public class VehicleController : ControllerBase
     /// <summary>Returns repair data for all vehicles using batched queries.</summary>
     [HttpGet("repair-journal")]
     public async Task<IActionResult> GetRepairJournals(
+        [FromQuery] bool includeArchived,
         [FromServices] IVehicleService service,
         CancellationToken cancellationToken)
     {
-        var journals = await service.GetRepairJournalsAsync(cancellationToken);
+        var journals = await service.GetRepairJournalsAsync(cancellationToken, includeArchived);
         return Ok(journals);
     }
 
@@ -250,7 +280,8 @@ public class VehicleController : ControllerBase
     public async Task<IActionResult> ImportHours(
         IFormFile file,
         [FromServices] IVehicleService service,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        [FromForm] DateOnly? readingDate = null)
     {
         if (!TryGetUserId(out var userId))
         {
@@ -271,7 +302,7 @@ public class VehicleController : ControllerBase
         try
         {
             await using var stream = file.OpenReadStream();
-            var result = await service.ImportHoursAsync(stream, extension, userId, DateOnly.FromDateTime(DateTime.Today), cancellationToken);
+            var result = await service.ImportHoursAsync(stream, extension, userId, readingDate ?? DateOnly.FromDateTime(DateTime.Today), cancellationToken);
             return Ok(result);
         }
         catch (DecoderFallbackException)
@@ -294,6 +325,31 @@ public class VehicleController : ControllerBase
         return await CreateAsync(
             userId => service.AddWorkAsync(vehicleId, request, userId, cancellationToken),
             $"/api/vehicles/{vehicleId}/journal");
+    }
+
+    [HttpGet("works/{workId:guid}/participants")]
+    public async Task<IActionResult> GetWorkParticipants(Guid workId, [FromServices] IVehicleService service, CancellationToken cancellationToken)
+    {
+        var result = await service.GetWorkParticipantsAsync(workId, cancellationToken);
+        return this.ToActionResult(result, value => Ok(value));
+    }
+
+    // The participant identity always comes from the authenticated session.
+    [HttpPost("works/{workId:guid}/participants")]
+    public async Task<IActionResult> RequestWorkParticipation(Guid workId, [FromServices] IVehicleService service, CancellationToken cancellationToken)
+    {
+        if (!TryGetUserId(out var userId)) return Unauthorized();
+        var result = await service.RequestWorkParticipationAsync(workId, userId, cancellationToken);
+        return this.ToActionResult(result, _ => Ok());
+    }
+
+    [HttpPost("works/{workId:guid}/participants/{participantId:guid}/review")]
+    public async Task<IActionResult> ReviewWorkParticipation(Guid workId, Guid participantId,
+        [FromBody] VehicleWorkParticipantReviewRequest request, [FromServices] IVehicleService service, CancellationToken cancellationToken)
+    {
+        if (!TryGetUserId(out var userId)) return Unauthorized();
+        var result = await service.ReviewWorkParticipationAsync(workId, participantId, request.Approved, userId, cancellationToken);
+        return this.ToActionResult(result, _ => Ok());
     }
 
     /// <summary>Прикрепляет фотографии к ремонтным работам.</summary>
@@ -518,6 +574,18 @@ public class VehicleController : ControllerBase
     }
 
     /// <summary>Удаляет запись журнала техники (закупка, неисправность, моточасы или работа).</summary>
+    [HttpPut("history/{category}/{id:guid}")]
+    [Authorize(Roles = "administrator")]
+    public async Task<IActionResult> UpdateHistoryEntry(string category, Guid id,
+        [FromBody] VehicleHistoryEditRequest request, [FromServices] IVehicleService service,
+        CancellationToken cancellationToken)
+    {
+        if (!TryGetUserId(out var userId)) return Unauthorized();
+        if (category is not ("works" or "defects") || string.IsNullOrWhiteSpace(request.Description)) return BadRequest();
+        return await service.UpdateHistoryEntryAsync(category, id, request.Description, userId, cancellationToken)
+            ? NoContent() : NotFound();
+    }
+
     [HttpDelete("{category}/{id:guid}")]
     public async Task<IActionResult> DeleteEntry(
         string category,

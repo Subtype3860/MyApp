@@ -361,3 +361,12 @@ MigrationBackup/
 
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
+
+# Local database backups may contain operational data.
+/.local-backups/
+
+# Runtime uploads and browser test artifacts
+/src/MyApp.API/media-staging/
+/test-results/
+/frontend/test-results/
+/frontend/playwright-report/

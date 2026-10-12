@@ -1,19 +1,26 @@
 <script setup>
 import WorkItem from './WorkItem.vue'
+import RepairActionsMenu from './RepairActionsMenu.vue'
 
 defineProps({
+  isAdministrator: { type: Boolean, default: false },
+  busy: { type: Boolean, default: false },
   request: { type: Object, required: true },
 })
 
-const emit = defineEmits(['view-media'])
+const emit = defineEmits(['view-media', 'manage-entry'])
 </script>
 
 <template>
   <article class="repair-request">
     <header class="repair-request__header">
-      <div>
+      <div class="repair-request__heading">
+        <div>
         <time :datetime="request.date">{{ request.dateLabel || request.date || 'Дата не указана' }}</time>
         <h4>Заявка на ремонт</h4>
+        </div>
+        <RepairActionsMenu v-if="isAdministrator" label="Действия с заявкой" edit-label="Редактировать заявку" delete-label="Удалить заявку" :busy="busy"
+          @edit="emit('manage-entry', 'edit', 'defects', request)" @delete="emit('manage-entry', 'delete', 'defects', request)" />
       </div>
       <p class="repair-request__description">
         {{ request.description || 'Описание неисправности не указано.' }}
@@ -40,6 +47,8 @@ const emit = defineEmits(['view-media'])
       </button>
     </div>
 
+    <span class="repair-request__status" :class="`repair-request__status--${request.status || 'queue'}`">{{ request.statusLabel || 'Зарегистрирована' }}</span>
+
     <p v-if="!request.works?.length" class="repair-request__empty">
       Работы по заявке не зарегистрированы.
     </p>
@@ -50,6 +59,9 @@ const emit = defineEmits(['view-media'])
           v-for="work in request.works"
           :key="work.id"
           :work="work"
+          :is-administrator="isAdministrator"
+          :busy="busy"
+          @manage-entry="(...args) => emit('manage-entry', ...args)"
           @view-media="(...args) => emit('view-media', ...args)"
         />
       </div>
@@ -71,6 +83,12 @@ const emit = defineEmits(['view-media'])
   display: grid;
   gap: 0.35rem;
 }
+
+.repair-request__heading { display: flex; justify-content: space-between; align-items: flex-start; gap: 0.75rem; }
+.repair-request__heading > div { min-width: 0; }
+.repair-request__status { justify-self: end; width: fit-content; padding: 0.3rem 0.6rem; border-radius: 999px; font-size: 0.8rem; font-weight: 700; background: var(--bg-surface); color: var(--text-secondary); }
+.repair-request__status--done { background: #e9f7ef; color: #187647; }
+.repair-request__status--repair, .repair-request__status--waiting { background: #fff4df; color: #9a5b00; }
 
 .repair-request time {
   color: var(--text-secondary);

@@ -177,4 +177,9 @@ test('expired session returns to login', async ({ page }) => {
     page.getByRole('heading', { name: 'Добро пожаловать' }),
   ).toBeVisible()
   await expect(page.getByRole('alert')).toContainText('повторная авторизация')
+  expect(await page.evaluate(() => [
+    localStorage.getItem('myapp.authToken'),
+    localStorage.getItem('myapp.userRole'),
+    localStorage.getItem('myapp.userPermissions'),
+  ])).toEqual([null, null, null])
 })

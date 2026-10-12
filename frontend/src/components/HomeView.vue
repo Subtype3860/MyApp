@@ -1,7 +1,8 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import UserAvatar from './UserAvatar.vue'
-
+import FleetVehicleEditor from './FleetVehicleEditor.vue'
+import FleetActionMenu from './FleetActionMenu.vue'
 const props = defineProps({
   navigationCollapsed: { type: Boolean, required: true },
   token: { type: String, required: true },
@@ -11,6 +12,38 @@ const props = defineProps({
 const emit = defineEmits(['navigate', 'navigate-vehicle'])
 const canView = (permission) =>
   props.isAdmin || props.permissions.includes(permission)
+const fleetOptions = ref({ canManage: false, groups: [], types: [], models: [] })
+const fleetEditorOpen = ref(false), editingVehicle = ref(null), mutationBusy = ref(false), fleetMessage = ref(''), fleetError = ref('')
+async function loadFleetOptions() {
+  if (!canView('menu.vehicles')) return
+  try {
+    const response = await fetch('/api/vehicles/fleet-options', { headers: { Authorization: `Bearer ${props.token}` } })
+    if (response.ok) { const data = await response.json(); if (data && !Array.isArray(data)) fleetOptions.value = data }
+  } catch { /* Do not expose editing controls without server permission. */ }
+}
+function openFleetEditor(vehicle = null) {
+  if (!fleetOptions.value.canManage || mutationBusy.value) return
+  editingVehicle.value = vehicle
+  fleetError.value = ''; fleetMessage.value = ''
+  fleetEditorOpen.value = true
+}
+async function fleetSaved(result) {
+  query.value = ''
+  await Promise.all([loadVehicles(), loadFleetOptions()])
+  fleetMessage.value = result.editing ? 'Изменения техники сохранены.' : 'Техника добавлена в парк.'
+}
+async function removeFleetVehicle(vehicle) {
+  if (!fleetOptions.value.canManage || mutationBusy.value) return
+  if (!window.confirm(`Удалить ${vehicle.modelName} № ${vehicle.garageNumber ?? vehicle.stateNumber} из парка? История ремонтов, моточасы и старые отчёты будут сохранены.`)) return
+  mutationBusy.value = true; fleetError.value = ''; fleetMessage.value = ''
+  try {
+    const response = await fetch(`/api/vehicles/${vehicle.id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${props.token}` } })
+    if (!response.ok) { const result = await response.json().catch(() => null); throw new Error(result?.message || 'Не удалось удалить технику из парка.') }
+    await loadVehicles()
+    fleetMessage.value = 'Техника удалена из активного парка. История сохранена.'
+  } catch (failure) { fleetError.value = failure.message }
+  finally { mutationBusy.value = false }
+}
 const vehicles = ref([])
 const loading = ref(false)
 const error = ref('')
@@ -135,7 +168,7 @@ async function loadVehicles() {
     loading.value = false
   }
 }
-onMounted(loadVehicles)
+onMounted(() => Promise.all([loadVehicles(), loadFleetOptions()]))
 onBeforeUnmount(() => controller?.abort())
 function openShortcut(item) {
   if (item.section) emit('navigate-vehicle', item.section)
@@ -238,15 +271,13 @@ function openShortcut(item) {
               <h2 id="fleet-title">Парк техники</h2>
               <p>Реестр предприятия</p>
             </div>
-            <button
-              class="secondary-button"
-              type="button"
-              :disabled="loading"
-              @click="loadVehicles"
-            >
-              Обновить
-            </button>
+            <FleetActionMenu class="fleet-management-toolbar" label="Меню парка техники" :disabled="loading || mutationBusy">
+              <button v-if="fleetOptions.canManage" type="button" class="primary-button" :disabled="loading || mutationBusy" @click="openFleetEditor()">Добавить технику</button>
+              <button class="secondary-button" type="button" :disabled="loading || mutationBusy" @click="loadVehicles">Обновить</button>
+            </FleetActionMenu>
           </header>
+          <p v-if="fleetMessage" class="fleet-management-message" role="status">{{ fleetMessage }}</p>
+          <p v-if="fleetError" class="form-message--error" role="alert">{{ fleetError }}</p>
           <label class="fleet-search"
             ><span class="visually-hidden">Поиск техники</span
             ><svg viewBox="0 0 24 24" aria-hidden="true">
@@ -283,7 +314,7 @@ function openShortcut(item) {
                 class="fleet-row"
               >
                 <span class="fleet-icon" aria-hidden="true"
-                  ><svg viewBox="0 0 32 32">
+                  ><img v-if="vehicle.typeIconPath" :src="vehicle.typeIconPath" class="fleet-type-icon" alt="" /><svg v-else viewBox="0 0 32 32">
                     <path
                       d="M3 8h16v13H3zM19 13h5l5 6v5h-5M8 24h11M19 21v3M23 14v5h5"
                     />
@@ -308,6 +339,10 @@ function openShortcut(item) {
                     <dd>{{ vehicle.stateNumber || '—' }}</dd>
                   </div>
                 </dl>
+                <FleetActionMenu v-if="fleetOptions.canManage" class="fleet-management-actions" :label="`Действия с ${vehicle.modelName} № ${vehicle.garageNumber ?? vehicle.stateNumber}`" :disabled="loading || mutationBusy">
+                  <button type="button" class="secondary-button" :disabled="loading || mutationBusy" :aria-label="`Редактировать ${vehicle.modelName} № ${vehicle.garageNumber ?? vehicle.stateNumber}`" @click="openFleetEditor(vehicle)">Редактировать</button>
+                  <button type="button" class="fleet-delete-action" :disabled="loading || mutationBusy" :aria-label="`Удалить из парка ${vehicle.modelName} № ${vehicle.garageNumber ?? vehicle.stateNumber}`" @click="removeFleetVehicle(vehicle)">Удалить из парка</button>
+                </FleetActionMenu>
               </article>
             </div>
             <footer class="fleet-pagination">
@@ -389,5 +424,17 @@ function openShortcut(item) {
         администратору.
       </p>
     </section>
+    <FleetVehicleEditor :open="fleetEditorOpen" :vehicle="editingVehicle" :options="fleetOptions" :token="token" @close="fleetEditorOpen = false" @saved="fleetSaved" />
   </main>
 </template>
+
+<style scoped>
+.fleet-type-icon { width: 40px; height: 32px; object-fit: contain; }
+.fleet-row:has(.fleet-management-actions) { grid-template-columns: 42px minmax(0, 1fr) minmax(130px, .7fr) 40px; }
+.fleet-management-actions { grid-column: 4; grid-row: 1; justify-self: end; }
+@media (max-width: 760px) {
+  .fleet-row:has(.fleet-management-actions) { grid-template-columns: 42px minmax(0, 1fr) 40px; }
+  .fleet-management-actions { grid-column: 3; }
+}
+.fleet-management-message { color: var(--accent); font-size: 13px; }
+</style>

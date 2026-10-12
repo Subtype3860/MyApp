@@ -2,10 +2,12 @@
 import RepairRequest from './RepairRequest.vue'
 
 defineProps({
+  isAdministrator: { type: Boolean, default: false },
+  busy: { type: Boolean, default: false },
   requests: { type: Array, required: true },
 })
 
-const emit = defineEmits(['view-media'])
+const emit = defineEmits(['view-media', 'manage-entry'])
 </script>
 
 <template>
@@ -19,6 +21,9 @@ const emit = defineEmits(['view-media'])
         v-for="request in requests"
         :key="request.id"
         :request="request"
+      :is-administrator="isAdministrator"
+      :busy="busy"
+      @manage-entry="(...args) => emit('manage-entry', ...args)"
         @view-media="(...args) => emit('view-media', ...args)"
       />
     </div>
