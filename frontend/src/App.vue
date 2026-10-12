@@ -83,7 +83,7 @@ function handleAuthenticated(authData) {
   sessionExpiredMessage.value = ''
 }
 
-function handleLogout() {
+function clearSession() {
   closeMobileMenu()
   localStorage.removeItem(TOKEN_KEY)
   localStorage.removeItem(ROLE_KEY)
@@ -97,11 +97,22 @@ function handleLogout() {
   selectedResponsibleEmployee.value = null
 }
 
+async function handleLogout() {
+  if (!token.value) return
+  try {
+    const response = await fetch('/api/auth/logout', { method: 'POST', headers: { Authorization: `Bearer ${token.value}` } })
+    if (!response.ok && response.status !== 401) throw new Error('Не удалось завершить сессию на сервере. Повторите выход.')
+    clearSession()
+  } catch (error) {
+    window.alert(error.message || 'Не удалось завершить сессию на сервере. Повторите выход.')
+  }
+}
+
 function handleSessionExpired(event) {
   sessionExpiredMessage.value =
     event.detail?.message ||
     'Срок действия сессии истёк. Требуется повторная авторизация.'
-  handleLogout()
+  clearSession()
 }
 
 function handleIdleExpired() {

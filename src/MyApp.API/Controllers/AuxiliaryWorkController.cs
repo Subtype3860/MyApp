@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Caching.Memory;
 using MyApp.Application.DTO;
+using MyApp.Application.Abstractions;
 using MyApp.Application.Security;
 using MyApp.Application.Services;
 
@@ -71,15 +72,22 @@ public sealed class AuxiliaryWorkController(IVehicleService service, IMemoryCach
     {
         if (!await service.AuxiliaryMediaExistsAsync(videoId, true, cancellationToken)) return NotFound();
         var ticket = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
-        cache.Set($"auxiliary-video:{ticket}", videoId, TimeSpan.FromHours(1));
+        if (!SessionIdentity.TryRead(User, out var userId, out var stamp)) return Unauthorized();
+        cache.Set($"auxiliary-video:{ticket}", new VideoTicketSession(videoId, userId, stamp), TimeSpan.FromHours(1));
         return Ok(new { url = $"/api/auxiliary-works/video-stream/{ticket}" });
     }
 
     [HttpGet("video-stream/{ticket}")]
     [AllowAnonymous]
-    public async Task<IActionResult> VideoStream(string ticket, CancellationToken cancellationToken)
+    public async Task<IActionResult> VideoStream(string ticket, [FromServices] IUserSessionStore sessions, CancellationToken cancellationToken)
     {
-        if (!cache.TryGetValue<Guid>($"auxiliary-video:{ticket}", out var videoId)) return NotFound();
+        if (!cache.TryGetValue<VideoTicketSession>($"auxiliary-video:{ticket}", out var identity) || identity is null) return NotFound();
+        if (!await sessions.IsCurrentAsync(identity.UserId, identity.Stamp, cancellationToken))
+        {
+            cache.Remove($"auxiliary-video:{ticket}");
+            return Unauthorized();
+        }
+        var videoId = identity.VideoId;
         if (!await service.AuxiliaryMediaExistsAsync(videoId, true, cancellationToken)) return NotFound();
         var video = await service.GetWorkVideoStreamAsync(videoId, cancellationToken);
         Response.Headers.CacheControl = "private, no-store";
@@ -111,6 +119,8 @@ public sealed class AuxiliaryWorkController(IVehicleService service, IMemoryCach
         if (!await service.AuxiliaryWorkExistsAsync(workId, cancellationToken)) return NotFound();
         return this.ToActionResult(await service.ReviewWorkParticipationAsync(workId, participantId, request.Approved, userId, cancellationToken), _ => Ok());
     }
+
+    private sealed record VideoTicketSession(Guid VideoId, Guid UserId, Guid Stamp);
 
     private bool TryGetUserId(out Guid id) => Guid.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue(JwtRegisteredClaimNames.Sub), out id);
 }

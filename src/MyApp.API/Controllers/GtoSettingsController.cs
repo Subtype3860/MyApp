@@ -35,7 +35,7 @@ public sealed class GtoSettingsController(AppDbContext db, IVehicleService servi
     public async Task<IActionResult> SaveEngine(Guid vehicleId, int engineNumber, EngineSettingsRequest request, CancellationToken ct)
     {
         if (Actor is not Guid actor) return Unauthorized();
-        if (!await CanEdit(actor, ct)) return StatusCode(403);
+        if (!await service.CanManageHoursAsync(actor, ct)) return Forbid();
         var vehicle = (await service.GetVehiclesAsync(ct)).FirstOrDefault(x => x.Id == vehicleId);
         if (vehicle is null) return NotFound();
         if (engineNumber < 1 || engineNumber > vehicle.EngineCount || request.EngineHours < 0 || request.HoursAtReplacement < 0 || request.ReadingDate == default)

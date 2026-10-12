@@ -4,6 +4,9 @@
     <ProjectReference Include="..\MyApp.Domain\MyApp.Domain.csproj" />
     <ProjectReference Include="..\MyApp.Application\MyApp.Application.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="../../scripts/migrations/20261012_csv_to_database.sql" LogicalName="MyApp.Infrastructure.CsvDatabaseMigration.sql" />
+  </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="Microsoft.EntityFrameworkCore" Version="10.0.4" />

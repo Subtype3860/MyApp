@@ -3,6 +3,7 @@ using ExcelDataReader.Exceptions;
 using MyApp.Application.Abstractions;
 using MyApp.Application.Common;
 using MyApp.Application.DTO;
+using MyApp.Application.Security;
 using System.Globalization;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -18,11 +19,21 @@ public sealed class VehicleService(
     IVehicleRepository repository,
     IUserRepository userRepository) : IVehicleService
 {
+    public async Task<bool> CanManageHoursAsync(Guid userId, CancellationToken cancellationToken) =>
+        await userRepository.FindByIdAsync(userId, cancellationToken) is { } user && UserAccess.CanManageHours(user);
+
     private Task<bool> CanManageFleetAsync(Guid userId, CancellationToken cancellationToken) =>
         HasProfessionAsync(userId, ["Механик", "Старший механик"], cancellationToken);
 
-    public async Task<VehicleCatalogOptions> GetVehicleCatalogOptionsAsync(Guid userId, CancellationToken cancellationToken) =>
-        (await repository.GetVehicleCatalogOptionsAsync(cancellationToken)) with { CanManage = await CanManageFleetAsync(userId, cancellationToken) };
+    public async Task<VehicleCatalogOptions> GetVehicleCatalogOptionsAsync(Guid userId, CancellationToken cancellationToken)
+    {
+        var user = await userRepository.FindByIdAsync(userId, cancellationToken);
+        return (await repository.GetVehicleCatalogOptionsAsync(cancellationToken)) with
+        {
+            CanManage = user is not null && (IsAdministrator(user) || UserAccess.IsMechanic(user)),
+            CanManageHours = user is not null && UserAccess.CanManageHours(user)
+        };
+    }
 
     public async Task<ServiceResult<Guid>> SaveVehicleCatalogAsync(Guid? id, VehicleCatalogRequest request, Guid userId, CancellationToken cancellationToken)
     {
@@ -294,6 +305,8 @@ public sealed class VehicleService(
         Guid createdBy,
         CancellationToken cancellationToken)
     {
+        if (!await CanManageHoursAsync(createdBy, cancellationToken))
+            return ServiceResult<Guid>.Forbidden("Нет права изменять моточасы.");
         if (request.EngineNumber is < 0 or > 2) return ServiceResult<Guid>.BadRequest("Номер ДВС должен быть 1 или 2.");
         if (request.EngineNumber == 2) {
             var vehicle = (await repository.GetVehiclesAsync(cancellationToken)).FirstOrDefault(x => x.Id == vehicleId);
@@ -312,13 +325,15 @@ public sealed class VehicleService(
             cancellationToken);
     }
 
-    public async Task<VehicleHoursImportResponse> ImportHoursAsync(
+    public async Task<ServiceResult<VehicleHoursImportResponse>> ImportHoursAsync(
         Stream file,
         string fileExtension,
         Guid createdBy,
         DateOnly readingDate,
         CancellationToken cancellationToken)
     {
+        if (!await CanManageHoursAsync(createdBy, cancellationToken))
+            return ServiceResult<VehicleHoursImportResponse>.Forbidden("Нет права изменять моточасы.");
         var errors = new List<VehicleHoursImportError>();
         var rows = string.Equals(
             fileExtension,
@@ -384,9 +399,9 @@ public sealed class VehicleService(
                 createdBy,
                 cancellationToken);
         }
-        return new VehicleHoursImportResponse(
+        return ServiceResult<VehicleHoursImportResponse>.Success(new VehicleHoursImportResponse(
             importedByVehicle.Count,
-            errors);
+            errors));
     }
 
     public async Task<ServiceResult<Guid>> AddWorkAsync(
@@ -460,6 +475,7 @@ public sealed class VehicleService(
         Guid userId,
         CancellationToken cancellationToken)
     {
+        if (category == "hours" && !await CanManageHoursAsync(userId, cancellationToken)) return false;
         if (category == "defects" &&
             !await CanManageDefectAsync(id, userId, cancellationToken) ||
             category == "works" &&

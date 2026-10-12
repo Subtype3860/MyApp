@@ -32,10 +32,16 @@ public sealed class VehicleHoursEngineImportTests
         };
         Task Capture(object?[] args){captured=(IReadOnlyList<VehicleHoursImportItem>)args[1]!;Assert.Equal(new DateOnly(2026,10,11),args[0]);return Task.CompletedTask;}
         var users=DispatchProxy.Create<IUserRepository, Proxy>();
+        ((Proxy)(object)users).Handler = (_, _) => Task.FromResult<MyApp.Domain.Entities.User?>(new() {
+            Id = Guid.NewGuid(), FirstName = "Иван", MiddleName = "", LastName = "Иванов",
+            UserName = "mechanic", Email = "mechanic@local", PasswordHash = "test", Role = "user",
+            Profession = new() { Id = Guid.NewGuid(), Name = "Механик" }
+        });
         var service=new VehicleService(repository,users);
         using var input=extension==".csv" ? new MemoryStream(Encoding.UTF8.GetBytes(data)) : Excel(data);
         var result=await service.ImportHoursAsync(input,extension,Guid.NewGuid(),new(2026,10,11),default);
-        Assert.Equal(count,result.Imported);Assert.Equal(errors,result.Errors.Count);Assert.Equal(count,captured.Count);
+        Assert.Equal(MyApp.Application.Common.ServiceResultStatus.Success, result.Status);
+        Assert.Equal(count,result.Value!.Imported);Assert.Equal(errors,result.Value.Errors.Count);Assert.Equal(count,captured.Count);
         Assert.All(captured,item=>Assert.InRange(item.EngineNumber,1,2));
         if(count==2){Assert.Equal(875,captured[0].EngineHours);Assert.Equal(852,captured[1].EngineHours);Assert.Equal(1,captured[0].EngineNumber);Assert.Equal(2,captured[1].EngineNumber);}
         if(data.Contains(";;852"))Assert.Equal(2,Assert.Single(captured).EngineNumber);

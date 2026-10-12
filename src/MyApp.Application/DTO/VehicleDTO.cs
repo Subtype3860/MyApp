@@ -222,4 +222,7 @@ public sealed record AuxiliaryWorkRequest(string Title, string Description, stri
 
 public sealed record VehicleCatalogRequest(string GroupName, string TypeName, string ModelName, int? GarageNumber, string StateNumber, string Vin);
 public sealed record VehicleCatalogOption(Guid Id, string Name, Guid? ParentId = null);
-public sealed record VehicleCatalogOptions(bool CanManage, IReadOnlyList<VehicleCatalogOption> Groups, IReadOnlyList<VehicleCatalogOption> Types, IReadOnlyList<VehicleCatalogOption> Models);
+public sealed record VehicleCatalogOptions(bool CanManage, IReadOnlyList<VehicleCatalogOption> Groups, IReadOnlyList<VehicleCatalogOption> Types, IReadOnlyList<VehicleCatalogOption> Models)
+{
+    public bool CanManageHours { get; init; }
+}

@@ -115,7 +115,9 @@ public interface IVehicleService
     /// <param name="createdBy">Идентификатор пользователя, выполняющего импорт.</param>
     /// <param name="readingDate">Дата, к которой относятся импортируемые показания.</param>
     /// <returns>Количество импортированных записей и список ошибок по строкам.</returns>
-    Task<VehicleHoursImportResponse> ImportHoursAsync(
+    Task<bool> CanManageHoursAsync(Guid userId, CancellationToken cancellationToken);
+
+    Task<ServiceResult<VehicleHoursImportResponse>> ImportHoursAsync(
         Stream file,
         string fileExtension,
         Guid createdBy,

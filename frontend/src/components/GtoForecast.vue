@@ -9,7 +9,7 @@ const props = defineProps({ token: { type: String, required: true } })
 const selection = nextForecastSelection()
 const date = ref(selection.date), shift = ref(selection.shift)
 const rows = ref([]), organisation = ref(''), site = ref(''), mechanic = ref('')
-const loading = ref(false), exporting = ref(false), error = ref(''), draftMessage = ref(''), canEdit = ref(false), query = ref('')
+const loading = ref(false), exporting = ref(false), error = ref(''), draftMessage = ref(''), canEdit = ref(false), canManageHours = ref(false), query = ref('')
 const loaded = ref(false)
 const saving = ref(0)
 const saveQueues = new Map()
@@ -29,8 +29,8 @@ const visibleGroups = computed(() => {
     ? [row.vehicle.groupName,row.vehicle.typeName,row.vehicle.modelName,row.vehicle.garageNumber,row.vehicle.stateNumber,row.vehicle.vin].some(value => String(value ?? '').toLocaleLowerCase('ru').includes(term))
     : row.isInRepair) })).filter(group => group.rows.length)
 })
-async function queueSave(key, url, body, afterSaved) {
-  if (!settingsReady || !canEdit.value) return
+async function queueSave(key, url, body, afterSaved, allowed = canEdit.value) {
+  if (!settingsReady || !allowed) return
   saving.value++
   const previous = saveQueues.get(key) ?? Promise.resolve()
   const pending = previous.catch(() => {}).then(async () => {
@@ -47,7 +47,7 @@ function saveEngine(row,engine) {
   const numeric=value=>value==null || value==='' ? null : Number(value)
   if([engine.hoursAtReplacement].some(value=>value!=='' && value!=null && (!Number.isFinite(Number(value)) || Number(value)<0))) {error.value='Моточасы не могут быть отрицательными.';return}
   const body={readingDate:engine.readingDate || localDate(new Date()),engineHours:null,hoursAtReplacement:numeric(engine.hoursAtReplacement)}
-  return queueSave(`${row.vehicle.id}:engine:${engine.number}`,`/api/gto-settings/vehicles/${row.vehicle.id}/engines/${engine.number}`,body)
+  return queueSave(`${row.vehicle.id}:engine:${engine.number}`,`/api/gto-settings/vehicles/${row.vehicle.id}/engines/${engine.number}`,body,undefined,canManageHours.value)
 }
 function saveVehicleSettings(row) { return queueSave(row.vehicle.id,`/api/gto-settings/vehicles/${row.vehicle.id}`,{climate:row.climate,plannedRelease:row.plannedRelease,defectIds:row.openDefectIds}) }
 function savedDraft() {
@@ -90,7 +90,7 @@ async function load() {
     ])
     if(!historyResponse.ok)throw new Error('Не удалось загрузить парк и состояние ремонта.')
     if(!optionsResponse.ok)throw new Error('Не удалось проверить права составления прогноза.')
-    const options=await optionsResponse.json();canEdit.value=options.canManage===true
+    const options=await optionsResponse.json();canEdit.value=options.canManage===true;canManageHours.value=options.canManageHours===true
     if(profileResponse.ok) {const profile=await profileResponse.json();mechanic.value=[profile.lastName,profile.firstName,profile.middleName].filter(Boolean).join(' ')}
     if(!settingsResponse.ok)throw new Error('Не удалось загрузить сохранённые настройки отчёта.')
     const settings=await settingsResponse.json()
@@ -190,7 +190,7 @@ onBeforeUnmount(()=>{saveDraft();controller?.abort()})
             <fieldset v-for="engine in row.engines" :key="engine.number" class="gto-engine">
               <legend>ДВС № {{ engine.number }}</legend>
               <div class="gto-fields">
-                <label>М/ч при замене ДВС<input v-model="engine.hoursAtReplacement" type="number" min="0" step="0.1" :disabled="!canEdit || loading || exporting" @change="saveEngine(row,engine)" /></label>
+                <label>М/ч при замене ДВС<input v-model="engine.hoursAtReplacement" type="number" min="0" step="0.1" :disabled="!canManageHours || loading || exporting" @change="saveEngine(row,engine)" /></label>
               </div>
             </fieldset>
           </div>

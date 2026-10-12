@@ -10,7 +10,7 @@ public sealed class UserRepository(AppDbContext db) : IUserRepository
     public Task<User?> FindByLoginAsync(
         string login,
         CancellationToken cancellationToken) =>
-        db.Users.FirstOrDefaultAsync(
+        db.Users.Include(user => user.Profession).FirstOrDefaultAsync(
             user => user.UserName == login || user.Email == login,
             cancellationToken);
 

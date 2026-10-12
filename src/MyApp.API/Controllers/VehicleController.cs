@@ -3,6 +3,7 @@ using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
 using MyApp.Application.DTO;
+using MyApp.Application.Abstractions;
 using MyApp.Application.Services;
 using MyApp.Application.Security;
 using Microsoft.AspNetCore.Authorization;
@@ -214,7 +215,7 @@ public class VehicleController : ControllerBase
     {
         var ticket = CreateVideoStreamTicket(
             cache,
-            new VideoStreamTicket(videoId, IsWorkVideo: false));
+            CreateVideoIdentity(videoId, false));
         return Ok(new { url = $"/api/vehicles/video-stream/{ticket}" });
     }
 
@@ -303,7 +304,7 @@ public class VehicleController : ControllerBase
         {
             await using var stream = file.OpenReadStream();
             var result = await service.ImportHoursAsync(stream, extension, userId, readingDate ?? DateOnly.FromDateTime(DateTime.Today), cancellationToken);
-            return Ok(result);
+            return this.ToActionResult(result, value => Ok(value));
         }
         catch (DecoderFallbackException)
         {
@@ -463,7 +464,7 @@ public class VehicleController : ControllerBase
     {
         var ticket = CreateVideoStreamTicket(
             cache,
-            new VideoStreamTicket(videoId, IsWorkVideo: true));
+            CreateVideoIdentity(videoId, true));
         return Ok(new { url = $"/api/vehicles/video-stream/{ticket}" });
     }
 
@@ -471,6 +472,7 @@ public class VehicleController : ControllerBase
     [AllowAnonymous]
     public async Task<IActionResult> StreamVideo(
         string ticket,
+        [FromServices] IUserSessionStore sessions,
         [FromServices] IMemoryCache cache,
         [FromServices] IVehicleService service,
         CancellationToken cancellationToken)
@@ -481,6 +483,12 @@ public class VehicleController : ControllerBase
             streamTicket is null)
         {
             return NotFound();
+        }
+
+        if (!await sessions.IsCurrentAsync(streamTicket.UserId, streamTicket.Stamp, cancellationToken))
+        {
+            cache.Remove(GetVideoStreamTicketKey(ticket));
+            return Unauthorized();
         }
 
         var video = streamTicket.IsWorkVideo
@@ -598,6 +606,7 @@ public class VehicleController : ControllerBase
             return Unauthorized();
         }
 
+        if (category == "hours" && !await service.CanManageHoursAsync(userId, cancellationToken)) return Forbid();
         var deleted = await service.DeleteEntryAsync(category, id, userId, cancellationToken);
         return deleted ? NoContent() : NotFound();
     }
@@ -643,5 +652,12 @@ public class VehicleController : ControllerBase
     private static string GetVideoStreamTicketKey(string ticket) =>
         $"vehicle-video-stream:{ticket}";
 
-    private sealed record VideoStreamTicket(Guid VideoId, bool IsWorkVideo);
+    private VideoStreamTicket CreateVideoIdentity(Guid videoId, bool isWorkVideo)
+    {
+        if (!SessionIdentity.TryRead(User, out var userId, out var stamp))
+            throw new InvalidOperationException("Authenticated session identity is missing.");
+        return new(videoId, isWorkVideo, userId, stamp);
+    }
+
+    private sealed record VideoStreamTicket(Guid VideoId, bool IsWorkVideo, Guid UserId, Guid Stamp);
 }

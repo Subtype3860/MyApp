@@ -23,11 +23,8 @@ public sealed class JwtTokenProvider(JwtOptions options) : ITokenProvider
                 new Claim(JwtRegisteredClaimNames.Sub, user.Id.ToString()),
                 new Claim(JwtRegisteredClaimNames.UniqueName, user.UserName),
                 new Claim(ClaimTypes.Role, user.Role),
-                ..(user.Role.Equals("administrator", StringComparison.OrdinalIgnoreCase)
-                    ? Permissions.All
-                    : Permissions.Expand(user.Permissions.Split(
-                        ',',
-                        StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)))
+                new Claim(UserAccess.SessionStampClaim, user.SessionStamp.ToString()),
+                ..UserAccess.EffectivePermissions(user)
                     .Select(permission => new Claim("permission", permission))
             ],
             expires: DateTime.UtcNow.AddHours(8),

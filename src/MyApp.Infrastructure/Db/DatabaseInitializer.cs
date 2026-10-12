@@ -11,6 +11,7 @@ public sealed class DatabaseInitializer(AppDbContext db) : IDatabaseInitializer
     public async Task InitializeAsync(
         CancellationToken cancellationToken = default)
     {
+        await CsvDatabaseMigration.InitializeAsync(db, cancellationToken);
         await db.Database.ExecuteSqlRawAsync(
             """
             CREATE TABLE IF NOT EXISTS professions (
@@ -114,6 +115,9 @@ public sealed class DatabaseInitializer(AppDbContext db) : IDatabaseInitializer
             cancellationToken);
         await db.Database.ExecuteSqlRawAsync(
             """
+            ALTER TABLE app_users
+            ADD COLUMN IF NOT EXISTS session_stamp uuid NOT NULL DEFAULT gen_random_uuid();
+
             ALTER TABLE app_users
             ADD COLUMN IF NOT EXISTS permissions text
                 NOT NULL DEFAULT 'menu.tables,menu.vehicles,menu.requirements,menu.maintenance'

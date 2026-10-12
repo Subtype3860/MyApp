@@ -25,13 +25,7 @@ public sealed class AuthenticationService(
             return ServiceResult<AuthResponse>.Unauthorized();
         }
 
-        var permissions = user.Role.Equals(
-            "administrator",
-            StringComparison.OrdinalIgnoreCase)
-            ? Permissions.All
-            : Permissions.Expand(user.Permissions.Split(
-                ',',
-                StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+        var permissions = UserAccess.EffectivePermissions(user);
 
         return ServiceResult<AuthResponse>.Success(
             new AuthResponse(tokenProvider.Create(user), user.Role, permissions));

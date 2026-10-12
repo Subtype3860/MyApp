@@ -75,6 +75,7 @@ namespace MyApp.Infrastructure.Db {
                 entity.Property(x => x.PositionId).HasColumnName("position").IsRequired();
                 entity.Property(x => x.Role).HasColumnName("role").IsRequired().HasMaxLength(30);
                 entity.Property(x => x.Permissions).HasColumnName("permissions").IsRequired();
+                entity.Property(x => x.SessionStamp).HasColumnName("session_stamp").IsRequired();
                 entity.Property(x => x.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("NOW()");
                 entity.Property(x => x.AvatarContent).HasColumnName("avatar_content");
                 entity.Property(x => x.AvatarContentType)
@@ -326,9 +327,12 @@ namespace MyApp.Infrastructure.Db {
             });
             modelBuilder.Entity<EmployeeDirectoryRecord>(entity => {
                 entity.HasNoKey();
-                entity.ToView("employees");
-                entity.Property(x => x.FullName).HasColumnName("FullName");
-                entity.Property(x => x.Profession).HasColumnName("Profession");
+                entity.ToSqlQuery("""
+                    SELECT CONCAT_WS(' ', last_name, first_name, NULLIF(patronymic, '')) AS full_name, profession
+                    FROM app_csv_workers
+                    """);
+                entity.Property(x => x.FullName).HasColumnName("full_name");
+                entity.Property(x => x.Profession).HasColumnName("profession");
             });
         }
 
@@ -391,14 +395,12 @@ namespace MyApp.Infrastructure.Db {
         private static void ConfigureStockViews(ModelBuilder modelBuilder) {
             modelBuilder.Entity<FullStockRecord>(entity => {
                 entity.HasNoKey();
-                // Source views may expose "Количество" as numeric or text.
-                // Normalize it in the SQL query before Npgsql materializes a string.
-                // Keep this as a composable query so the repositories still use LINQ.
+                // Preserve existing DTO column names while reading transactional DB balances.
+                // Quantities are exposed as text for the existing stock DTOs.
                 entity.ToSqlQuery(
                     """
-                    SELECT v."Наименование", v."Ед.изм.",
-                           v."Количество"::text AS "Количество"
-                    FROM v_full_ost AS v
+                    SELECT name AS "Наименование", unit AS "Ед.изм.", quantity::text AS "Количество"
+                    FROM app_stock_balances WHERE source_table = 'v_full_ost'
                     """);
                 entity.Property(x => x.Name).HasColumnName("Наименование");
                 entity.Property(x => x.Unit).HasColumnName("Ед.изм.");
@@ -408,9 +410,8 @@ namespace MyApp.Infrastructure.Db {
                 entity.HasNoKey();
                 entity.ToSqlQuery(
                     """
-                    SELECT v."Наименование", v."Ед.изм.",
-                           v."Количество"::text AS "Количество"
-                    FROM v_meh_ost AS v
+                    SELECT name AS "Наименование", unit AS "Ед.изм.", quantity::text AS "Количество"
+                    FROM app_stock_balances WHERE source_table = 'v_meh_ost'
                     """);
                 entity.Property(x => x.Name).HasColumnName("Наименование");
                 entity.Property(x => x.Unit).HasColumnName("Ед.изм.");
@@ -420,8 +421,7 @@ namespace MyApp.Infrastructure.Db {
                 entity.HasNoKey();
                 entity.ToSqlQuery(
                     """
-                    SELECT v.name, v.amount::text AS amount
-                    FROM full_ost AS v
+                    SELECT name, quantity::text AS amount FROM app_stock_balances WHERE source_table = 'v_full_ost'
                     """);
                 entity.Property(x => x.Name).HasColumnName("name");
                 entity.Property(x => x.Amount).HasColumnName("amount");
@@ -430,8 +430,7 @@ namespace MyApp.Infrastructure.Db {
                 entity.HasNoKey();
                 entity.ToSqlQuery(
                     """
-                    SELECT v.name, v.amount::text AS amount
-                    FROM meh_ost AS v
+                    SELECT name, quantity::text AS amount FROM app_stock_balances WHERE source_table = 'v_meh_ost'
                     """);
                 entity.Property(x => x.Name).HasColumnName("name");
                 entity.Property(x => x.Amount).HasColumnName("amount");

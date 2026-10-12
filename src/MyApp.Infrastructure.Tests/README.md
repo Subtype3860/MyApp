@@ -31,10 +31,10 @@ dotnet test src/MyApp.Infrastructure.Tests/MyApp.Infrastructure.Tests.csproj --f
 GitHub Actions runs .NET 10 build, xUnit tests, PostgreSQL tests and
 `npm ci && npm run build` for the frontend.
 
-**Limit:** `RequirementPostgreSqlDatabase` uses a database-backed
-`edit_csv_tab` test stub, not a physical CSV file writer.
-See `docs/refactoring/stock-file-consistency.md` before deploying changes
-that touch production stock files.
+`RequirementPostgreSqlDatabase` migrates frozen legacy views into real DB balances.
+Its legacy `edit_csv_tab` function raises an error if called: requirements must
+only mutate transactional DB balances. See `docs/refactoring/stock-file-consistency.md`
+for the migration and CSV import contract.
 
 ## Regression groups
 
@@ -42,8 +42,8 @@ that touch production stock files.
 - `MaintenanceCurrentModelPostgreSqlTests`: template hierarchy and safe
   parallel sort allocation.
 - `RequirementCurrentModelPostgreSqlTests`: authoritative stock, duplicate
-  lines, transaction rollback and concurrent issue/restore. The stock-writer
-  function is a **PostgreSQL test double**, not real filesystem I/O.
+  lines, transaction rollback and concurrent issue/restore. Changes use real
+  transactional DB balances; legacy CSV sources remain unchanged.
 - `VehicleHoursCurrentModelPostgreSqlTests`: empty-cell carry forward,
   repeated rows, transaction rollback, concurrent import and **one group
   SELECT for many blank rows**.
@@ -53,3 +53,6 @@ that touch production stock files.
 
 `Category=Integration` tests run only against random schemas in a
 disposable `*_test` database. They are not migration/production-data tests.
+
+- `CsvImportCodecTests`: validation and CSV round trips.
+- `CsvDatabaseImportTests`: full stock snapshots, absent-position zeroing, stable IDs, preview, export, bootstrap, rollback, worker directory and concurrent import/issue.
