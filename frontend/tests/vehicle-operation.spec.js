@@ -50,6 +50,7 @@ test('waiting for parts can coexist with continued operation, and a later work c
   await expect(page.locator('.repair-state-badges')).toContainText('Заявка: Ожидает запчасти')
   await expect(page.locator('.repair-overview-meta')).not.toContainText('Простой с')
   await page.getByLabel('Описание выполненных работ', { exact: true }).fill('Машина остановлена для ремонта')
+  await page.getByLabel('Место работ', { exact: true }).selectOption('КАРЬЕР')
   await page.getByLabel('Эксплуатация машины').selectOption('stopped')
   await page.getByLabel('Начало простоя', { exact: true }).fill('2026-10-01T10:00')
   await page.getByLabel('Ожидает запчасти', { exact: true }).check()

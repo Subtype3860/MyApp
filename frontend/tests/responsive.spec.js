@@ -164,6 +164,7 @@ test('API error is recoverable and does not display fake zero metrics', async ({
   await page.route('**/api/vehicles', (route) =>
     route.fulfill({ json: vehicles }),
   )
+  await page.getByLabel('Меню парка техники').click()
   await page.getByRole('button', { name: 'Обновить' }).click()
   await expect(
     page.getByRole('heading', { name: 'Sany SET 150' }),
