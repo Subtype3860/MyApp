@@ -113,6 +113,8 @@ internal sealed class MaintenancePostgreSqlDatabase : IAsyncDisposable
                        {stockColumn} AS "Количество";
             """);
         await cmd.ExecuteNonQueryAsync();
+        await using var db = CreateContext();
+        await CsvDatabaseMigration.InitializeAsync(db);
     }
 
     public async Task<long> ScalarLongAsync(string commandText)

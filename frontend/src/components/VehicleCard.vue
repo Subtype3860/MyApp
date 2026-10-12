@@ -2,11 +2,13 @@
 import RepairList from './RepairList.vue'
 
 defineProps({
+  isAdministrator: { type: Boolean, default: false },
+  busy: { type: Boolean, default: false },
   vehicle: { type: Object, required: true },
   requests: { type: Array, required: true },
 })
 
-const emit = defineEmits(['view-media'])
+const emit = defineEmits(['view-media', 'manage-entry'])
 </script>
 
 <template>
@@ -17,8 +19,13 @@ const emit = defineEmits(['view-media'])
       · {{ vehicle.vin || 'VIN не указан' }}
     </p>
 
+    <p v-if="vehicle.isArchived" class="vehicle-card__state">Техника удалена из активного парка. История сохранена.</p>
+    <p class="vehicle-card__state">Состояние машины: {{ { healthy: 'Исправна', operating_with_defect: 'Работает с неисправностью', stopped: 'Простаивает' }[vehicle.operationalState] || 'Не указано' }}</p>
     <RepairList
       :requests="requests"
+      :is-administrator="isAdministrator"
+      :busy="busy"
+      @manage-entry="(...args) => emit('manage-entry', ...args)"
       @view-media="(...args) => emit('view-media', ...args)"
     />
   </article>

@@ -144,7 +144,13 @@ async function saveProfile() {
     if (!response.ok) {
       throw new Error(await readError(response, 'Не удалось сохранить профиль.'))
     }
-    profile.value = await response.json()
+    const saved = await response.json()
+    const credentialsChanged = Boolean(newPassword.value) || saved.userName !== profile.value.userName
+    if (credentialsChanged) {
+      window.dispatchEvent(new CustomEvent('myapp:session-expired', { detail: { message: 'Данные входа изменены. Войдите снова.' } }))
+      return
+    }
+    profile.value = saved
     userName.value = profile.value.userName
     currentPassword.value = ''
     newPassword.value = ''

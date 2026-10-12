@@ -378,7 +378,7 @@ function sectionTitle(section) {
     professions: 'Профессии',
     'material-groups': 'Группы материалов',
     maintenance: 'Шаблоны ТО',
-    'csv-files': 'Загрузка CSV',
+    'csv-files': 'Импорт CSV / Excel',
     'media-storage': 'Хранение медиафайлов',
   }[section]
 }

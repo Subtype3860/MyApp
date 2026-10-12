@@ -47,7 +47,7 @@ public class UserProfileController : ControllerBase
         }
 
         var result = await service.UpdateProfileAsync(userId, request, cancellationToken);
-        return this.ToActionResult(result, _ => Ok());
+        return this.ToActionResult(result, value => Ok(value));
     }
 
     [HttpGet("avatar")]

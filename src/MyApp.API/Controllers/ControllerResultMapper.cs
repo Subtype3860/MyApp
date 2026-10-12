@@ -15,6 +15,7 @@ internal static class ControllerResultMapper
             ServiceResultStatus.Success when result.Value is not null => onSuccess(result.Value),
             ServiceResultStatus.Success => controller.Ok(),
             ServiceResultStatus.Unauthorized => controller.Unauthorized(),
+            ServiceResultStatus.Forbidden => controller.StatusCode(403, new { message = result.Message }),
             ServiceResultStatus.NotFound => controller.NotFound(),
             ServiceResultStatus.Conflict => controller.Conflict(new { message = result.Message }),
             ServiceResultStatus.BadRequest => controller.BadRequest(result.Message),

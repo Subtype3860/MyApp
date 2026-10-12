@@ -1,155 +1,73 @@
+using System.Text.Json;
 using MyApp.Application.Abstractions;
 using MyApp.Application.DTO;
 using Npgsql;
 
 namespace MyApp.Infrastructure.Repositories;
 
-public sealed class TableViewRepository(
-    NpgsqlDataSource dataSource) : ITableViewRepository
+public sealed class TableViewRepository(NpgsqlDataSource dataSource) : ITableViewRepository
 {
-    private static readonly HashSet<string> AllowedViews =
-        new(StringComparer.Ordinal)
-        {
-            "v_full_ost",
-            "v_meh_ost",
-            "v_workers"
-        };
-
-    public async Task<TableViewResponse> QueryAsync(
-        TableViewRequest request,
-        CancellationToken cancellationToken)
+    public async Task<TableViewResponse> QueryAsync(TableViewRequest request, CancellationToken cancellationToken)
     {
-        if (!AllowedViews.Contains(request.TableName))
+        var fileName = request.TableName switch {
+            "v_full_ost" => "o.csv", "v_meh_ost" => "c.csv", "v_workers" => "p.csv",
+            _ => throw new ArgumentException("The requested view is not allowed.", nameof(request))
+        };
+        var filters = new List<(string Clause, string Parameter, string Value)>();
+        if (request.Search is not null) filters.Add(("t.data::text ILIKE @search", "search", request.Search));
+        if (fileName == "p.csv")
         {
-            throw new ArgumentException("The requested view is not allowed.", nameof(request));
+            void Filter(string column, string parameter, string? value) {
+                if (value is not null) filters.Add(($"t.data->>'{column}' ILIKE @{parameter}", parameter, value));
+            }
+            Filter("LastName", "lastName", request.LastName);
+            Filter("FirstName", "firstName", request.FirstName);
+            Filter("Patronymic", "patronymic", request.Patronymic);
+            Filter("Profession", "profession", request.Profession);
         }
-
-        var filters = new List<Filter>();
-        AddFilter(
-            filters,
-            "row_to_json(t)::text ILIKE @search",
-            "search",
-            request.Search);
-
-        if (request.TableName == "v_workers")
-        {
-            AddFilter(
-                filters,
-                """t."LastName" ILIKE @lastName""",
-                "lastName",
-                request.LastName);
-            AddFilter(
-                filters,
-                """t."FirstName" ILIKE @firstName""",
-                "firstName",
-                request.FirstName);
-            AddFilter(
-                filters,
-                """t."Patronymic" ILIKE @patronymic""",
-                "patronymic",
-                request.Patronymic);
-            AddFilter(
-                filters,
-                """t."Profession" ILIKE @profession""",
-                "profession",
-                request.Profession);
+        var where = filters.Count == 0 ? "" : " WHERE " + string.Join(" AND ", filters.Select(filter => filter.Clause));
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(System.Data.IsolationLevel.RepeatableRead, cancellationToken);
+        await using var metadata = new NpgsqlCommand("SELECT columns FROM app_import_sources WHERE source_key = @file", connection, transaction);
+        metadata.Parameters.AddWithValue("file", CsvFileRepository.SourceKey(fileName));
+        var columns = (string[]?)await metadata.ExecuteScalarAsync(cancellationToken)
+            ?? throw new InvalidOperationException("CSV storage is not initialized.");
+        var common = $"WITH t AS ({CsvFileRepository.DataQuery(fileName)}) ";
+        void Parameters(NpgsqlCommand command) {
+            if (fileName != "p.csv") command.Parameters.AddWithValue("source", CsvFileRepository.StockSource(fileName));
+            foreach (var filter in filters) command.Parameters.AddWithValue(filter.Parameter, $"%{filter.Value}%");
         }
-
-        var whereClause = filters.Count == 0
-            ? string.Empty
-            : $" WHERE {string.Join(
-                " AND ",
-                filters.Select(filter => filter.Clause))}";
-
-        await using var countCommand = dataSource.CreateCommand(
-            $"SELECT COUNT(*) FROM {request.TableName} AS t{whereClause}");
-        AddParameters(countCommand, filters);
-        var scalar = await countCommand.ExecuteScalarAsync(cancellationToken);
-        var total = Convert.ToInt64(scalar);
-
-        var pagingClause = request.PageSize.Equals(
-            "all",
-            StringComparison.OrdinalIgnoreCase)
-            ? string.Empty
-            : " LIMIT @limit OFFSET @offset";
-        var selectClause = request.TableName == "v_workers" &&
-                           request.IncludeSignatures
-            ? """
-              SELECT t.*, (signatures.last_name IS NOT NULL) AS "Роспись"
-              FROM v_workers AS t
-              LEFT JOIN employee_signatures AS signatures
-                ON signatures.last_name = t."LastName"
-               AND signatures.first_name = t."FirstName"
-               AND signatures.patronymic = COALESCE(t."Patronymic", '')
-              """
-            : $"SELECT * FROM {request.TableName} AS t";
-        await using var command = dataSource.CreateCommand(
-            $"{selectClause}{whereClause}" +
-            $" ORDER BY row_to_json(t)::text{pagingClause}");
-        AddParameters(command, filters);
-
-        if (pagingClause.Length > 0)
+        await using var count = new NpgsqlCommand(common + "SELECT COUNT(*) FROM t" + where, connection, transaction);
+        Parameters(count);
+        var total = (long)(await count.ExecuteScalarAsync(cancellationToken))!;
+        var signatures = fileName == "p.csv" && request.IncludeSignatures;
+        var select = signatures ? """
+            SELECT t.data || jsonb_build_object('Роспись', signatures.last_name IS NOT NULL) FROM t
+            LEFT JOIN employee_signatures AS signatures
+              ON signatures.last_name = t.data->>'LastName'
+             AND signatures.first_name = t.data->>'FirstName'
+             AND signatures.patronymic = COALESCE(t.data->>'Patronymic', '')
+            """ : "SELECT t.data FROM t";
+        if (signatures) columns = columns.Append("Роспись").ToArray();
+        var all = request.PageSize.Equals("all", StringComparison.OrdinalIgnoreCase);
+        await using var query = new NpgsqlCommand(common + select + where + " ORDER BY t.data::text" + (all ? "" : " LIMIT @limit OFFSET @offset"), connection, transaction);
+        Parameters(query);
+        if (!all)
         {
             var limit = int.Parse(request.PageSize);
-            command.Parameters.AddWithValue("limit", limit);
-            command.Parameters.AddWithValue(
-                "offset",
-                (request.Page - 1) * limit);
+            query.Parameters.AddWithValue("limit", limit);
+            query.Parameters.AddWithValue("offset", ((long)request.Page - 1) * limit);
         }
-
-        await using var reader = await command.ExecuteReaderAsync(
-            cancellationToken);
-        var columns = Enumerable.Range(0, reader.FieldCount)
-            .Select(reader.GetName)
-            .ToArray();
         var rows = new List<Dictionary<string, object?>>();
-
-        while (await reader.ReadAsync(cancellationToken))
+        await using (var reader = await query.ExecuteReaderAsync(cancellationToken))
         {
-            var row = new Dictionary<string, object?>(columns.Length);
-            for (var index = 0; index < columns.Length; index++)
+            while (await reader.ReadAsync(cancellationToken))
             {
-                row[columns[index]] = await reader.IsDBNullAsync(
-                    index,
-                    cancellationToken)
-                    ? null
-                    : reader.GetValue(index);
+                var data = JsonSerializer.Deserialize<Dictionary<string, object?>>(reader.GetString(0))!;
+                rows.Add(columns.ToDictionary(column => column, column => data.GetValueOrDefault(column)));
             }
-
-            rows.Add(row);
         }
-
-        return new TableViewResponse(
-            columns,
-            rows,
-            total,
-            request.Page,
-            request.PageSize);
+        await transaction.CommitAsync(cancellationToken);
+        return new(columns, rows, total, request.Page, request.PageSize);
     }
-
-    private static void AddFilter(
-        ICollection<Filter> filters,
-        string clause,
-        string parameter,
-        string? value)
-    {
-        if (value is not null)
-        {
-            filters.Add(new Filter(clause, parameter, value));
-        }
-    }
-
-    private static void AddParameters(
-        NpgsqlCommand command,
-        IEnumerable<Filter> filters)
-    {
-        foreach (var filter in filters)
-        {
-            command.Parameters.AddWithValue(
-                filter.Parameter,
-                $"%{filter.Value}%");
-        }
-    }
-
-    private sealed record Filter(string Clause, string Parameter, string Value);
 }

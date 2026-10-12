@@ -31,6 +31,18 @@ public sealed class ComponentDocumentService(
         bool saveRequirement,
         CancellationToken cancellationToken)
     {
+        var user = await userRepository.FindByIdAsync(userId, cancellationToken);
+        if (user is null)
+        {
+            return ServiceResult<ComponentDocumentResponse>.Unauthorized();
+        }
+        var profession = user.Profession;
+        if (profession is null || !string.Equals(profession.Name.Trim(), "Механик", StringComparison.OrdinalIgnoreCase))
+        {
+            return ServiceResult<ComponentDocumentResponse>.Forbidden(
+                "Создавать складское требование может только механик.");
+        }
+
         var errors = Validate(request);
         if (errors.Count > 0)
         {
@@ -47,12 +59,6 @@ public sealed class ComponentDocumentService(
                 materialGroupMappings.Status,
                 Message: materialGroupMappings.Message,
                 Errors: materialGroupMappings.Errors);
-        }
-
-        var user = await userRepository.FindByIdAsync(userId, cancellationToken);
-        if (user is null)
-        {
-            return ServiceResult<ComponentDocumentResponse>.Unauthorized();
         }
 
         var responsibleEmployee = await responsibleEmployeeService.ResolveAsync(
@@ -87,7 +93,7 @@ public sealed class ComponentDocumentService(
                 : request.JobName.Trim(),
             VehicleNumbers = layout.VehicleNumbers,
             Pages = layout.Pages,
-            AuthorPosition = user.Profession.Name,
+            AuthorPosition = profession.Name,
             AuthorName = BuildAuthorName(
                 user.FirstName,
                 user.MiddleName,

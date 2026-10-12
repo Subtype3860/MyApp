@@ -190,6 +190,7 @@ async function generateDocument() {
         : null
       throw new Error(
         validationMessage ??
+          problem?.message ??
           problem?.detail ??
           problem?.title ??
           'Не удалось сформировать PDF.',
@@ -209,7 +210,8 @@ async function generateDocument() {
     if (!commitResponse.ok) {
       const problem = await commitResponse.json().catch(() => null)
       throw new Error(
-        problem?.detail ??
+        problem?.message ??
+          problem?.detail ??
           problem?.title ??
           'PDF создан, но не удалось списать компоненты.',
       )

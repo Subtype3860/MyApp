@@ -1,5 +1,4 @@
 using System.Data.Common;
-using System.Globalization;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
@@ -23,7 +22,7 @@ public sealed class RequirementJournalRepository(
         ComponentDocumentRequest request,
         CancellationToken cancellationToken)
     {
-        var (fileName, lockKey) = ResolveSource(request.SourceTable);
+        var (source, lockKey) = ResolveSource(request.SourceTable);
         var changes = AggregateStockChanges(request.Items);
         await using var transaction = await db.Database.BeginTransactionAsync(
             cancellationToken);
@@ -32,7 +31,7 @@ public sealed class RequirementJournalRepository(
 
         // Server-side stock is authoritative. The UI's AvailableQuantity is
         // display data and may be stale or deliberately manipulated.
-        // Preflight ALL lines before any call that can mutate a physical CSV.
+        // Check all lines before updating the requirement and database balances.
         var pendingWrites = new List<(string Name, decimal NewQuantity)>();
         foreach (var change in changes)
         {
@@ -79,15 +78,12 @@ public sealed class RequirementJournalRepository(
             });
         }
 
-        // Fail on database constraints BEFORE invoking edit_csv_tab.
+        // Requirement rows and balances are committed in the same transaction.
         await db.SaveChangesAsync(cancellationToken);
         foreach (var (name, quantity) in pendingWrites)
         {
-            EnsureCsvUpdateSucceeded(await ExecuteCsvFunctionAsync(
-                fileName, name, quantity, cancellationToken));
+            await UpdateQuantityAsync(source, name, quantity, cancellationToken);
         }
-        // edit_csv_tab may write external files. A PostgreSQL rollback cannot
-        // undo those file writes; this is an interim guard, not full atomicity.
         await transaction.CommitAsync(cancellationToken);
     }
 
@@ -185,7 +181,7 @@ public sealed class RequirementJournalRepository(
             return false;
         }
 
-        var (fileName, lockKey) = ResolveSource(sourceTable);
+        var (source, lockKey) = ResolveSource(sourceTable);
         await AcquireSourceLockAsync(lockKey, cancellationToken);
 
         var items = await db.ComponentRequirementItems
@@ -208,7 +204,7 @@ public sealed class RequirementJournalRepository(
             pendingWrites.Add((change.Name, checked(available + change.Quantity)));
         }
 
-        // Delete first; any relational failure occurs before touching CSV.
+        // Delete and restore balances atomically in this transaction.
         var deleted = await db.ComponentRequirements
             .Where(row => row.Id == id)
             .ExecuteDeleteAsync(cancellationToken);
@@ -219,8 +215,7 @@ public sealed class RequirementJournalRepository(
 
         foreach (var (name, quantity) in pendingWrites)
         {
-            EnsureCsvUpdateSucceeded(await ExecuteCsvFunctionAsync(
-                fileName, name, quantity, cancellationToken));
+            await UpdateQuantityAsync(source, name, quantity, cancellationToken);
         }
         await transaction.CommitAsync(cancellationToken);
         return true;
@@ -228,11 +223,11 @@ public sealed class RequirementJournalRepository(
 
     private const int StockLockNamespace = 4386202;
 
-    private static (string FileName, int LockKey) ResolveSource(string sourceTable) =>
+    private static (string Source, int LockKey) ResolveSource(string sourceTable) =>
         sourceTable switch
         {
-            "v_full_ost" or "full_ost" => ("o", 1),
-            "v_meh_ost" or "meh_ost" => ("c", 2),
+            "v_full_ost" or "full_ost" => ("v_full_ost", 1),
+            "v_meh_ost" or "meh_ost" => ("v_meh_ost", 2),
             _ => throw new InvalidOperationException(
                 "Неизвестный источник компонентов.")
         };
@@ -271,64 +266,27 @@ public sealed class RequirementJournalRepository(
         string itemName,
         CancellationToken cancellationToken)
     {
-        var normalizedName = itemName.Trim();
-        var quantity = sourceTable switch
-        {
-            "v_full_ost" => await db.FullStocks
-                .Where(row => row.Name.Trim() == normalizedName)
-                .Select(row => row.Quantity)
-                .FirstOrDefaultAsync(cancellationToken),
-            "v_meh_ost" => await db.MechanicalStocks
-                .Where(row => row.Name.Trim() == normalizedName)
-                .Select(row => row.Quantity)
-                .FirstOrDefaultAsync(cancellationToken),
-            "full_ost" => await db.FullStockLegacy
-                .Where(row => row.Name.Trim() == normalizedName)
-                .Select(row => row.Amount)
-                .FirstOrDefaultAsync(cancellationToken),
-            "meh_ost" => await db.MechanicalStockLegacy
-                .Where(row => row.Name.Trim() == normalizedName)
-                .Select(row => row.Amount)
-                .FirstOrDefaultAsync(cancellationToken),
-            _ => throw new InvalidOperationException(
-                "Для требования не указан источник остатков.")
-        };
-
-        if (quantity is null)
-        {
-            throw new InvalidOperationException(
-                $"Компонент «{itemName.Trim()}» не найден в остатках.");
-        }
-
-        if (decimal.TryParse(
-                quantity.Replace(',', '.'),
-                NumberStyles.Number,
-                CultureInfo.InvariantCulture,
-                out var parsedQuantity))
-        {
-            return parsedQuantity;
-        }
-
-        throw new InvalidOperationException(
-            $"Некорректный остаток для компонента «{itemName.Trim()}»: {quantity}.");
+        var (source, _) = ResolveSource(sourceTable);
+        await using var command = db.Database.GetDbConnection().CreateCommand();
+        command.Transaction = db.Database.CurrentTransaction?.GetDbTransaction();
+        command.CommandText = "SELECT quantity FROM app_stock_balances WHERE source_table = @source AND name = @name FOR UPDATE";
+        AddParameter(command, "source", source);
+        AddParameter(command, "name", itemName.Trim());
+        var value = await command.ExecuteScalarAsync(cancellationToken);
+        return value is decimal quantity ? quantity
+            : throw new InvalidOperationException($"Компонент «{itemName.Trim()}» не найден в остатках.");
     }
 
-    private async Task<string?> ExecuteCsvFunctionAsync(
-        string fileName,
-        string itemName,
-        decimal quantity,
-        CancellationToken cancellationToken)
+    private async Task UpdateQuantityAsync(string source, string name, decimal quantity, CancellationToken cancellationToken)
     {
-        var connection = db.Database.GetDbConnection();
-        await using var command = connection.CreateCommand();
+        await using var command = db.Database.GetDbConnection().CreateCommand();
         command.Transaction = db.Database.CurrentTransaction?.GetDbTransaction();
-        command.CommandText =
-            "SELECT edit_csv_tab(@fileName, @searchText, @newValue)";
-        AddParameter(command, "fileName", fileName);
-        AddParameter(command, "searchText", itemName);
-        AddParameter(command, "newValue", quantity);
-        var result = await command.ExecuteScalarAsync(cancellationToken);
-        return Convert.ToString(result, CultureInfo.InvariantCulture);
+        command.CommandText = "UPDATE app_stock_balances SET quantity = @quantity, updated_at = NOW() WHERE source_table = @source AND name = @name";
+        AddParameter(command, "source", source);
+        AddParameter(command, "name", name);
+        AddParameter(command, "quantity", quantity);
+        if (await command.ExecuteNonQueryAsync(cancellationToken) != 1)
+            throw new InvalidOperationException($"Компонент «{name}» не найден в остатках.");
     }
 
     private static void AddParameter(
@@ -342,13 +300,4 @@ public sealed class RequirementJournalRepository(
         command.Parameters.Add(parameter);
     }
 
-    private static void EnsureCsvUpdateSucceeded(string? result)
-    {
-        if (string.IsNullOrWhiteSpace(result) ||
-            !result.StartsWith("Успешно обновлено!", StringComparison.Ordinal))
-        {
-            throw new InvalidOperationException(
-                result ?? "Функция edit_csv_tab не вернула результат.");
-        }
-    }
 }

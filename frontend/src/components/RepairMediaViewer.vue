@@ -40,6 +40,7 @@ watch(() => props.open, async (open) => {
 onBeforeUnmount(closeDialog)
 
 function mediaRoute(media) {
+  if (media?.source === 'auxiliary') return props.mediaType === 'video' ? 'videos' : 'photos'
   const work = media?.source === 'work'
   if (work) return props.mediaType === 'video' ? 'work-videos' : 'work-photos'
   return props.mediaType === 'video' ? 'defect-videos' : 'defect-photos'
@@ -66,10 +67,11 @@ async function loadCurrentMedia() {
 
   try {
     const route = mediaRoute(item.media ?? item)
+    const base = (item.media ?? item).source === 'auxiliary' ? '/api/auxiliary-works' : '/api/vehicles'
     let url
     if (props.mediaType === 'video') {
       const response = await fetch(
-        `/api/vehicles/${route}/${item.id ?? item.media?.id}/stream-ticket`,
+        `${base}/${route}/${item.id ?? item.media?.id}/stream-ticket`,
         { method: 'POST', headers: authHeaders() },
       )
       if (!response.ok) throw new Error('Видео недоступно.')
@@ -77,7 +79,7 @@ async function loadCurrentMedia() {
       url = result.url
     } else {
       const response = await fetch(
-        `/api/vehicles/${route}/${item.id ?? item.media?.id}`,
+        `${base}/${route}/${item.id ?? item.media?.id}`,
         { headers: authHeaders() },
       )
       if (!response.ok) throw new Error('Изображение недоступно.')

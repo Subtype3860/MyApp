@@ -96,6 +96,7 @@ function handleMenuKeydown(event) {
 }
 const isTablesExpanded = ref(false)
 const isVehiclesExpanded = ref(false)
+const isReportsExpanded = ref(true)
 const isSettingsExpanded = ref(false)
 const profile = ref(null)
 const avatarUrl = ref('')
@@ -150,6 +151,15 @@ function toggleTables() {
 function toggleVehicles() {
   if (props.collapsed && !isMobile.value) emit('toggle')
   isVehiclesExpanded.value = !isVehiclesExpanded.value
+}
+
+function toggleReports() {
+  if (props.collapsed && !isMobile.value) {
+    isReportsExpanded.value = true
+    emit('toggle')
+    return
+  }
+  isReportsExpanded.value = !isReportsExpanded.value
 }
 
 function toggleSettings() {
@@ -302,7 +312,7 @@ function toggleSettings() {
           />
         </svg>
         <span class="sidebar-label">Транспорт</span>
-        <span class="sidebar-label submenu-chevron" aria-hidden="true">›</span>
+        <span class="sidebar-label submenu-chevron" :class="{ 'submenu-chevron--expanded': isVehiclesExpanded }" aria-hidden="true">›</span>
       </button>
       <div
         v-if="canView('menu.vehicles') && isVehiclesExpanded"
@@ -372,19 +382,32 @@ function toggleSettings() {
         >
           Моточасы
         </button>
-        <button
-          v-if="canView('vehicles.report')"
-          class="nav-submenu-link"
-          :class="{
-            'nav-submenu-link--active':
-              activePage === 'vehicles' && activeVehicleSection === 'report',
-          }"
-          type="button"
-          @click="$emit('navigate-vehicle', 'report')"
-        >
-          Отчёт
-        </button>
+        <button v-if="canView('vehicles.works')" class="nav-submenu-link"
+          :class="{ 'nav-submenu-link--active': activePage === 'vehicles' && activeVehicleSection === 'maintenanceExecution' }"
+          type="button" :aria-current="activePage === 'vehicles' && activeVehicleSection === 'maintenanceExecution' ? 'page' : undefined"
+          @click="$emit('navigate-vehicle', 'maintenanceExecution')">Проведение ТО</button>
       </div>
+      <button v-if="canView('vehicles.report')" class="nav-link" :class="{ 'nav-link--active': activePage === 'reports' }"
+        type="button" :aria-expanded="isReportsExpanded" aria-controls="reports-submenu" @click="toggleReports">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="size-6" aria-hidden="true" style="stroke-width: 1.5; fill: none">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M21 12a2.25 2.25 0 0 0-2.25-2.25H15a3 3 0 1 1-6 0H5.25A2.25 2.25 0 0 0 3 12m18 0v6a2.25 2.25 0 0 1-2.25 2.25H5.25A2.25 2.25 0 0 1 3 18v-6m18 0V9M3 12V9m18 0a2.25 2.25 0 0 0-2.25-2.25H5.25A2.25 2.25 0 0 0 3 9m18 0V6a2.25 2.25 0 0 0-2.25-2.25H5.25A2.25 2.25 0 0 0 3 6v3" />
+        </svg>
+        <span class="sidebar-label">Отчёты</span><span class="sidebar-label submenu-chevron" aria-hidden="true">{{ isReportsExpanded ? '⌄' : '›' }}</span>
+      </button>
+      <div v-if="canView('vehicles.report') && isReportsExpanded" id="reports-submenu" class="nav-submenu">
+        <button class="nav-submenu-link" :class="{ 'nav-submenu-link--active': activePage === 'reports' && activeVehicleSection === 'report' }"
+          type="button" :aria-current="activePage === 'reports' && activeVehicleSection === 'report' ? 'page' : undefined" @click="$emit('navigate-vehicle', 'report')">Отчёт за смену</button>
+        <button class="nav-submenu-link" :class="{ 'nav-submenu-link--active': activePage === 'reports' && activeVehicleSection === 'gtoForecast' }"
+          type="button" :aria-current="activePage === 'reports' && activeVehicleSection === 'gtoForecast' ? 'page' : undefined" @click="$emit('navigate-vehicle', 'gtoForecast')">Выход ГТО</button>
+      </div>
+      <button v-if="canView('menu.auxiliary_works')" class="nav-link"
+        :class="{ 'nav-link--active': activePage === 'auxiliary-works' }" type="button"
+        :aria-current="activePage === 'auxiliary-works' ? 'page' : undefined" @click="$emit('navigate', 'auxiliary-works')">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="size-6" aria-hidden="true" style="stroke-width: 1.5; fill: none">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M11.42 15.17 17.25 21A2.652 2.652 0 0 0 21 17.25l-5.877-5.877M11.42 15.17l2.496-3.03c.317-.384.74-.626 1.208-.766M11.42 15.17l-4.655 5.653a2.548 2.548 0 1 1-3.586-3.586l6.837-5.63m5.108-.233c.55-.164 1.163-.188 1.743-.14a4.5 4.5 0 0 0 4.486-6.336l-3.276 3.277a3.004 3.004 0 0 1-2.25-2.25l3.276-3.276a4.5 4.5 0 0 0-6.336 4.486c.091 1.076-.071 2.264-.904 2.95l-.102.085m-1.745 1.437L5.909 7.5H4.5L2.25 3.75l1.5-1.5L7.5 4.5v1.409l4.26 4.26m-1.745 1.437 1.745-1.437m6.615 8.206L15.75 15.75M4.867 19.125h.008v.008h-.008v-.008Z" />
+        </svg><span class="sidebar-label">Вспомогательные работы</span>
+      </button>
+
       <button
         v-if="canView('menu.requirements')"
         class="nav-link"

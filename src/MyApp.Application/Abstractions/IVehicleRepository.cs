@@ -1,4 +1,5 @@
 using MyApp.Application.DTO;
+using MyApp.Application.Common;
 
 namespace MyApp.Application.Abstractions;
 
@@ -10,7 +11,7 @@ public interface IVehicleRepository
 {
     /// <summary>Возвращает список всей техники.</summary>
     Task<IReadOnlyList<VehicleResponse>> GetVehiclesAsync(
-        CancellationToken cancellationToken);
+        CancellationToken cancellationToken, bool includeArchived = false);
 
     /// <summary>Возвращает журнал техники (закупки, неисправности, моточасы, работы) за период.</summary>
     Task<VehicleJournalResponse?> GetJournalAsync(
@@ -23,7 +24,7 @@ public interface IVehicleRepository
     /// Returns repair journals for all vehicles using batched queries.
     /// </summary>
     Task<IReadOnlyList<VehicleJournalResponse>> GetRepairJournalsAsync(
-        CancellationToken cancellationToken);
+        CancellationToken cancellationToken, bool includeArchived = false);
 
     /// <summary>Проверяет существование единицы техники.</summary>
     Task<bool> VehicleExistsAsync(Guid vehicleId, CancellationToken cancellationToken);
@@ -181,8 +182,25 @@ public interface IVehicleRepository
         Guid requestId,
         CancellationToken cancellationToken);
     /// <summary>Удаляет запись журнала техники (закупка, неисправность, моточасы или работа).</summary>
+    Task<bool> UpdateHistoryEntryAsync(string category, Guid id, string description, CancellationToken cancellationToken);
+
+    Task<bool> IsWorkCreatorAsync(Guid workId, Guid userId, CancellationToken cancellationToken);
+
     Task<bool> DeleteEntryAsync(
         string category,
         Guid id,
         CancellationToken cancellationToken);
+
+    Task<IReadOnlyList<VehicleWorkParticipantResponse>> GetWorkParticipantsAsync(Guid workId, CancellationToken cancellationToken);
+    Task<bool> RequestWorkParticipationAsync(Guid workId, Guid userId, CancellationToken cancellationToken);
+    Task<bool> ReviewWorkParticipationAsync(Guid workId, Guid participantId, bool approved, Guid reviewerId, CancellationToken cancellationToken);
+
+    Task<IReadOnlyList<VehicleWorkResponse>> GetAuxiliaryWorksAsync(CancellationToken cancellationToken);
+    Task<bool> AuxiliaryWorkExistsAsync(Guid workId, CancellationToken cancellationToken);
+    Task<bool> AuxiliaryMediaExistsAsync(Guid mediaId, bool video, CancellationToken cancellationToken);
+    Task<Guid> AddAuxiliaryWorkAsync(AuxiliaryWorkRequest request, Guid userId, CancellationToken cancellationToken);
+
+    Task<VehicleCatalogOptions> GetVehicleCatalogOptionsAsync(CancellationToken cancellationToken);
+    Task<ServiceResult<Guid>> SaveVehicleCatalogAsync(Guid? id, VehicleCatalogRequest request, CancellationToken cancellationToken);
+    Task<bool> ArchiveVehicleAsync(Guid id, CancellationToken cancellationToken);
 }

@@ -2,6 +2,7 @@ using System.Data;
 using Microsoft.EntityFrameworkCore;
 using MyApp.Application.Abstractions;
 using MyApp.Application.DTO;
+using MyApp.Application.Common;
 using MyApp.Application.Storage;
 using MyApp.Infrastructure.Db;
 using MyApp.Infrastructure.Db.Entities;
@@ -17,11 +18,145 @@ public sealed class VehicleRepository(
     IMediaStorageService mediaStorage,
     MediaStorageOptions mediaStorageOptions) : IVehicleRepository
 {
+    public async Task<VehicleCatalogOptions> GetVehicleCatalogOptionsAsync(CancellationToken cancellationToken) => new(false,
+        await dbContext.VehicleGroups.AsNoTracking().OrderBy(item => item.FullName).Select(item => new VehicleCatalogOption(item.Id, item.FullName)).ToListAsync(cancellationToken),
+        await dbContext.VehicleTypes.AsNoTracking().OrderBy(item => item.FullName).Select(item => new VehicleCatalogOption(item.Id, item.FullName, item.CarGroupId)).ToListAsync(cancellationToken),
+        await dbContext.VehicleModels.AsNoTracking().OrderBy(item => item.FullName).Select(item => new VehicleCatalogOption(item.Id, item.FullName, item.CarTypeId)).ToListAsync(cancellationToken));
+
+    public async Task<ServiceResult<Guid>> SaveVehicleCatalogAsync(Guid? id, VehicleCatalogRequest request, CancellationToken cancellationToken)
+    {
+        await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
+        // Serialize catalogue resolution and VIN checks across concurrent mechanic requests.
+        await dbContext.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock(740410112)", cancellationToken);
+        NumberCarRecord vehicle;
+        if (id is Guid existingId) {
+            var existing = await dbContext.Vehicles.SingleOrDefaultAsync(item => item.Id == existingId && !item.IsArchived, cancellationToken);
+            if (existing is null) return ServiceResult<Guid>.NotFound();
+            vehicle = existing;
+        } else vehicle = new NumberCarRecord { Id = Guid.NewGuid() };
+        if (!string.IsNullOrWhiteSpace(request.Vin) && request.Vin is not ("-" or "—") &&
+            await dbContext.Vehicles.AnyAsync(item => !item.IsArchived && item.Id != vehicle.Id &&
+                item.Vin != null && item.Vin.Trim().ToUpper() == request.Vin.ToUpperInvariant(), cancellationToken))
+            return ServiceResult<Guid>.Conflict("Техника с таким VIN уже есть в парке.");
+        var groupKey = request.GroupName.ToLowerInvariant();
+        var group = await dbContext.VehicleGroups.FirstOrDefaultAsync(item => item.FullName.Trim().ToLower() == groupKey, cancellationToken);
+        if (group is null) { group = new GroupCarRecord { Id = Guid.NewGuid(), FullName = request.GroupName }; dbContext.VehicleGroups.Add(group); }
+        var typeKey = request.TypeName.ToLowerInvariant();
+        var type = await dbContext.VehicleTypes.FirstOrDefaultAsync(item => item.CarGroupId == group.Id && item.FullName.Trim().ToLower() == typeKey, cancellationToken);
+        if (type is null) { type = new TypeCarRecord { Id = Guid.NewGuid(), FullName = request.TypeName, CarGroupId = group.Id }; dbContext.VehicleTypes.Add(type); }
+        var modelKey = request.ModelName.ToLowerInvariant();
+        var model = await dbContext.VehicleModels.FirstOrDefaultAsync(item => item.CarTypeId == type.Id && item.FullName.Trim().ToLower() == modelKey, cancellationToken);
+        if (model is null) { model = new ModelCarRecord { Id = Guid.NewGuid(), FullName = request.ModelName, CarTypeId = type.Id }; dbContext.VehicleModels.Add(model); }
+        // Persist parents first: the original schema has FKs but no EF navigation properties.
+        await dbContext.SaveChangesAsync(cancellationToken);
+        vehicle.CarModeId = model.Id;
+        vehicle.GarageNumber = request.GarageNumber;
+        vehicle.StateNumber = request.StateNumber;
+        vehicle.Vin = request.Vin;
+        if (id is null) dbContext.Vehicles.Add(vehicle);
+        await dbContext.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return ServiceResult<Guid>.Success(vehicle.Id);
+    }
+
+    public async Task<bool> ArchiveVehicleAsync(Guid id, CancellationToken cancellationToken)
+    {
+        await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
+        await dbContext.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock(740410112)", cancellationToken);
+        var count = await dbContext.Vehicles.Where(item => item.Id == id && !item.IsArchived)
+            .ExecuteUpdateAsync(setters => setters.SetProperty(item => item.IsArchived, true), cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return count > 0;
+    }
+
+    public async Task<IReadOnlyList<VehicleWorkResponse>> GetAuxiliaryWorksAsync(CancellationToken cancellationToken)
+    {
+        var works = await GetWorkResponsesAsync(dbContext.VehicleWorks.AsNoTracking()
+            .Where(work => work.WorkKind == "auxiliary").OrderByDescending(work => work.CompletedAt ?? work.CreatedAt), cancellationToken);
+        return works.Select(item => item.Response).ToArray();
+    }
+
+    public Task<bool> AuxiliaryWorkExistsAsync(Guid workId, CancellationToken cancellationToken) =>
+        dbContext.VehicleWorks.AsNoTracking().AnyAsync(work => work.Id == workId && work.WorkKind == "auxiliary", cancellationToken);
+
+    public Task<bool> AuxiliaryMediaExistsAsync(Guid mediaId, bool video, CancellationToken cancellationToken) => video
+        ? (from media in dbContext.VehicleWorkVideos join work in dbContext.VehicleWorks on media.WorkId equals work.Id
+            where media.Id == mediaId && work.WorkKind == "auxiliary" select media.Id).AnyAsync(cancellationToken)
+        : (from media in dbContext.VehicleWorkPhotos join work in dbContext.VehicleWorks on media.WorkId equals work.Id
+            where media.Id == mediaId && work.WorkKind == "auxiliary" select media.Id).AnyAsync(cancellationToken);
+
+    public async Task<Guid> AddAuxiliaryWorkAsync(AuxiliaryWorkRequest request, Guid userId, CancellationToken cancellationToken)
+    {
+        var work = new VehicleWorkRecord {
+            Id = Guid.NewGuid(), VehicleId = null, WorkKind = "auxiliary", Title = request.Title,
+            Description = request.Description, Location = request.Location,
+            WorkDate = DateOnly.FromDateTime(request.PerformedAt.Date), CompletedAt = request.PerformedAt,
+            RepairStatus = "repaired", CreatedBy = userId, PerformedBy = userId
+        };
+        dbContext.VehicleWorks.Add(work);
+        dbContext.VehicleWorkParticipants.Add(new VehicleWorkParticipantRecord {
+            Id = Guid.NewGuid(), WorkId = work.Id, UserId = userId, Status = "pending", RequestedAt = DateTimeOffset.UtcNow
+        });
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return work.Id;
+    }
+
+    public async Task<IReadOnlyList<VehicleWorkParticipantResponse>> GetWorkParticipantsAsync(Guid workId, CancellationToken cancellationToken)
+    {
+        var responses = await GetParticipantResponsesAsync([workId], cancellationToken);
+        return responses.GetValueOrDefault(workId) ?? [];
+    }
+
+    public async Task<bool> RequestWorkParticipationAsync(Guid workId, Guid userId, CancellationToken cancellationToken)
+    {
+        var id = Guid.NewGuid();
+        var now = DateTimeOffset.UtcNow;
+        var count = await dbContext.Database.ExecuteSqlInterpolatedAsync($"""
+            INSERT INTO vehicle_work_participants (id, work_id, user_id, status, requested_at)
+            SELECT {id}, {workId}, {userId}, 'pending', {now}
+            WHERE EXISTS (SELECT 1 FROM vehicle_works WHERE id = {workId})
+            ON CONFLICT (work_id, user_id) DO UPDATE
+            SET status = 'pending', requested_at = EXCLUDED.requested_at, reviewed_by = NULL, reviewed_at = NULL
+            WHERE vehicle_work_participants.status = 'rejected'
+            """, cancellationToken);
+        return count > 0;
+    }
+
+    public async Task<bool> ReviewWorkParticipationAsync(Guid workId, Guid participantId, bool approved, Guid reviewerId, CancellationToken cancellationToken)
+    {
+        var now = DateTimeOffset.UtcNow;
+        return await dbContext.VehicleWorkParticipants
+            .Where(row => row.Id == participantId && row.WorkId == workId && row.Status == "pending")
+            .ExecuteUpdateAsync(setters => setters
+                .SetProperty(row => row.Status, approved ? "approved" : "rejected")
+                .SetProperty(row => row.ReviewedBy, reviewerId)
+                .SetProperty(row => row.ReviewedAt, now), cancellationToken) > 0;
+    }
+
+    private async Task<Dictionary<Guid, IReadOnlyList<VehicleWorkParticipantResponse>>> GetParticipantResponsesAsync(Guid[] workIds, CancellationToken cancellationToken)
+    {
+        var rows = await dbContext.VehicleWorkParticipants.AsNoTracking()
+            .Where(row => workIds.Contains(row.WorkId))
+            .OrderBy(row => row.RequestedAt).ThenBy(row => row.Id)
+            .ToListAsync(cancellationToken);
+        if (rows.Count == 0) return [];
+        var userIds = rows.SelectMany(row => row.ReviewedBy is Guid reviewer ? new[] { row.UserId, reviewer } : new[] { row.UserId }).Distinct().ToArray();
+        var names = await GetUserNamesAsync(userIds, cancellationToken);
+        var positions = await dbContext.Users.AsNoTracking().Where(user => userIds.Contains(user.Id))
+            .Select(user => new { user.Id, Position = user.Profession.Name })
+            .ToDictionaryAsync(user => user.Id, user => user.Position, cancellationToken);
+        return rows.GroupBy(row => row.WorkId).ToDictionary(group => group.Key,
+            group => (IReadOnlyList<VehicleWorkParticipantResponse>)group.Select(row => new VehicleWorkParticipantResponse(
+                row.Id, row.UserId, names.GetValueOrDefault(row.UserId) ?? "ФИО не указано",
+                positions.GetValueOrDefault(row.UserId) ?? "", row.Status, row.RequestedAt,
+                row.ReviewedBy, row.ReviewedAt, row.ReviewedBy is Guid reviewer ? names.GetValueOrDefault(reviewer) ?? "" : "")).ToArray());
+    }
+
     public async Task<IReadOnlyList<VehicleResponse>> GetVehiclesAsync(
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken, bool includeArchived = false)
     {
         var vehicles = await (
-            from vehicle in dbContext.Vehicles.AsNoTracking()
+            from vehicle in dbContext.Vehicles.AsNoTracking().Where(vehicle => includeArchived || !vehicle.IsArchived)
             join modelValue in dbContext.VehicleModels.AsNoTracking()
                 on vehicle.CarModeId equals modelValue.Id into models
             from model in models.DefaultIfEmpty()
@@ -45,10 +180,13 @@ public sealed class VehicleRepository(
                 model == null ? string.Empty : model.FullName,
                 vehicle.GarageNumber,
                 vehicle.StateNumber ?? string.Empty,
-                vehicle.Vin ?? string.Empty))
+                vehicle.Vin ?? string.Empty, "healthy", vehicle.IsArchived,
+                type == null ? null : type.IconPath,
+                vehicleGroup == null ? 0 : vehicleGroup.ReportSortOrder))
             .ToListAsync(cancellationToken);
 
-        return vehicles;
+        var states = await GetOperationalStatesAsync(vehicles.Select(vehicle => vehicle.Id).ToArray(), cancellationToken);
+        return vehicles.Select(vehicle => vehicle with { OperationalState = states.GetValueOrDefault(vehicle.Id) ?? "healthy" }).ToArray();
     }
 
     public async Task<VehicleJournalResponse?> GetJournalAsync(
@@ -63,6 +201,8 @@ public sealed class VehicleRepository(
             return null;
         }
 
+        var states = await GetOperationalStatesAsync([vehicleId], cancellationToken);
+        vehicle = vehicle with { OperationalState = states.GetValueOrDefault(vehicleId) ?? "healthy" };
         var purchases = await GetPurchasesAsync(
             vehicleId, from, to, cancellationToken);
         var defects = await GetDefectsAsync(
@@ -76,9 +216,9 @@ public sealed class VehicleRepository(
     }
 
     public async Task<IReadOnlyList<VehicleJournalResponse>> GetRepairJournalsAsync(
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken, bool includeArchived = false)
     {
-        var vehicles = await GetVehiclesAsync(cancellationToken);
+        var vehicles = await GetVehiclesAsync(cancellationToken, includeArchived);
         if (vehicles.Count == 0)
         {
             return [];
@@ -92,7 +232,7 @@ public sealed class VehicleRepository(
             cancellationToken);
         var works = await GetWorkResponsesAsync(
             dbContext.VehicleWorks.AsNoTracking()
-                .Where(work => vehicleIds.Contains(work.VehicleId))
+                .Where(work => work.VehicleId.HasValue && vehicleIds.Contains(work.VehicleId.Value))
                 .OrderByDescending(work => work.CreatedAt),
             cancellationToken);
         var defectsByVehicle = defects
@@ -106,19 +246,64 @@ public sealed class VehicleRepository(
                 .Select(item => item.Response)
                 .ToArray());
 
+        var latestHours = await dbContext.VehicleHourReadings.AsNoTracking()
+            .Where(reading => vehicleIds.Contains(reading.VehicleId))
+            .GroupBy(reading => new { reading.VehicleId, reading.EngineNumber })
+            .Select(group => group.OrderByDescending(reading => reading.ReadingDate)
+                .ThenByDescending(reading => reading.CreatedAt).ThenByDescending(reading => reading.Id)
+                .First())
+            .ToListAsync(cancellationToken);
+        var hoursByVehicle = latestHours.GroupBy(reading => reading.VehicleId).ToDictionary(group => group.Key,
+            group => (IReadOnlyList<VehicleHoursResponse>)group.Select(reading => new VehicleHoursResponse(
+                reading.Id, reading.ReadingDate, reading.EngineHours, reading.Note, reading.CreatedAt, reading.EngineNumber)).ToArray());
+
+        var partsRequests = await (
+            from request in dbContext.VehiclePartsRequests.AsNoTracking()
+            join defect in dbContext.VehicleDefects.AsNoTracking() on request.DefectId equals defect.Id
+            where vehicleIds.Contains(defect.VehicleId) && request.CompletedDate == null
+            orderby request.RequestDate, request.CreatedAt
+            select new {
+                defect.VehicleId,
+                Response = new VehiclePartsRequestResponse(request.Id, request.DefectId,
+                    request.RequestNumber, request.RequestDate, request.Description,
+                    request.RequiredParts, request.CreatedAt, request.CompletedDate)
+            }).ToListAsync(cancellationToken);
+        var partsByVehicle = partsRequests.GroupBy(item => item.VehicleId)
+            .ToDictionary(group => group.Key, group => (IReadOnlyList<VehiclePartsRequestResponse>)group.Select(item => item.Response).ToArray());
+
         return vehicles.Select(vehicle => new VehicleJournalResponse(
             vehicle,
             [],
             defectsByVehicle.GetValueOrDefault(vehicle.Id) ?? [],
-            [],
-            worksByVehicle.GetValueOrDefault(vehicle.Id) ?? [])).ToArray();
+            hoursByVehicle.GetValueOrDefault(vehicle.Id) ?? [],
+            worksByVehicle.GetValueOrDefault(vehicle.Id) ?? [],
+            partsByVehicle.GetValueOrDefault(vehicle.Id) ?? [])).ToArray();
+    }
+
+    private async Task<Dictionary<Guid, string>> GetOperationalStatesAsync(Guid[] vehicleIds, CancellationToken cancellationToken)
+    {
+        var defects = await dbContext.VehicleDefects.AsNoTracking()
+            .Where(defect => vehicleIds.Contains(defect.VehicleId))
+            .Select(defect => new {
+                defect.VehicleId,
+                InitialState = defect.OperationalState,
+                Status = dbContext.VehicleWorks.Where(work => work.DefectId == defect.Id && work.CompletedAt != null)
+                    .OrderByDescending(work => work.CompletedAt).ThenByDescending(work => work.CreatedAt)
+                    .Select(work => work.RepairStatus).FirstOrDefault(),
+                State = dbContext.VehicleWorks.Where(work => work.DefectId == defect.Id && work.CompletedAt != null)
+                    .OrderByDescending(work => work.CompletedAt).ThenByDescending(work => work.CreatedAt)
+                    .Select(work => work.OperationalState).FirstOrDefault()
+            }).ToListAsync(cancellationToken);
+        return defects.GroupBy(defect => defect.VehicleId).ToDictionary(group => group.Key,
+            group => MyApp.Domain.Entities.VehicleOperationalState.Resolve(
+                group.Select(defect => (defect.Status, defect.State ?? defect.InitialState))));
     }
 
     public Task<bool> VehicleExistsAsync(
         Guid vehicleId,
         CancellationToken cancellationToken) =>
         dbContext.Vehicles.AsNoTracking()
-            .AnyAsync(vehicle => vehicle.Id == vehicleId, cancellationToken);
+            .AnyAsync(vehicle => vehicle.Id == vehicleId && !vehicle.IsArchived, cancellationToken);
 
     public async Task<Guid> AddPurchaseAsync(
         Guid vehicleId,
@@ -157,7 +342,8 @@ public sealed class VehicleRepository(
             FailureReason = request.Symptoms,
             ErrorCode = request.ErrorCode ?? string.Empty,
             Symptoms = request.Symptoms,
-            DowntimeStartedAt = request.DowntimeStartedAt,
+            DowntimeStartedAt = request.OperationalState == "operating" ? null : request.DowntimeStartedAt,
+            OperationalState = request.OperationalState,
             CreatedBy = createdBy
         };
         dbContext.VehicleDefects.Add(entity);
@@ -313,6 +499,7 @@ public sealed class VehicleRepository(
             VehicleId = vehicleId,
             ReadingDate = request.ReadingDate,
             EngineHours = request.EngineHours,
+            EngineNumber = request.EngineNumber,
             Note = request.Note,
             CreatedBy = createdBy
         };
@@ -343,74 +530,29 @@ public sealed class VehicleRepository(
             $"SELECT pg_advisory_xact_lock({lockNamespace}, {readingDate.DayNumber})",
             cancellationToken);
 
-        // A blank CSV cell carries forward the most recent value on or before
-        // the import date. Fetch one most-recent row for each distinct vehicle
-        // in a SINGLE PostgreSQL query rather than querying inside the loop.
-        var blankVehicleIds = items
-            .Where(item => !item.EngineHours.HasValue)
-            .Select(item => item.VehicleId)
-            .Distinct()
-            .ToArray();
-        var carriedHours = new Dictionary<Guid, decimal>();
-        if (blankVehicleIds.Length > 0)
-        {
-            var lastReadings = await dbContext.VehicleHourReadings
-                .AsNoTracking()
-                .Where(reading =>
-                    blankVehicleIds.Contains(reading.VehicleId) &&
-                    reading.ReadingDate <= readingDate)
-                .GroupBy(reading => reading.VehicleId)
-                .Select(group => group
-                    .OrderByDescending(reading => reading.ReadingDate)
-                    .ThenByDescending(reading => reading.CreatedAt)
-                    .Select(reading => new {
-                        reading.VehicleId,
-                        reading.EngineHours
-                    })
-                    .First())
-                .ToArrayAsync(cancellationToken);
-
-            foreach (var reading in lastReadings)
-            {
-                carriedHours[reading.VehicleId] = reading.EngineHours;
-            }
+        var blankVehicles=items.Where(x=>!x.EngineHours.HasValue).Select(x=>x.VehicleId).Distinct().ToArray();
+        var carried=new Dictionary<(Guid VehicleId,int EngineNumber),decimal>();
+        if(blankVehicles.Length>0) {
+            var readings=await dbContext.VehicleHourReadings.AsNoTracking().Where(x=>blankVehicles.Contains(x.VehicleId) && x.ReadingDate<=readingDate)
+                .GroupBy(x=>new{x.VehicleId,x.EngineNumber})
+                .Select(group=>group.OrderByDescending(x=>x.ReadingDate).ThenByDescending(x=>x.CreatedAt).First()).ToArrayAsync(cancellationToken);
+            foreach(var reading in readings)carried[(reading.VehicleId,reading.EngineNumber)]=reading.EngineHours;
         }
-
-        foreach (var item in items)
-        {
-            // Repeated rows for the same vehicle must observe earlier rows of
-            // this import, including an inserted or overwritten reading.
-            var engineHours = item.EngineHours ??
-                carriedHours.GetValueOrDefault(item.VehicleId);
-            var now = DateTimeOffset.UtcNow;
-            var updated = await dbContext.VehicleHourReadings
-                .Where(reading =>
-                    reading.VehicleId == item.VehicleId &&
-                    reading.ReadingDate == readingDate)
-                .ExecuteUpdateAsync(
-                    setters => setters
-                        .SetProperty(reading => reading.EngineHours, engineHours)
-                        .SetProperty(reading => reading.Note, "Импорт CSV")
-                        .SetProperty(reading => reading.CreatedBy, createdBy)
-                        .SetProperty(reading => reading.CreatedAt, now),
-                    cancellationToken);
-            if (updated > 0)
-            {
-                carriedHours[item.VehicleId] = engineHours;
-                continue;
+        foreach (var item in items) {
+            var key=(item.VehicleId,item.EngineNumber);
+            var value=item.EngineHours;
+            if (!value.HasValue) {
+                if(carried.TryGetValue(key,out var previous))value=previous;
+                else if(item.EngineNumber==0)value=0;
+                else continue;
             }
-
-            dbContext.VehicleHourReadings.Add(new VehicleHourReadingRecord
-            {
-                Id = Guid.NewGuid(),
-                VehicleId = item.VehicleId,
-                ReadingDate = readingDate,
-                EngineHours = engineHours,
-                Note = "Импорт CSV",
-                CreatedBy = createdBy
-            });
-            await dbContext.SaveChangesAsync(cancellationToken);
-            carriedHours[item.VehicleId] = engineHours;
+            var updated=await dbContext.VehicleHourReadings.Where(x=>x.VehicleId==item.VehicleId && x.EngineNumber==item.EngineNumber && x.ReadingDate==readingDate)
+                .ExecuteUpdateAsync(setters=>setters.SetProperty(x=>x.EngineHours,value.Value).SetProperty(x=>x.Note,"Импорт файла").SetProperty(x=>x.CreatedBy,createdBy).SetProperty(x=>x.CreatedAt,DateTimeOffset.UtcNow),cancellationToken);
+            if(updated==0) {
+                dbContext.VehicleHourReadings.Add(new VehicleHourReadingRecord{Id=Guid.NewGuid(),VehicleId=item.VehicleId,EngineNumber=item.EngineNumber,ReadingDate=readingDate,EngineHours=value.Value,Note="Импорт файла",CreatedBy=createdBy});
+                await dbContext.SaveChangesAsync(cancellationToken);
+            }
+            carried[key]=value.Value;
         }
         await transaction.CommitAsync(cancellationToken);
     }
@@ -436,6 +578,10 @@ public sealed class VehicleRepository(
             CreatedBy = createdBy
         };
         dbContext.VehicleWorks.Add(entity);
+        dbContext.VehicleWorkParticipants.Add(new VehicleWorkParticipantRecord {
+            Id = Guid.NewGuid(), WorkId = entity.Id, UserId = entity.PerformedBy ?? entity.CreatedBy,
+            Status = "pending", RequestedAt = DateTimeOffset.UtcNow
+        });
         await dbContext.SaveChangesAsync(cancellationToken);
         return entity.Id;
     }
@@ -465,6 +611,7 @@ public sealed class VehicleRepository(
             VehicleId = defect.VehicleId,
             WorkDate = DateOnly.FromDateTime(completedAt.Date),
             Description = request.Description,
+            Location = request.Location?.Trim() ?? string.Empty,
             Performer = string.Empty,
             Note = string.Empty,
             DefectId = defectId,
@@ -473,9 +620,15 @@ public sealed class VehicleRepository(
             RequiredParts = request.RequiredParts ?? string.Empty,
             PerformedBy = performedBy,
             CompletedAt = completedAt,
+            OperationalState = request.OperationalState,
+            DowntimeStartedAt = request.OperationalState == "operating" ? null : request.DowntimeStartedAt,
             CreatedBy = performedBy
         };
         dbContext.VehicleWorks.Add(entity);
+        dbContext.VehicleWorkParticipants.Add(new VehicleWorkParticipantRecord {
+            Id = Guid.NewGuid(), WorkId = entity.Id, UserId = entity.PerformedBy ?? entity.CreatedBy,
+            Status = "pending", RequestedAt = DateTimeOffset.UtcNow
+        });
         await dbContext.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
         return entity.Id;
@@ -647,6 +800,7 @@ public sealed class VehicleRepository(
             RequestNumber = request.RequestNumber,
             Description = request.Description,
             RequiredParts = request.RequiredParts ?? string.Empty,
+            CompletedDate = request.CompletedDate,
             CreatedBy = createdBy
         };
         dbContext.VehiclePartsRequests.Add(entity);
@@ -675,7 +829,8 @@ public sealed class VehicleRepository(
                         request.Description)
                     .SetProperty(
                         partsRequest => partsRequest.RequiredParts,
-                        request.RequiredParts ?? string.Empty),
+                        request.RequiredParts ?? string.Empty)
+                    .SetProperty(partsRequest => partsRequest.CompletedDate, request.CompletedDate),
                 cancellationToken);
         return updatedRows > 0;
     }
@@ -694,7 +849,8 @@ public sealed class VehicleRepository(
                 request.RequestDate,
                 request.Description,
                 request.RequiredParts,
-                request.CreatedAt))
+                request.CreatedAt,
+                request.CompletedDate))
             .ToListAsync(cancellationToken);
     }
 
@@ -704,6 +860,22 @@ public sealed class VehicleRepository(
         await dbContext.VehiclePartsRequests
             .Where(request => request.Id == requestId)
             .ExecuteDeleteAsync(cancellationToken) > 0;
+
+    public Task<bool> IsWorkCreatorAsync(Guid workId, Guid userId, CancellationToken cancellationToken) =>
+        dbContext.VehicleWorks.AnyAsync(work => work.Id == workId && work.CreatedBy == userId, cancellationToken);
+
+    public async Task<bool> UpdateHistoryEntryAsync(string category, Guid id, string description, CancellationToken cancellationToken)
+    {
+        var count = category switch
+        {
+            "defects" => await dbContext.VehicleDefects.Where(entry => entry.Id == id)
+                .ExecuteUpdateAsync(setters => setters.SetProperty(entry => entry.Symptoms, description), cancellationToken),
+            "works" => await dbContext.VehicleWorks.Where(entry => entry.Id == id)
+                .ExecuteUpdateAsync(setters => setters.SetProperty(entry => entry.Description, description), cancellationToken),
+            _ => 0
+        };
+        return count > 0;
+    }
 
     public async Task<bool> DeleteEntryAsync(
         string category,
@@ -769,7 +941,9 @@ public sealed class VehicleRepository(
                 model == null ? string.Empty : model.FullName,
                 vehicle.GarageNumber,
                 vehicle.StateNumber ?? string.Empty,
-                vehicle.Vin ?? string.Empty))
+                vehicle.Vin ?? string.Empty, "healthy", vehicle.IsArchived,
+                type == null ? null : type.IconPath,
+                vehicleGroup == null ? 0 : vehicleGroup.ReportSortOrder))
             .SingleOrDefaultAsync(cancellationToken);
 
     private async Task<IReadOnlyList<VehiclePurchaseResponse>> GetPurchasesAsync(
@@ -828,10 +1002,13 @@ public sealed class VehicleRepository(
                 defectIds.Contains(work.DefectId.Value) &&
                 work.CompletedAt.HasValue)
             .OrderByDescending(work => work.CompletedAt)
+            .ThenByDescending(work => work.CreatedAt)
             .Select(work => new
             {
                 DefectId = work.DefectId!.Value,
                 work.RepairStatus,
+                work.OperationalState,
+                work.DowntimeStartedAt,
                 work.CompletedAt
             })
             .ToListAsync(cancellationToken);
@@ -900,7 +1077,7 @@ public sealed class VehicleRepository(
                 defect.Symptoms,
                 status,
                 defect.CreatedAt,
-                defect.DowntimeStartedAt,
+                status == "repaired" || completed?.OperationalState == "operating" ? null : completed?.DowntimeStartedAt ?? defect.DowntimeStartedAt,
                 defect.CreatedBy,
                 createdByName,
                 defect.AssignedTo,
@@ -909,7 +1086,8 @@ public sealed class VehicleRepository(
                 photosByDefect.GetValueOrDefault(defect.Id) ?? [],
                 videosByDefect.GetValueOrDefault(defect.Id) ?? [],
                 defect.NodeName,
-                defect.FailureReason);
+                defect.FailureReason,
+                status == "repaired" ? "healthy" : completed?.OperationalState ?? defect.OperationalState);
             return (defect.VehicleId, response);
         }).ToArray();
     }
@@ -938,7 +1116,8 @@ public sealed class VehicleRepository(
                 reading.ReadingDate,
                 reading.EngineHours,
                 reading.Note,
-                reading.CreatedAt))
+                reading.CreatedAt,
+                reading.EngineNumber))
             .ToListAsync(cancellationToken);
     }
 
@@ -953,11 +1132,13 @@ public sealed class VehicleRepository(
             return [];
         }
 
-        var userIds = works.Where(work => work.PerformedBy.HasValue)
-            .Select(work => work.PerformedBy!.Value)
+        var userIds = works.Select(work => work.PerformedBy ?? work.CreatedBy)
             .Distinct()
             .ToArray();
         var userNames = await GetUserNamesAsync(userIds, cancellationToken);
+        var positions = await dbContext.Users.AsNoTracking().Where(user => userIds.Contains(user.Id))
+            .Select(user => new { user.Id, Position = user.Profession.Name })
+            .ToDictionaryAsync(user => user.Id, user => user.Position, cancellationToken);
         var defectIds = works.Where(work => work.DefectId.HasValue)
             .Select(work => work.DefectId!.Value)
             .Distinct()
@@ -967,6 +1148,7 @@ public sealed class VehicleRepository(
             .ToDictionaryAsync(defect => defect.Id, defect => defect.NodeName,
                 cancellationToken);
         var workIds = works.Select(work => work.Id).ToArray();
+        var participantsByWork = await GetParticipantResponsesAsync(workIds, cancellationToken);
         var photos = await dbContext.VehicleWorkPhotos.AsNoTracking()
             .Where(photo => workIds.Contains(photo.WorkId))
             .OrderBy(photo => photo.CreatedAt)
@@ -1009,7 +1191,8 @@ public sealed class VehicleRepository(
                         request.RequestDate,
                         request.Description,
                         request.RequiredParts,
-                        request.CreatedAt)
+                        request.CreatedAt,
+                        request.CompletedDate)
                 })
                 .ToListAsync(cancellationToken);
         var photosByWork = photos.GroupBy(photo => photo.WorkId)
@@ -1037,10 +1220,9 @@ public sealed class VehicleRepository(
 
         return works.Select(work =>
         {
-            var performerName = work.PerformedBy is Guid performerId &&
-                userNames.TryGetValue(performerId, out var performer)
-                    ? performer
-                    : string.Empty;
+            var performerId = work.PerformedBy ?? work.CreatedBy;
+            var performerName = userNames.TryGetValue(performerId, out var performer)
+                ? performer : work.Performer;
             var defectNodeName = work.DefectId is Guid workDefectId &&
                 defectNames.TryGetValue(workDefectId, out var nodeName)
                     ? nodeName
@@ -1062,8 +1244,14 @@ public sealed class VehicleRepository(
                 performerName,
                 work.CompletedAt,
                 workRequests,
-                videosByWork.GetValueOrDefault(work.Id) ?? []);
-            return (work.VehicleId, response);
+                videosByWork.GetValueOrDefault(work.Id) ?? [],
+                work.CreatedBy,
+                positions.GetValueOrDefault(performerId) ?? "",
+                work.Location,
+                work.OperationalState,
+                participantsByWork.GetValueOrDefault(work.Id) ?? [],
+                work.Title, work.WorkKind);
+            return (work.VehicleId ?? Guid.Empty, response);
         }).ToArray();
     }
 

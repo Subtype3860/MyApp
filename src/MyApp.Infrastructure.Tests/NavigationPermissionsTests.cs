@@ -47,4 +47,12 @@ public sealed class NavigationPermissionsTests
         Xunit.Assert.Empty(Permissions.Expand(null));
         Xunit.Assert.Empty(Permissions.Expand([]));
     }
+    [Xunit.Fact]
+    public void Auxiliary_work_menu_does_not_grant_vehicle_access()
+    {
+        var expanded = Permissions.Expand([Permissions.AuxiliaryWorksView]);
+        Xunit.Assert.Contains(Permissions.AuxiliaryWorksView, expanded);
+        Xunit.Assert.DoesNotContain(Permissions.VehiclesView, expanded);
+        Xunit.Assert.Single(expanded);
+    }
 }

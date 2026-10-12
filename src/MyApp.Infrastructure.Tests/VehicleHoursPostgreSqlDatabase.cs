@@ -73,12 +73,13 @@ internal sealed class VehicleHoursPostgreSqlDatabase : IAsyncDisposable
         await using var cmd = dataSource.CreateCommand(
             """
             CREATE TABLE app_users (id uuid PRIMARY KEY);
-            CREATE TABLE number_car (id uuid PRIMARY KEY);
+            CREATE TABLE number_car (id uuid PRIMARY KEY, is_archived boolean NOT NULL DEFAULT false);
             CREATE TABLE vehicle_hour_readings (
                 id uuid PRIMARY KEY,
                 vehicle_id uuid NOT NULL REFERENCES number_car(id) ON DELETE CASCADE,
                 reading_date date NOT NULL,
                 engine_hours numeric NOT NULL CHECK (engine_hours >= 0),
+                engine_number integer NOT NULL DEFAULT 0,
                 note text NOT NULL DEFAULT '',
                 created_by uuid NOT NULL REFERENCES app_users(id) ON DELETE RESTRICT,
                 created_at timestamptz NOT NULL DEFAULT NOW()

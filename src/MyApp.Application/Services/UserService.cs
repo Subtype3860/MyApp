@@ -133,6 +133,11 @@ public sealed class UserService(
                 });
         }
 
+        var oldRole = user.Role;
+        var oldPermissions = user.Permissions;
+        var oldPosition = user.PositionId;
+        var oldUserName = user.UserName;
+
         user.FirstName = request.FirstName.Trim();
         user.MiddleName = request.MiddleName.Trim();
         user.LastName = request.LastName.Trim();
@@ -150,6 +155,10 @@ public sealed class UserService(
         {
             user.PasswordHash = passwordHasher.Hash(request.Password);
         }
+
+        if (oldRole != user.Role || oldPermissions != user.Permissions || oldPosition != user.PositionId ||
+            oldUserName != user.UserName || !string.IsNullOrWhiteSpace(request.Password))
+            user.SessionStamp = Guid.NewGuid();
 
         await userRepository.SaveChangesAsync(cancellationToken);
         return ServiceResult<UpdateUserResponse>.Success(
@@ -217,6 +226,8 @@ public sealed class UserService(
             user.PasswordHash = passwordHasher.Hash(request.NewPassword);
         }
 
+        if (user.UserName != userName || !string.IsNullOrEmpty(request.NewPassword))
+            user.SessionStamp = Guid.NewGuid();
         user.UserName = userName;
         user.Email = $"{userName.ToLowerInvariant()}@local";
         await userRepository.SaveChangesAsync(cancellationToken);

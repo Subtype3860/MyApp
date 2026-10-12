@@ -38,6 +38,7 @@ public static class InfrastructureRegistration
         services.AddScoped<IVehicleRepository, VehicleRepository>();
         services.AddScoped<IPasswordHasher, Pbkdf2PasswordHasher>();
         services.AddScoped<ITokenProvider, JwtTokenProvider>();
+        services.AddScoped<IUserSessionStore, UserSessionStore>();
         services.AddScoped<IDatabaseInitializer, DatabaseInitializer>();
         return services;
     }

@@ -164,6 +164,7 @@ test('API error is recoverable and does not display fake zero metrics', async ({
   await page.route('**/api/vehicles', (route) =>
     route.fulfill({ json: vehicles }),
   )
+  await page.getByLabel('Меню парка техники').click()
   await page.getByRole('button', { name: 'Обновить' }).click()
   await expect(
     page.getByRole('heading', { name: 'Sany SET 150' }),
@@ -177,4 +178,9 @@ test('expired session returns to login', async ({ page }) => {
     page.getByRole('heading', { name: 'Добро пожаловать' }),
   ).toBeVisible()
   await expect(page.getByRole('alert')).toContainText('повторная авторизация')
+  expect(await page.evaluate(() => [
+    localStorage.getItem('myapp.authToken'),
+    localStorage.getItem('myapp.userRole'),
+    localStorage.getItem('myapp.userPermissions'),
+  ])).toEqual([null, null, null])
 })

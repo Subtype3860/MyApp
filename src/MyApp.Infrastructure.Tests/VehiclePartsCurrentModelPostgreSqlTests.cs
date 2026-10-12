@@ -44,7 +44,8 @@ public sealed class VehiclePartsCurrentModelPostgreSqlTests
         var revised = request with {
             RequestNumber = "PR-101",
             Description = "Two hydraulic filters",
-            RequiredParts = "3 pcs"
+            RequiredParts = "3 pcs",
+            CompletedDate = new DateOnly(2026, 10, 10)
         };
         Xunit.Assert.True(await repository.UpdatePartsRequestAsync(
             id.Value, revised, CancellationToken.None));
@@ -52,6 +53,7 @@ public sealed class VehiclePartsCurrentModelPostgreSqlTests
             defect, CancellationToken.None));
         Xunit.Assert.Equal("PR-101", changed.RequestNumber);
         Xunit.Assert.Equal("3 pcs", changed.RequiredParts);
+        Xunit.Assert.Equal(new DateOnly(2026, 10, 10), changed.CompletedDate);
 
         Xunit.Assert.True(await repository.DeletePartsRequestAsync(
             id.Value, CancellationToken.None));

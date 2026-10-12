@@ -23,7 +23,7 @@ window.fetch = async (...args) => {
     window.dispatchEvent(
       new CustomEvent('myapp:session-expired', {
         detail: {
-          message: 'Вас давно не было. Требуется повторная авторизация.',
+          message: 'Сессия завершена или отозвана. Требуется повторная авторизация.',
         },
       }),
     )

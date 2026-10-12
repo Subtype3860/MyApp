@@ -1,4 +1,5 @@
 using MyApp.Application.Services;
+using MyApp.Application.DTO;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Npgsql;
@@ -7,6 +8,7 @@ namespace MyApp.API.Controllers;
 
 [ApiController]
 [Route("api/admin/csv-files")]
+[Route("api/admin/imports")]
 [Authorize(Roles = "administrator")]
 public class CsvFileController : ControllerBase
 {
@@ -21,7 +23,7 @@ public class CsvFileController : ControllerBase
         try
         {
             var result = await service.GetAsync(fileName, cancellationToken);
-            return this.ToActionResult(result, content => File(content, "text/csv", fileName));
+            return this.ToActionResult(result, content => File(content, "text/csv", Path.ChangeExtension(fileName, ".csv")));
         }
         catch (InvalidOperationException exception)
         {
@@ -33,20 +35,56 @@ public class CsvFileController : ControllerBase
         }
     }
 
+    [HttpPost("sheets")]
+    [RequestSizeLimit(21 * 1024 * 1024)]
+    [RequestFormLimits(MultipartBodyLengthLimit = 21 * 1024 * 1024)]
+    public async Task<IActionResult> Sheets(IFormFile file, CancellationToken cancellationToken)
+    {
+        if (file.Length is <= 0 or > MaximumCsvSize || !Path.GetExtension(file.FileName).Equals(".xlsx", StringComparison.OrdinalIgnoreCase))
+            return BadRequest(new { errors = new { file = new[] { "Выберите XLSX размером не более 20 МБ." } } });
+        await using var stream = new MemoryStream();
+        await file.CopyToAsync(stream, cancellationToken);
+        try { return Ok(ImportWorkbook.Sheets(stream.ToArray())); }
+        catch (CsvImportValidationException exception)
+        { return BadRequest(new { errors = new { file = new[] { exception.Message } } }); }
+    }
+
+    [HttpPost("{fileName}/preview")]
+    [RequestSizeLimit(21 * 1024 * 1024)]
+    [RequestFormLimits(MultipartBodyLengthLimit = 21 * 1024 * 1024)]
+    public async Task<IActionResult> Preview(string fileName, IFormFile file, [FromForm] string? sheetName,
+        [FromServices] ICsvFileService service, CancellationToken cancellationToken)
+    {
+        if (file.Length is <= 0 or > MaximumCsvSize || !(new[] { ".csv", ".xlsx" }).Contains(Path.GetExtension(file.FileName), StringComparer.OrdinalIgnoreCase))
+            return BadRequest(new { errors = new { file = new[] { "Выберите CSV или XLSX размером не более 20 МБ." } } });
+        await using var stream = new MemoryStream();
+        await file.CopyToAsync(stream, cancellationToken);
+        try
+        {
+            var result = await service.PreviewAsync(fileName, stream.ToArray(), cancellationToken, Path.GetExtension(file.FileName), sheetName);
+            return this.ToActionResult(result, value => Ok(value));
+        }
+        catch (CsvImportValidationException exception)
+        { return BadRequest(new { errors = new { file = new[] { exception.Message } } }); }
+    }
+
     [HttpPost("{fileName}")]
+    [RequestSizeLimit(21 * 1024 * 1024)]
+    [RequestFormLimits(MultipartBodyLengthLimit = 21 * 1024 * 1024)]
     [IgnoreAntiforgeryToken]
     public async Task<IActionResult> Replace(
         string fileName,
         IFormFile file,
+        [FromForm] string? sheetName,
         [FromServices] ICsvFileService service,
         CancellationToken cancellationToken)
     {
         if (file.Length is <= 0 or > MaximumCsvSize ||
-            !string.Equals(Path.GetExtension(file.FileName), ".csv", StringComparison.OrdinalIgnoreCase))
+            !(new[] { ".csv", ".xlsx" }).Contains(Path.GetExtension(file.FileName), StringComparer.OrdinalIgnoreCase))
         {
             return BadRequest(new ValidationProblemDetails(new Dictionary<string, string[]>
             {
-                ["file"] = ["Выберите CSV-файл размером не более 20 МБ."]
+                ["file"] = ["Выберите CSV или XLSX размером не более 20 МБ."]
             }));
         }
 
@@ -55,8 +93,12 @@ public class CsvFileController : ControllerBase
 
         try
         {
-            var result = await service.ReplaceAsync(fileName, stream.ToArray(), cancellationToken);
-            return this.ToActionResult(result, _ => Ok());
+            var result = await service.ReplaceAsync(fileName, stream.ToArray(), cancellationToken, Path.GetExtension(file.FileName), sheetName);
+            return this.ToActionResult(result, value => Ok(value));
+        }
+        catch (CsvImportValidationException exception)
+        {
+            return BadRequest(new ValidationProblemDetails(new Dictionary<string, string[]> { ["file"] = [exception.Message] }));
         }
         catch (InvalidOperationException exception)
         {

@@ -3,6 +3,8 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.IdentityModel.Tokens;
 using System.Text;
+using MyApp.Application.Abstractions;
+using MyApp.Application.Security;
 
 namespace MyApp.API.Extensions
 {
@@ -29,6 +31,15 @@ namespace MyApp.API.Extensions
             services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
                 .AddJwtBearer(o =>
                 {
+                    o.Events = new JwtBearerEvents
+                    {
+                        OnTokenValidated = async context =>
+                        {
+                            var store = context.HttpContext.RequestServices.GetRequiredService<IUserSessionStore>();
+                            if (!await SessionIdentity.IsCurrentAsync(context.Principal, store, context.HttpContext.RequestAborted))
+                                context.Fail("Сессия отозвана. Требуется повторный вход.");
+                        }
+                    };
                     o.TokenValidationParameters = new TokenValidationParameters
                     {
                         ValidateIssuer = true,
