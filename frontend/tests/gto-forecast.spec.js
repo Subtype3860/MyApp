@@ -1,5 +1,17 @@
 import { test, expect } from '@playwright/test'
-import { nextForecastSelection, buildForecastRows, forecastGroups, forecastNoteBlocks, forecastDocumentRow, forecastPdfNoteBlocks, responsibleShortName, engineHoursText } from '../src/utils/gtoForecast.js'
+import { nextForecastSelection, buildForecastRows, forecastGroups, forecastNoteBlocks, forecastDocumentRow, forecastPdfNoteBlocks, responsibleShortName, engineHoursText, fixedHoursText } from '../src/utils/gtoForecast.js'
+
+test('report engine hours occupy thirteen fixed positions without truncation', () => {
+ const row = {engines:[{hours:20207},{hours:14752}]}
+ expect(fixedHoursText(row)).toBe('20207 / 14752')
+ row.engines[0].hours=875
+ expect(fixedHoursText(row)).toBe('  875 / 14752')
+ expect(fixedHoursText(row)).toHaveLength(13)
+ row.engines[0].hours=null
+ expect(fixedHoursText(row)).toBe('      / 14752')
+ row.engines[0].hours=123456
+ expect(()=>fixedHoursText(row)).toThrow('не помещается')
+})
 
 test('next shift follows the date rule and forecast needs mechanic choice', () => {
   expect(nextForecastSelection(new Date('2026-10-11T09:00:00'))).toEqual({ date:'2026-10-11', shift:'1' })
@@ -26,6 +38,7 @@ for (const width of [390,1440]) {
   })
   await page.goto('/')
   if(width<761)await page.getByRole('button',{name:'Открыть меню',exact:true}).click()
+  await page.getByRole('button', { name: 'Отчёты', exact: true }).click()
   await page.getByRole('button',{name:'Выход ГТО',exact:true}).click()
   await expect(page.locator('.gto-row')).toHaveCount(1)
   await page.getByLabel('Меню Выход ГТО',{exact:true}).click()
@@ -192,6 +205,7 @@ test('persistent preferences and vehicle data, unrestricted search and healthy m
   return route.fulfill({json:{}})
  })
  await page.goto('/')
+ await page.getByRole('button', { name: 'Отчёты', exact: true }).click()
  await page.getByRole('button',{name:'Выход ГТО',exact:true}).click()
  await expect(page.getByLabel('Организация',{exact:true})).toHaveValue('Организация пользователя')
  await expect(page.getByLabel('Плановый выход из ремонта',{exact:true})).toHaveValue('15.10.2026')
@@ -267,11 +281,11 @@ test('responsible name uses surname and initials', () => {
 test('dump truck has two independent engines and replacement values', () => {
  const [row]=buildForecastRows([{vehicle:{id:'v1',typeName:'Карьерный самосвал'},hours:[{engineNumber:1,engineHours:875,readingDate:'2026-10-12'},{engineNumber:2,engineHours:852,readingDate:'2026-10-12'},{engineNumber:0,engineHours:18225,readingDate:'2026-10-13'}]}])
  expect(row.engines).toHaveLength(2)
- expect(engineHoursText(row)).toBe('875/852')
+ expect(engineHoursText(row)).toBe('875 / 852')
  row.engines[0].hoursAtReplacement=18225;row.engines[1].hoursAtReplacement=17900
- expect(engineHoursText(row,true)).toBe('18225/17900')
+ expect(engineHoursText(row,true)).toBe('18225 / 17900')
  row.engines[1].hours=null
- expect(engineHoursText(row)).toBe('875/')
+ expect(engineHoursText(row)).toBe('875 / ')
  expect(row.legacyHours).toBe(18225)
 })
 test('single engine keeps historical legacy readings without inventing second engine', () => {
@@ -300,6 +314,7 @@ test('two engine input values persist independently and appear as slash pairs in
   return route.fulfill({json:{}})
  })
  await page.goto('/')
+ await page.getByRole('button', { name: 'Отчёты', exact: true }).click()
  await page.getByRole('button',{name:'Выход ГТО',exact:true}).click()
  await page.getByLabel('Поиск техники',{exact:true}).fill('901')
  await expect(page.locator('.gto-engine')).toHaveCount(2)
@@ -312,12 +327,12 @@ test('two engine input values persist independently and appear as slash pairs in
   await expect.poll(()=>replacements.get(index+1)?.hoursAtReplacement).toBe(Number(replacement))
  }
  await page.getByLabel('Меню Выход ГТО',{exact:true}).click();await page.getByRole('button',{name:'Обновить данные ремонта',exact:true}).click()
- await expect(page.getByText('Наработка: 875/852 м/ч',{exact:false})).toBeVisible()
+ await expect(page.getByText('Наработка: 875 / 852 м/ч',{exact:false})).toBeVisible()
  const downloadPromise=page.waitForEvent('download')
  await page.getByLabel('Меню Выход ГТО',{exact:true}).click();await page.getByRole('button',{name:'Скачать PDF',exact:true}).click()
  await (await downloadPromise).saveAs('test-results/gto-two-engines.pdf')
  const {execFileSync}=await import('node:child_process')
  const text=execFileSync('pdftotext',['-layout','test-results/gto-two-engines.pdf','-'],{encoding:'utf8'})
- expect(text).toContain('875/852');expect(text).toContain('18225/17900')
+ expect(text).toMatch(/875\s*\/\s*852/);expect(text).toMatch(/18225\s*\/\s*17900/)
  expect(writes.every(item=>[1,2].includes(item.number) && item.engineHours===null)).toBe(true)
 })

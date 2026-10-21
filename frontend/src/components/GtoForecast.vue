@@ -29,6 +29,7 @@ const visibleGroups = computed(() => {
     ? [row.vehicle.groupName,row.vehicle.typeName,row.vehicle.modelName,row.vehicle.garageNumber,row.vehicle.stateNumber,row.vehicle.vin].some(value => String(value ?? '').toLocaleLowerCase('ru').includes(term))
     : row.isInRepair) })).filter(group => group.rows.length)
 })
+/** Последовательно сохраняет настройки одного объекта и запоминает неудачные запросы для повтора. */
 async function queueSave(key, url, body, afterSaved, allowed = canEdit.value) {
   if (!settingsReady || !allowed) return
   saving.value++
@@ -42,19 +43,24 @@ async function queueSave(key, url, body, afterSaved, allowed = canEdit.value) {
   try { await pending;failedSaves.delete(key) } catch(failure) { failedSaves.set(key,{url,body,afterSaved});error.value=failure.message }
   finally { saving.value--;if(saveQueues.get(key)===pending)saveQueues.delete(key) }
 }
+/** Сохраняет организацию и участок пользователя в настройках ГТО. */
 function saveUserSettings() { return queueSave('user','/api/gto-settings/user',{organisation:organisation.value,site:site.value}) }
+/** Проверяет и сохраняет моточасы двигателя на момент замены. */
 function saveEngine(row,engine) {
-  const numeric=value=>value==null || value==='' ? null : Number(value)
+  const /** Преобразует заполненное значение в число, сохраняя пустое значение как null. */ numeric=value=>value==null || value==='' ? null : Number(value)
   if([engine.hoursAtReplacement].some(value=>value!=='' && value!=null && (!Number.isFinite(Number(value)) || Number(value)<0))) {error.value='Моточасы не могут быть отрицательными.';return}
   const body={readingDate:engine.readingDate || localDate(new Date()),engineHours:null,hoursAtReplacement:numeric(engine.hoursAtReplacement)}
   return queueSave(`${row.vehicle.id}:engine:${engine.number}`,`/api/gto-settings/vehicles/${row.vehicle.id}/engines/${engine.number}`,body,undefined,canManageHours.value)
 }
+/** Сохраняет климатическую установку и план выпуска для открытых неисправностей техники. */
 function saveVehicleSettings(row) { return queueSave(row.vehicle.id,`/api/gto-settings/vehicles/${row.vehicle.id}`,{climate:row.climate,plannedRelease:row.plannedRelease,defectIds:row.openDefectIds}) }
+/** Читает совместимую версию локального черновика прогноза ГТО. */
 function savedDraft() {
   if (!storageKey) return null
   try { const value=JSON.parse(localStorage.getItem(storageKey));return [1,2].includes(value?.version)?value:null }
   catch { return null }
 }
+/** Применяет допустимые поля черновика к строке прогноза с учётом старых значений статуса. */
 function applyDraft(row, draft) {
   const saved = draft?.rows?.[row.vehicle.id]
   if (!saved) return row
@@ -69,6 +75,7 @@ function applyDraft(row, draft) {
   }
   return row
 }
+/** Сохраняет редактируемые поля прогноза в локальном хранилище браузера. */
 function saveDraft() {
   if(!loaded.value || !canEdit.value || !storageKey)return
   try {
@@ -77,6 +84,7 @@ function saveDraft() {
     draftMessage.value='Черновик сохранён в этом браузере.'
   } catch { draftMessage.value='Браузер не смог сохранить черновик. Скачайте PDF перед закрытием формы.' }
 }
+/** Дожидается сохранений, загружает журналы и настройки ГТО, затем применяет локальный черновик. */
 async function load() {
   saveDraft()
   controller?.abort(); controller=new AbortController()
@@ -126,11 +134,13 @@ async function load() {
   } catch(failure){if(failure.name!=='AbortError')error.value=failure.message}
   finally{loading.value=false}
 }
+/** После подтверждения сбрасывает прогноз и примечания механика к исходному состоянию. */
 function clearDraft() {
   if(!canEdit.value || !window.confirm('Сбросить прогноз и примечания механика? Данные ремонта останутся без изменений.'))return
   for(const row of rows.value)Object.assign(row,{forecast:row.currentState === 'healthy' ? 'healthy' : 'faulty',ktg:'',maintenance:'',note:''})
   saveDraft()
 }
+/** Повторяет неудачные сохранения настроек и скачивает PDF проверенного прогноза ГТО. */
 async function download() {
   if(!loaded.value || loading.value || exporting.value || saving.value || !canEdit.value || !rows.value.length)return
   if(!/^\d{4}-\d{2}-\d{2}$/.test(date.value)){error.value='Выберите дату прогноза.';return}
@@ -185,7 +195,7 @@ onBeforeUnmount(()=>{saveDraft();controller?.abort()})
         <h3>{{ group.name }}</h3>
         <article v-for="row in group.rows" :key="row.vehicle.id" class="gto-panel gto-row">
           <header><h4>{{ vehicleTitle(row.vehicle) }}</h4><span>{{ currentStateLabel(row.currentState) }}</span></header>
-          <p class="gto-hint">Наработка: {{ engineHoursText(row) || 'не указана' }} м/ч · Начало простоя: {{ row.forecast !== 'healthy' && row.downtimeStartedAt ? new Date(row.downtimeStartedAt).toLocaleDateString('ru-RU') : 'не указано' }}</p>
+          <p class="gto-hint">Наработка: <template v-for="(hours,index) in (engineHoursText(row) || 'не указана').split(' / ')" :key="index"><template v-if="index"> / </template><strong>{{ hours }}</strong></template> м/ч · Начало простоя: {{ row.forecast !== 'healthy' && row.downtimeStartedAt ? new Date(row.downtimeStartedAt).toLocaleDateString('ru-RU') : 'не указано' }}</p>
           <div class="gto-engines">
             <fieldset v-for="engine in row.engines" :key="engine.number" class="gto-engine">
               <legend>ДВС № {{ engine.number }}</legend>

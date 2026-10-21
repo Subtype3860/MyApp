@@ -27,7 +27,7 @@ const legacyPermissionMap = {
   'requirements.view': 'menu.requirements',
   'maintenance.view': 'menu.maintenance',
 }
-const parsePermissions = (value) => {
+const /** Разбирает сохранённый набор разрешений пользователя. */ parsePermissions = (value) => {
   try {
     const permissions = JSON.parse(value || '[]')
     return [
@@ -51,11 +51,13 @@ const permissions = ref(parsePermissions(storedPermissions))
 const isNavigationCollapsed = ref(false)
 const mobileMenuOpen = ref(false)
 const mobileMenuButton = ref(null)
+/** Закрывает боковое меню на мобильном экране. */
 function closeMobileMenu() {
   const wasOpen = mobileMenuOpen.value
   mobileMenuOpen.value = false
   if (wasOpen) nextTick(() => mobileMenuButton.value?.focus())
 }
+/** Переключает активный раздел приложения. */
 function navigate(page) {
   currentPage.value = page
   closeMobileMenu()
@@ -70,6 +72,7 @@ const selectedResponsibleEmployee = ref(null)
 const profileVersion = ref(0)
 const sessionExpiredMessage = ref('')
 
+/** Сохраняет данные успешного входа и открывает приложение. */
 function handleAuthenticated(authData) {
   localStorage.setItem(TOKEN_KEY, authData.token)
   localStorage.setItem(ROLE_KEY, authData.role)
@@ -83,6 +86,7 @@ function handleAuthenticated(authData) {
   sessionExpiredMessage.value = ''
 }
 
+/** Очищает локальные данные пользовательской сессии. */
 function clearSession() {
   closeMobileMenu()
   localStorage.removeItem(TOKEN_KEY)
@@ -97,6 +101,7 @@ function clearSession() {
   selectedResponsibleEmployee.value = null
 }
 
+/** Завершает пользовательскую сессию и возвращает форму входа. */
 async function handleLogout() {
   if (!token.value) return
   try {
@@ -108,6 +113,7 @@ async function handleLogout() {
   }
 }
 
+/** Сбрасывает сессию после отклонения токена сервером. */
 function handleSessionExpired(event) {
   sessionExpiredMessage.value =
     event.detail?.message ||
@@ -115,6 +121,7 @@ function handleSessionExpired(event) {
   clearSession()
 }
 
+/** Завершает сессию после превышения времени бездействия. */
 function handleIdleExpired() {
   sessionExpiredMessage.value = ''
   handleLogout()
@@ -125,6 +132,7 @@ onBeforeUnmount(() => {
   window.removeEventListener('myapp:session-expired', handleSessionExpired)
 })
 
+/** Открывает выбранное табличное представление. */
 function openTable(tableName) {
   closeMobileMenu()
   if (
@@ -137,28 +145,33 @@ function openTable(tableName) {
   currentPage.value = 'tables'
 }
 
+/** Открывает выбранный раздел настроек. */
 function openSettings(section) {
   closeMobileMenu()
   currentSettings.value = section
   currentPage.value = 'settings'
 }
 
+/** Переключает раздел работы с техникой. */
 function openVehicleSection(section) {
   closeMobileMenu()
   currentVehicleSection.value = section
   currentPage.value = ['report', 'gtoForecast'].includes(section) ? 'reports' : 'vehicles'
 }
 
+/** Открывает список материалов, выбранных для требования. */
 function openSelectedComponents() {
   closeMobileMenu()
   currentPage.value = 'selected-components'
 }
 
+/** Добавляет материалы выбранного шаблона ТО в требование. */
 function applyMaintenanceTemplate(rows) {
   currentTable.value = 'v_full_ost'
   updateSelectedComponentRows(rows)
 }
 
+/** Обновляет выбранного ответственного сотрудника. */
 function updateResponsibleEmployee(employee) {
   if (
     employee &&
@@ -171,6 +184,7 @@ function updateResponsibleEmployee(employee) {
   selectedResponsibleEmployee.value = employee
 }
 
+/** Обновляет выбранные материалы и их количества. */
 function updateSelectedComponentRows(rows) {
   selectedComponentRows.value = rows
   const sourceTable = rows[0]?.__sourceTable

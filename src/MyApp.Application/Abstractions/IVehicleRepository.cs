@@ -9,6 +9,9 @@ namespace MyApp.Application.Abstractions;
 /// </summary>
 public interface IVehicleRepository
 {
+    /// <summary>Проверяет ежедневные показания либо сохраняет их с контролем предварительного результата.</summary>
+    Task<ServiceResult<DailyHoursPreview>> ProcessDailyHoursAsync(DailyHoursRequest request,
+        bool commit, Guid userId, CancellationToken cancellationToken);
     /// <summary>Возвращает список всей техники.</summary>
     Task<IReadOnlyList<VehicleResponse>> GetVehiclesAsync(
         CancellationToken cancellationToken, bool includeArchived = false);
@@ -166,41 +169,57 @@ public interface IVehicleRepository
     /// <summary>Удаляет видео ремонтных работ.</summary>
     Task<bool> DeleteWorkVideoAsync(Guid videoId, CancellationToken cancellationToken);
 
+    /// <summary>Добавляет заявку на закупку запчастей для неисправности.</summary>
     Task<Guid?> AddPartsRequestAsync(
         Guid defectId,
         VehiclePartsRequest request,
         Guid createdBy,
         CancellationToken cancellationToken);
+    /// <summary>Обновляет реквизиты и состояние заявки на закупку запчастей.</summary>
     Task<bool> UpdatePartsRequestAsync(
         Guid requestId,
         VehiclePartsRequest request,
         CancellationToken cancellationToken);
+    /// <summary>Возвращает заявки на закупку запчастей для выбранной неисправности.</summary>
     Task<IReadOnlyList<VehiclePartsRequestResponse>> GetPartsRequestsAsync(
         Guid defectId,
         CancellationToken cancellationToken);
+    /// <summary>Удаляет заявку на закупку запчастей.</summary>
     Task<bool> DeletePartsRequestAsync(
         Guid requestId,
         CancellationToken cancellationToken);
     /// <summary>Удаляет запись журнала техники (закупка, неисправность, моточасы или работа).</summary>
     Task<bool> UpdateHistoryEntryAsync(string category, Guid id, string description, CancellationToken cancellationToken);
 
+    /// <summary>Проверяет, создал ли пользователь указанную работу.</summary>
     Task<bool> IsWorkCreatorAsync(Guid workId, Guid userId, CancellationToken cancellationToken);
 
+    /// <summary>Удаляет указанную запись истории техники.</summary>
     Task<bool> DeleteEntryAsync(
         string category,
         Guid id,
         CancellationToken cancellationToken);
 
+    /// <summary>Возвращает участников работы и состояние согласования их участия.</summary>
     Task<IReadOnlyList<VehicleWorkParticipantResponse>> GetWorkParticipantsAsync(Guid workId, CancellationToken cancellationToken);
+    /// <summary>Создаёт заявку текущего сотрудника на участие в указанной работе.</summary>
     Task<bool> RequestWorkParticipationAsync(Guid workId, Guid userId, CancellationToken cancellationToken);
+    /// <summary>Сохраняет решение по заявке на участие в работе.</summary>
     Task<bool> ReviewWorkParticipationAsync(Guid workId, Guid participantId, bool approved, Guid reviewerId, CancellationToken cancellationToken);
 
+    /// <summary>Возвращает вспомогательные работы за выбранный период.</summary>
     Task<IReadOnlyList<VehicleWorkResponse>> GetAuxiliaryWorksAsync(CancellationToken cancellationToken);
+    /// <summary>Проверяет, существует ли указанная вспомогательная работа.</summary>
     Task<bool> AuxiliaryWorkExistsAsync(Guid workId, CancellationToken cancellationToken);
+    /// <summary>Проверяет принадлежность медиафайла указанной вспомогательной работе.</summary>
     Task<bool> AuxiliaryMediaExistsAsync(Guid mediaId, bool video, CancellationToken cancellationToken);
+    /// <summary>Создаёт запись о вспомогательной работе сотрудника.</summary>
     Task<Guid> AddAuxiliaryWorkAsync(AuxiliaryWorkRequest request, Guid userId, CancellationToken cancellationToken);
 
+    /// <summary>Возвращает справочники для редактирования парка и сведения о доступных действиях.</summary>
     Task<VehicleCatalogOptions> GetVehicleCatalogOptionsAsync(CancellationToken cancellationToken);
+    /// <summary>Создаёт или обновляет карточку техники в каталоге парка.</summary>
     Task<ServiceResult<Guid>> SaveVehicleCatalogAsync(Guid? id, VehicleCatalogRequest request, CancellationToken cancellationToken);
+    /// <summary>Переводит технику в архив с сохранением связанных записей истории.</summary>
     Task<bool> ArchiveVehicleAsync(Guid id, CancellationToken cancellationToken);
 }

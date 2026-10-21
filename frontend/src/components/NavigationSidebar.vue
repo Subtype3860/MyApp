@@ -53,6 +53,7 @@ const emit = defineEmits([
 const sidebarElement = ref(null)
 const mediaQuery = window.matchMedia('(max-width: 760px)')
 const isMobile = ref(mediaQuery.matches)
+/** Обновляет состояние навигации при изменении ширины экрана. */
 function handleViewportChange(event) {
   isMobile.value = event.matches
   if (!event.matches) emit('close')
@@ -74,6 +75,7 @@ watch(
     }
   },
 )
+/** Обрабатывает клавиатурное управление меню навигации. */
 function handleMenuKeydown(event) {
   if (!isMobile.value || !props.mobileOpen) return
   if (event.key === 'Escape') {
@@ -96,11 +98,11 @@ function handleMenuKeydown(event) {
 }
 const isTablesExpanded = ref(false)
 const isVehiclesExpanded = ref(false)
-const isReportsExpanded = ref(true)
+const isReportsExpanded = ref(false)
 const isSettingsExpanded = ref(false)
 const profile = ref(null)
 const avatarUrl = ref('')
-const canView = (permission) =>
+const /** Проверяет наличие разрешения на отображение раздела. */ canView = (permission) =>
   props.isAdmin ||
   String(localStorage.getItem('myapp.userRole')).toLowerCase() ===
     'administrator' ||
@@ -121,11 +123,13 @@ watch(
 )
 onBeforeUnmount(clearAvatar)
 
+/** Освобождает временный URL аватара и сбрасывает его отображение. */
 function clearAvatar() {
   if (avatarUrl.value) URL.revokeObjectURL(avatarUrl.value)
   avatarUrl.value = ''
 }
 
+/** Загружает профиль текущего пользователя. */
 async function loadProfile() {
   const response = await fetch('/api/profile', {
     headers: { Authorization: `Bearer ${props.token}` },
@@ -143,16 +147,19 @@ async function loadProfile() {
   }
 }
 
+/** Раскрывает или сворачивает пункты табличных разделов. */
 function toggleTables() {
   if (props.collapsed && !isMobile.value) emit('toggle')
   isTablesExpanded.value = !isTablesExpanded.value
 }
 
+/** Раскрывает или сворачивает разделы работы с техникой. */
 function toggleVehicles() {
   if (props.collapsed && !isMobile.value) emit('toggle')
   isVehiclesExpanded.value = !isVehiclesExpanded.value
 }
 
+/** Раскрывает или сворачивает список отчётов. */
 function toggleReports() {
   if (props.collapsed && !isMobile.value) {
     isReportsExpanded.value = true
@@ -162,6 +169,7 @@ function toggleReports() {
   isReportsExpanded.value = !isReportsExpanded.value
 }
 
+/** Раскрывает или сворачивает разделы настроек. */
 function toggleSettings() {
   if (props.collapsed && !isMobile.value) emit('toggle')
   isSettingsExpanded.value = !isSettingsExpanded.value

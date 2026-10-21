@@ -7,8 +7,10 @@ using MyApp.Application.DTO;
 using MyApp.Application.Services;
 using Xunit;
 namespace MyApp.Infrastructure.Tests;
+/// <summary>Тесты сопоставления двигателей при импорте показаний.</summary>
 public sealed class VehicleHoursEngineImportTests
 {
+    /// <summary>Проверяет импорт в указанный ДВС без угадывания номера двигателя.</summary>
     [Theory]
     [InlineData("901;Truck;875;852", 2, 0, ".csv")]
     [InlineData("901;Truck;875/852", 2, 0, ".csv")]
@@ -30,9 +32,10 @@ public sealed class VehicleHoursEngineImportTests
             nameof(IVehicleRepository.ImportHoursAsync)=>Capture(args),
             _=>throw new InvalidOperationException(method.Name)
         };
+        /** Перехватывает аргументы вызова репозитория для проверки выбранного двигателя. */
         Task Capture(object?[] args){captured=(IReadOnlyList<VehicleHoursImportItem>)args[1]!;Assert.Equal(new DateOnly(2026,10,11),args[0]);return Task.CompletedTask;}
         var users=DispatchProxy.Create<IUserRepository, Proxy>();
-        ((Proxy)(object)users).Handler = (_, _) => Task.FromResult<MyApp.Domain.Entities.User?>(new() {
+        ((Proxy)(object)users).Handler = (_, _) => Task.FromResult<MyApp.Application.Models.User?>(new() {
             Id = Guid.NewGuid(), FirstName = "Иван", MiddleName = "", LastName = "Иванов",
             UserName = "mechanic", Email = "mechanic@local", PasswordHash = "test", Role = "user",
             Profession = new() { Id = Guid.NewGuid(), Name = "Механик" }
@@ -46,11 +49,13 @@ public sealed class VehicleHoursEngineImportTests
         if(count==2){Assert.Equal(875,captured[0].EngineHours);Assert.Equal(852,captured[1].EngineHours);Assert.Equal(1,captured[0].EngineNumber);Assert.Equal(2,captured[1].EngineNumber);}
         if(data.Contains(";;852"))Assert.Equal(2,Assert.Single(captured).EngineNumber);
     }
+    /// <summary>Собирает тестовый Excel с показаниями двигателей.</summary>
     private static MemoryStream Excel(string row)
     {
         var output=new MemoryStream();
         using(var zip=new ZipArchive(output,ZipArchiveMode.Create,true))
         {
+            /** Добавляет XML-часть в ZIP-архив тестовой книги Excel. */
             void Entry(string name,string xml){using var writer=new StreamWriter(zip.CreateEntry(name).Open());writer.Write(xml);}
             Entry("[Content_Types].xml", """<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/></Types>""");
             Entry("_rels/.rels", """<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>""");
@@ -61,5 +66,8 @@ public sealed class VehicleHoursEngineImportTests
         }
         output.Position=0;return output;
     }
-    public class Proxy:DispatchProxy { public Func<MethodInfo,object?[],object?> Handler {get;set;}=null!;protected override object? Invoke(MethodInfo? method,object?[]? args)=>Handler(method!,args!); }
+    /// <summary>Тестовый прокси, передающий вызовы зависимости заданному обработчику.</summary>
+    public class Proxy:DispatchProxy { public Func<MethodInfo,object?[],object?> Handler {get;set;}=null!;
+        /// <summary>Передаёт вызов зависимости настроенному тестовому обработчику.</summary>
+        protected override object? Invoke(MethodInfo? method,object?[]? args)=>Handler(method!,args!); }
 }

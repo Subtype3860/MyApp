@@ -14,11 +14,13 @@ let warningTimer
 let countdownTimer
 let expired = false
 
+/** Останавливает таймеры контроля бездействия и обратного отсчёта. */
 function clearTimers() {
   clearTimeout(idleTimer)
   clearTimeout(warningTimer)
   clearInterval(countdownTimer)
 }
+/** Сообщает об истечении времени пользовательской сессии. */
 function expire() {
   if (expired) return
   expired = true
@@ -26,10 +28,12 @@ function expire() {
   dialog.value?.close()
   emit('expired')
 }
+/** Обновляет оставшееся время до завершения сессии. */
 function updateCountdown() {
   remainingSeconds.value = Math.max(0, Math.ceil((lastActivity + idleMilliseconds + warningMilliseconds - Date.now()) / 1000))
   if (remainingSeconds.value === 0) expire()
 }
+/** Проверяет срок бездействия и переключает предупреждение или завершает сессию. */
 async function checkDeadline() {
   if (expired) return
   const now = Date.now()
@@ -53,6 +57,7 @@ async function checkDeadline() {
   clearTimeout(idleTimer)
   idleTimer = setTimeout(checkDeadline, warningDeadline - now)
 }
+/** Учитывает действие пользователя при контроле времени бездействия. */
 function activity() {
   if (expired) return
   // Activity after the deadline must show the warning, rather than cancel it.
@@ -64,6 +69,7 @@ function activity() {
   clearTimeout(idleTimer)
   idleTimer = setTimeout(checkDeadline, idleMilliseconds)
 }
+/** Продлевает активную работу после подтверждения пользователя. */
 function continueWorking() {
   if (Date.now() >= lastActivity + idleMilliseconds + warningMilliseconds) {
     expire()
@@ -75,6 +81,7 @@ function continueWorking() {
   lastActivity = Date.now()
   idleTimer = setTimeout(checkDeadline, idleMilliseconds)
 }
+/** Перепроверяет срок сессии при возвращении к вкладке приложения. */
 function checkOnReturn() {
   if (!document.hidden) checkDeadline()
 }

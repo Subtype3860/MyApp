@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test'
 
+/** Подготавливает страницу и ответы API для сценариев браузерного теста. */
 async function setup(page, status, multiple = false) {
   await page.addInitScript(() => {
     localStorage.setItem('myapp.authToken', 'test')
@@ -37,8 +38,9 @@ async function setup(page, status, multiple = false) {
   await page.goto('/')
   await page.getByRole('button', { name: 'Транспорт', exact: true }).click()
   await page.getByRole('button', { name: 'Заявка на закупку ЗЧ', exact: true }).click()
-  return { history, mutations, setFail(value) { fail = value } }
+  return { history, mutations, /** Переключает тестовый API в режим ошибки для проверки интерфейса. */ setFail(value) { fail = value } }
 }
+/** Выполняет действие с заявкой на запчасти в браузерном тесте. */
 async function action(page, name, row = page.locator('.parts-request-card').first()) {
   await row.getByLabel('Действия с заявками на закупку', { exact: true }).click()
   await page.getByRole('button', { name, exact: true }).click()

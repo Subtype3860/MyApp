@@ -1,5 +1,6 @@
 namespace MyApp.Application.Security;
 
+/// <summary>Каталог разрешений и правила их нормализации для навигации приложения.</summary>
 public static class Permissions
 {
     public const string HomeView = "menu.home";
@@ -36,9 +37,11 @@ public static class Permissions
         Catalog.SelectMany(item => new[] { item.Key }.Concat(item.Children.Select(child => child.Key)))
             .ToArray();
 
+    /// <summary>Проверяет наличие разрешения в каталоге поддерживаемых прав.</summary>
     public static bool IsKnown(string permission) =>
         All.Contains(permission, StringComparer.OrdinalIgnoreCase);
 
+    /// <summary>Нормализует разрешения и добавляет необходимые родительские пункты навигации.</summary>
     public static IReadOnlyList<string> Expand(IEnumerable<string>? permissions)
     {
         var legacyMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
@@ -67,11 +70,13 @@ public static class Permissions
     }
 }
 
+/// <summary>Описание разрешения и его положения в дереве навигации.</summary>
 public sealed record PermissionDefinition(
     string Key,
     string Label,
     IReadOnlyList<PermissionDefinition> Children)
 {
+    /// <summary>Создаёт PermissionDefinition и сохраняет переданные зависимости.</summary>
     public PermissionDefinition(string key, string label)
         : this(key, label, [])
     {

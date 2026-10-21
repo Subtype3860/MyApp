@@ -7,10 +7,12 @@ using MyApp.Application.Security;
 
 namespace MyApp.API.Controllers;
 
+/// <summary>HTTP-эндпоинты аутентификации.</summary>
 [ApiController]
 [Route("api/auth")]
 public class AuthController : ControllerBase
 {
+    /// <summary>Отзывает текущую сессию пользователя.</summary>
     [Authorize]
     [HttpPost("logout")]
     public async Task<IActionResult> Logout([FromServices] IUserSessionStore sessions, CancellationToken cancellationToken)
@@ -20,6 +22,7 @@ public class AuthController : ControllerBase
         return NoContent();
     }
 
+    /// <summary>Проверяет учётные данные и возвращает результат входа с токеном доступа.</summary>
     [HttpPost("login")]
     public async Task<IActionResult> Login(
         [FromBody] LoginRequest request,

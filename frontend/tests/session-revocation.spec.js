@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test'
 
+/** Подготавливает тестовую сессию для проверки её отзыва. */
 async function session(page, options = {}) {
   await page.addInitScript(() => {
     localStorage.setItem('myapp.authToken', 'current-token')

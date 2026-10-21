@@ -13,6 +13,7 @@ internal sealed class RequirementPostgreSqlDatabase : IAsyncDisposable
     private readonly string schema;
     private readonly string scopedConnectionString;
 
+    /// <summary>Подготавливает объект тестового окружения с заданными зависимостями.</summary>
     private RequirementPostgreSqlDatabase(string connectionString, string schema)
     {
         adminConnectionString = connectionString;
@@ -23,13 +24,16 @@ internal sealed class RequirementPostgreSqlDatabase : IAsyncDisposable
         }.ConnectionString;
     }
 
+    /// <summary>Создаёт контекст EF Core, подключённый к изолированной тестовой схеме.</summary>
     public AppDbContext CreateContext() =>
         new(new DbContextOptionsBuilder<AppDbContext>()
             .UseNpgsql(scopedConnectionString)
             .Options);
 
+    /// <summary>Создаёт источник подключений к изолированной тестовой схеме.</summary>
     public NpgsqlDataSource CreateDataSource() => NpgsqlDataSource.Create(scopedConnectionString);
 
+    /// <summary>Создаёт изолированную схему PostgreSQL и подготавливает данные теста.</summary>
     public static async Task<RequirementPostgreSqlDatabase> CreateAsync(
         decimal stock = 10m,
         bool numericViews = false)
@@ -66,6 +70,7 @@ internal sealed class RequirementPostgreSqlDatabase : IAsyncDisposable
         }
     }
 
+    /// <summary>Создаёт таблицы и исходные данные изолированной тестовой схемы.</summary>
     private async Task InitializeAsync(decimal quantity, bool numericViews)
     {
         await using var dataSource = NpgsqlDataSource.Create(scopedConnectionString);
@@ -126,6 +131,7 @@ internal sealed class RequirementPostgreSqlDatabase : IAsyncDisposable
         await CsvDatabaseMigration.InitializeAsync(db);
     }
 
+    /// <summary>Выполняет SQL-команду в изолированной тестовой схеме.</summary>
     public async Task ExecuteAsync(string sql, params (string Name, object Value)[] values)
     {
         await using var dataSource = NpgsqlDataSource.Create(scopedConnectionString);
@@ -135,6 +141,7 @@ internal sealed class RequirementPostgreSqlDatabase : IAsyncDisposable
         await command.ExecuteNonQueryAsync();
     }
 
+    /// <summary>Читает актуальный остаток материала для утверждений теста.</summary>
     public async Task<decimal> StockAsync(string name = "Filter", string source = "v_full_ost")
     {
         await using var dataSource = NpgsqlDataSource.Create(scopedConnectionString);
@@ -145,6 +152,7 @@ internal sealed class RequirementPostgreSqlDatabase : IAsyncDisposable
         return (decimal)(await command.ExecuteScalarAsync())!;
     }
 
+    /// <summary>Читает остаток из прежнего складского источника в тестовой схеме.</summary>
     public async Task<decimal> LegacyStockAsync()
     {
         await using var source = CreateDataSource();
@@ -152,6 +160,7 @@ internal sealed class RequirementPostgreSqlDatabase : IAsyncDisposable
         return (decimal)(await command.ExecuteScalarAsync())!;
     }
 
+    /// <summary>Возвращает количество записей для проверки состояния тестовой базы.</summary>
     public async Task<long> CountAsync()
     {
         await using var dataSource = NpgsqlDataSource.Create(scopedConnectionString);
@@ -160,6 +169,7 @@ internal sealed class RequirementPostgreSqlDatabase : IAsyncDisposable
         return (long)(await command.ExecuteScalarAsync())!;
     }
 
+    /// <summary>Удаляет изолированную схему после завершения теста.</summary>
     public async ValueTask DisposeAsync()
     {
         await using var connection = new NpgsqlConnection(adminConnectionString);

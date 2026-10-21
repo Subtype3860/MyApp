@@ -1,5 +1,6 @@
 using System;
-namespace MyApp.Domain.Entities {
+namespace MyApp.Application.Models {
+    /// <summary>Учётная запись пользователя, его роль, профессия и данные сессии.</summary>
     public class User {
         public Guid Id { get; set; }
         public required string FirstName { get; set; }

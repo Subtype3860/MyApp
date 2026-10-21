@@ -3,8 +3,10 @@ using Microsoft.EntityFrameworkCore.Storage;
 
 namespace MyApp.Infrastructure.Db;
 
+/// <summary>Перенос прежних CSV-данных в структуру хранения PostgreSQL.</summary>
 public static class CsvDatabaseMigration
 {
+    /// <summary>Инициализирует структуру и исходные данные хранилища.</summary>
     public static async Task InitializeAsync(AppDbContext db, CancellationToken cancellationToken = default)
     {
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);

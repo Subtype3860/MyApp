@@ -37,6 +37,7 @@ public class VehicleController : ControllerBase
         return Ok(vehicles);
     }
 
+    /// <summary>Возвращает справочники парка и доступные текущему пользователю действия.</summary>
     [HttpGet("fleet-options")]
     public async Task<IActionResult> FleetOptions([FromServices] IVehicleService service, CancellationToken cancellationToken)
     {
@@ -44,6 +45,7 @@ public class VehicleController : ControllerBase
         return Ok(await service.GetVehicleCatalogOptionsAsync(userId, cancellationToken));
     }
 
+    /// <summary>Создаёт карточку техники через сервис управления парком.</summary>
     [HttpPost]
     public async Task<IActionResult> CreateVehicle([FromBody] VehicleCatalogRequest request, [FromServices] IVehicleService service, CancellationToken cancellationToken)
     {
@@ -51,6 +53,7 @@ public class VehicleController : ControllerBase
         return this.ToActionResult(await service.SaveVehicleCatalogAsync(null, request, userId, cancellationToken), id => Created($"/api/vehicles/{id}/journal", new { id }));
     }
 
+    /// <summary>Обновляет карточку техники через сервис управления парком.</summary>
     [HttpPut("{vehicleId:guid}")]
     public async Task<IActionResult> UpdateVehicle(Guid vehicleId, [FromBody] VehicleCatalogRequest request, [FromServices] IVehicleService service, CancellationToken cancellationToken)
     {
@@ -58,6 +61,7 @@ public class VehicleController : ControllerBase
         return this.ToActionResult(await service.SaveVehicleCatalogAsync(vehicleId, request, userId, cancellationToken), id => Ok(new { id }));
     }
 
+    /// <summary>Архивирует карточку техники с сохранением её истории.</summary>
     [HttpDelete("{vehicleId:guid}")]
     public async Task<IActionResult> RemoveVehicle(Guid vehicleId, [FromServices] IVehicleService service, CancellationToken cancellationToken)
     {
@@ -208,6 +212,7 @@ public class VehicleController : ControllerBase
             : File(video.Content, video.ContentType, enableRangeProcessing: true);
     }
 
+    /// <summary>Выдаёт временный билет просмотра видео неисправности.</summary>
     [HttpPost("defect-videos/{videoId:guid}/stream-ticket")]
     public IActionResult CreateDefectVideoStreamTicket(
         Guid videoId,
@@ -275,6 +280,26 @@ public class VehicleController : ControllerBase
             $"/api/vehicles/{vehicleId}/journal");
     }
 
+    /// <summary>Проверяет ежедневные показания и возвращает предварительный результат без записи.</summary>
+    [HttpPost("hours/daily/preview")]
+    [RequestSizeLimit(5 * 1024 * 1024)]
+    public async Task<IActionResult> PreviewDailyHours([FromBody] DailyHoursRequest request,
+        [FromServices] IVehicleService service, CancellationToken cancellationToken)
+    {
+        if (!TryGetUserId(out var userId)) return Unauthorized();
+        return this.ToActionResult(await service.ProcessDailyHoursAsync(request, false, userId, cancellationToken), value => Ok(value));
+    }
+
+    /// <summary>Сохраняет проверенные ежедневные показания с контролем отпечатка предварительного результата.</summary>
+    [HttpPost("hours/daily/commit")]
+    [RequestSizeLimit(5 * 1024 * 1024)]
+    public async Task<IActionResult> CommitDailyHours([FromBody] DailyHoursRequest request,
+        [FromServices] IVehicleService service, CancellationToken cancellationToken)
+    {
+        if (!TryGetUserId(out var userId)) return Unauthorized();
+        return this.ToActionResult(await service.ProcessDailyHoursAsync(request, true, userId, cancellationToken), value => Ok(value));
+    }
+
     /// <summary>Импортирует моточасы техники из файла.</summary>
     [HttpPost("hours/import")]
     [IgnoreAntiforgeryToken]
@@ -328,6 +353,7 @@ public class VehicleController : ControllerBase
             $"/api/vehicles/{vehicleId}/journal");
     }
 
+    /// <summary>Возвращает участников работы и состояние согласования их участия.</summary>
     [HttpGet("works/{workId:guid}/participants")]
     public async Task<IActionResult> GetWorkParticipants(Guid workId, [FromServices] IVehicleService service, CancellationToken cancellationToken)
     {
@@ -336,6 +362,7 @@ public class VehicleController : ControllerBase
     }
 
     // The participant identity always comes from the authenticated session.
+    /// <summary>Создаёт заявку текущего сотрудника на участие в указанной работе.</summary>
     [HttpPost("works/{workId:guid}/participants")]
     public async Task<IActionResult> RequestWorkParticipation(Guid workId, [FromServices] IVehicleService service, CancellationToken cancellationToken)
     {
@@ -344,6 +371,7 @@ public class VehicleController : ControllerBase
         return this.ToActionResult(result, _ => Ok());
     }
 
+    /// <summary>Сохраняет решение по заявке на участие в работе.</summary>
     [HttpPost("works/{workId:guid}/participants/{participantId:guid}/review")]
     public async Task<IActionResult> ReviewWorkParticipation(Guid workId, Guid participantId,
         [FromBody] VehicleWorkParticipantReviewRequest request, [FromServices] IVehicleService service, CancellationToken cancellationToken)
@@ -457,6 +485,7 @@ public class VehicleController : ControllerBase
             : File(video.Content, video.ContentType, enableRangeProcessing: true);
     }
 
+    /// <summary>Выдаёт временный билет просмотра видео выполненной работы.</summary>
     [HttpPost("work-videos/{videoId:guid}/stream-ticket")]
     public IActionResult CreateWorkVideoStreamTicket(
         Guid videoId,
@@ -468,6 +497,7 @@ public class VehicleController : ControllerBase
         return Ok(new { url = $"/api/vehicles/video-stream/{ticket}" });
     }
 
+    /// <summary>Выдаёт видеопоток после проверки билета и актуальности пользовательской сессии.</summary>
     [HttpGet("video-stream/{ticket}")]
     [AllowAnonymous]
     public async Task<IActionResult> StreamVideo(
@@ -526,6 +556,7 @@ public class VehicleController : ControllerBase
         return this.ToActionResult(result, _ => NoContent());
     }
 
+    /// <summary>Добавляет заявку на закупку запчастей для неисправности.</summary>
     [HttpPost("defects/{defectId:guid}/parts-requests")]
     [IgnoreAntiforgeryToken]
     public async Task<IActionResult> AddPartsRequest(
@@ -546,6 +577,7 @@ public class VehicleController : ControllerBase
             new { id }));
     }
 
+    /// <summary>Обновляет реквизиты и состояние заявки на закупку запчастей.</summary>
     [HttpPut("parts-requests/{requestId:guid}")]
     [IgnoreAntiforgeryToken]
     public async Task<IActionResult> UpdatePartsRequest(
@@ -564,6 +596,7 @@ public class VehicleController : ControllerBase
         return this.ToActionResult(result, _ => NoContent());
     }
 
+    /// <summary>Удаляет заявку на закупку запчастей.</summary>
     [HttpDelete("parts-requests/{requestId:guid}")]
     [IgnoreAntiforgeryToken]
     public async Task<IActionResult> DeletePartsRequest(
@@ -594,6 +627,7 @@ public class VehicleController : ControllerBase
             ? NoContent() : NotFound();
     }
 
+    /// <summary>Удаляет указанную запись истории техники.</summary>
     [HttpDelete("{category}/{id:guid}")]
     public async Task<IActionResult> DeleteEntry(
         string category,
@@ -637,6 +671,7 @@ public class VehicleController : ControllerBase
     private IActionResult InvalidFile(string message) =>
         BadRequest(new ValidationProblemDetails(new Dictionary<string, string[]> { ["file"] = [message] }));
 
+    /// <summary>Создаёт временный билет, связывающий видео с текущей сессией пользователя.</summary>
     private static string CreateVideoStreamTicket(
         IMemoryCache cache,
         VideoStreamTicket ticket)
@@ -649,9 +684,11 @@ public class VehicleController : ControllerBase
         return token;
     }
 
+    /// <summary>Формирует ключ кеша для временного билета просмотра видео.</summary>
     private static string GetVideoStreamTicketKey(string ticket) =>
         $"vehicle-video-stream:{ticket}";
 
+    /// <summary>Считывает идентификатор пользователя и метку сессии для билета просмотра видео.</summary>
     private VideoStreamTicket CreateVideoIdentity(Guid videoId, bool isWorkVideo)
     {
         if (!SessionIdentity.TryRead(User, out var userId, out var stamp))
@@ -659,5 +696,6 @@ public class VehicleController : ControllerBase
         return new(videoId, isWorkVideo, userId, stamp);
     }
 
+    /// <summary>Временное разрешение на чтение конкретного видео в рамках сессии.</summary>
     private sealed record VideoStreamTicket(Guid VideoId, bool IsWorkVideo, Guid UserId, Guid Stamp);
 }

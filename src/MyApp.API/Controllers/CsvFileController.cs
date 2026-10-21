@@ -6,6 +6,7 @@ using Npgsql;
 
 namespace MyApp.API.Controllers;
 
+/// <summary>HTTP-эндпоинты импорта и экспорта табличных данных.</summary>
 [ApiController]
 [Route("api/admin/csv-files")]
 [Route("api/admin/imports")]
@@ -14,6 +15,7 @@ public class CsvFileController : ControllerBase
 {
     private const long MaximumCsvSize = 20 * 1024 * 1024;
 
+    /// <summary>Возвращает данные табличного источника.</summary>
     [HttpGet("{fileName}")]
     public async Task<IActionResult> Get(
         string fileName,
@@ -35,6 +37,7 @@ public class CsvFileController : ControllerBase
         }
     }
 
+    /// <summary>Возвращает имена листов загруженной книги Excel.</summary>
     [HttpPost("sheets")]
     [RequestSizeLimit(21 * 1024 * 1024)]
     [RequestFormLimits(MultipartBodyLengthLimit = 21 * 1024 * 1024)]
@@ -49,6 +52,7 @@ public class CsvFileController : ControllerBase
         { return BadRequest(new { errors = new { file = new[] { exception.Message } } }); }
     }
 
+    /// <summary>Возвращает результаты проверки загруженного файла перед импортом.</summary>
     [HttpPost("{fileName}/preview")]
     [RequestSizeLimit(21 * 1024 * 1024)]
     [RequestFormLimits(MultipartBodyLengthLimit = 21 * 1024 * 1024)]
@@ -68,6 +72,7 @@ public class CsvFileController : ControllerBase
         { return BadRequest(new { errors = new { file = new[] { exception.Message } } }); }
     }
 
+    /// <summary>Заменяет данные табличного источника содержимым проверенного импорта.</summary>
     [HttpPost("{fileName}")]
     [RequestSizeLimit(21 * 1024 * 1024)]
     [RequestFormLimits(MultipartBodyLengthLimit = 21 * 1024 * 1024)]

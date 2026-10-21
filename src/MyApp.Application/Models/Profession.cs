@@ -1,5 +1,6 @@
-namespace MyApp.Domain.Entities;
+namespace MyApp.Application.Models;
 
+/// <summary>Профессия сотрудника и связанные с ней учётные записи.</summary>
 public class Profession
 {
     public Guid Id { get; set; }

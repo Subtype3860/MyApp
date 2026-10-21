@@ -22,6 +22,7 @@ const selectedSheets = reactive({})
 const loadingSheets = reactive({})
 const messages = reactive({})
 
+/** Обновляет выбранный файл импорта и связанные настройки его проверки. */
 async function selectFile(fileName, event) {
   const file = event.target.files?.[0] ?? null
   selectedFiles[fileName] = file
@@ -59,6 +60,7 @@ async function selectFile(fileName, event) {
   }
 }
 
+/** Скачивает текущие данные выбранного источника в формате CSV. */
 async function downloadFile(fileName) {
   messages[fileName] = ''
   const response = await fetch(`/api/admin/imports/${fileName}`, {
@@ -83,6 +85,7 @@ async function downloadFile(fileName) {
   window.setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
 
+/** Отправляет выбранный файл на предварительную проверку импорта. */
 async function previewFile(fileName) {
   const file = selectedFiles[fileName]
   if (!file) return
@@ -107,6 +110,7 @@ async function previewFile(fileName) {
   }
 }
 
+/** Сохраняет проверенный импорт и обновляет состояние источника данных. */
 async function replaceFile(fileName) {
   const file = selectedFiles[fileName]
   if (!file || !previews[fileName]) {

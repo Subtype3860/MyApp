@@ -7,8 +7,10 @@ using NpgsqlTypes;
 
 namespace MyApp.Infrastructure.Repositories;
 
+/// <summary>Доступ к данным импорта и экспорта табличных данных.</summary>
 public sealed class CsvFileRepository(NpgsqlDataSource dataSource) : ICsvFileRepository
 {
+    /// <summary>Выбирает запрос чтения данных для указанного CSV-источника.</summary>
     internal static string DataQuery(string fileName) => fileName switch
     {
         "o.csv" or "c.csv" => """
@@ -22,14 +24,17 @@ public sealed class CsvFileRepository(NpgsqlDataSource dataSource) : ICsvFileRep
         _ => throw new ArgumentException("Unsupported CSV file.", nameof(fileName))
     };
 
+    /// <summary>Сопоставляет имя CSV-файла с ключом источника данных.</summary>
     internal static string SourceKey(string fileName) => fileName switch
     {
         "o.csv" => "warehouse", "c.csv" => "mechanics", "p.csv" => "workers",
         _ => throw new ArgumentException("Unsupported import source.", nameof(fileName))
     };
 
+    /// <summary>Определяет складской источник по имени файла импорта.</summary>
     internal static string StockSource(string fileName) => fileName == "o.csv" ? "v_full_ost" : "v_meh_ost";
 
+    /// <summary>Возвращает данные табличного источника.</summary>
     public async Task<byte[]> GetAsync(string fileName, CancellationToken cancellationToken)
     {
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
@@ -50,6 +55,7 @@ public sealed class CsvFileRepository(NpgsqlDataSource dataSource) : ICsvFileRep
         return CsvImportCodec.Export(new[] { "ID" }.Concat(columns.Where(column => column != "ID")).ToArray(), rows);
     }
 
+    /// <summary>Сравнивает импортируемые строки с текущими данными и возвращает предварительный результат.</summary>
     public async Task<CsvImportPreview> PreviewAsync(string fileName, byte[] content, CancellationToken cancellationToken)
     {
         var csv = CsvImportCodec.Parse(fileName, content, cancellationToken);
@@ -86,6 +92,7 @@ public sealed class CsvFileRepository(NpgsqlDataSource dataSource) : ICsvFileRep
             csv.Rows.Count, csv.Columns, csv.Rows.Take(10).Select(row => row.Data).ToArray());
     }
 
+    /// <summary>Заменяет данные табличного источника содержимым проверенного импорта.</summary>
     public async Task<CsvImportResult> ReplaceAsync(string fileName, byte[] content, CancellationToken cancellationToken)
     {
         var csv = CsvImportCodec.Parse(fileName, content, cancellationToken);

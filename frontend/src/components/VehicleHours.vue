@@ -2,19 +2,28 @@
 import { computed,onMounted,onBeforeUnmount,ref } from 'vue'
 import { buildForecastRows, forecastGroups } from '../utils/gtoForecast'
 import { localDate,vehicleTitle } from '../utils/shiftReport'
+import DailyHoursImport from './DailyHoursImport.vue'
+const importMode=ref('daily')
 const props=defineProps({token:{type:String,required:true}})
 const canManage=ref(false)
 const rows=ref([]),query=ref(''),date=ref(localDate(new Date())),loading=ref(false),error=ref(''),message=ref(''),busy=ref('')
 const modal=ref(null),file=ref(null),importing=ref(false),importResult=ref(null)
 let controller
 const matches=computed(()=>rows.value.filter(row=>[row.vehicle.modelName,row.vehicle.typeName,row.vehicle.garageNumber,row.vehicle.stateNumber].some(value=>String(value??'').toLocaleLowerCase('ru').includes(query.value.trim().toLocaleLowerCase('ru')))))
-const headers=()=>({Authorization:`Bearer ${props.token}`})
+const /** Формирует заголовки запроса с токеном текущей сессии. */ headers=()=>({Authorization:`Bearer ${props.token}`})
+/** Создаёт ошибку из ответа API с резервным сообщением. */
 async function failure(response,fallback){const body=await response.json().catch(()=>null);return new Error(body?.message || Object.values(body?.errors ?? {}).flat()[0] || fallback)}
+/** Загружает технику и показания ДВС, подготавливая поля ручного ввода. */
 async function load(){controller?.abort();controller=new AbortController();loading.value=true;error.value='';try{const response=await fetch('/api/vehicles/repair-journal',{headers:headers(),signal:controller.signal});if(!response.ok)throw await failure(response,'Не удалось загрузить технику.');rows.value=forecastGroups(buildForecastRows(await response.json())).flatMap(group=>group.rows);for(const row of rows.value)row.draft=row.engines.map(engine=>engine.hours ?? '')}catch(e){if(e.name!=='AbortError')error.value=e.message}finally{loading.value=false}}
+/** Проверяет и сохраняет вручную введённые показания отдельных ДВС выбранной техники. */
 async function save(row){if(!canManage.value)return;if(busy.value || importing.value)return;if(!date.value){error.value='Выберите дату показаний.';return}const values=row.draft.map(value=>value==='' ? null : Number(value));if(values.some(value=>value!=null && (!Number.isFinite(value)||value<0))){error.value='Введите неотрицательные моточасы.';return}if(values.every(value=>value==null)){error.value='Введите показания хотя бы одного ДВС.';return}busy.value=row.vehicle.id;error.value='';message.value='';let saved=0;try{for(let index=0;index<values.length;index++){if(values[index]==null)continue;const response=await fetch(`/api/vehicles/${row.vehicle.id}/hours`,{method:'POST',headers:{...headers(),'Content-Type':'application/json'},body:JSON.stringify({readingDate:date.value,engineHours:values[index],engineNumber:index+1,note:'Ручной ввод'})});if(!response.ok)throw await failure(response,'Не удалось сохранить моточасы.');saved++}message.value=`${vehicleTitle(row.vehicle)}: показания сохранены.`;const drafts=new Map(rows.value.filter(item=>item.vehicle.id!==row.vehicle.id).map(item=>[item.vehicle.id,[...item.draft]]));await load();for(const item of rows.value)if(drafts.has(item.vehicle.id))item.draft=drafts.get(item.vehicle.id)}catch(e){error.value=`${e.message}${saved?' Часть показаний уже сохранена.':''}`}finally{busy.value=''}}
+/** Очищает состояние предыдущего импорта и открывает диалог выбора файла. */
 function openImport(){if(!canManage.value)return;file.value=null;importResult.value=null;modal.value.showModal()}
+/** Проверяет CSV или XLSX с моточасами, загружает его и обновляет показания. */
 async function importFile(){if(!canManage.value)return;if(!file.value || importing.value)return;if(!/\.(csv|xlsx)$/i.test(file.value.name)||file.value.size>5*1024*1024){error.value='Выберите CSV или XLSX до 5 МБ.';return}importing.value=true;error.value='';importResult.value=null;try{const body=new FormData();body.append('file',file.value);body.append('readingDate',date.value);const response=await fetch('/api/vehicles/hours/import',{method:'POST',headers:headers(),body});if(!response.ok)throw await failure(response,'Не удалось импортировать файл.');importResult.value=await response.json();await load()}catch(e){error.value=e.message}finally{importing.value=false}}
+/** Скачивает CSV-шаблон с отдельными столбцами моточасов ДВС1 и ДВС2. */
 function template(){const content='\uFEFFgarage_number;model;engine_1;engine_2\n901;SANY SET 150S;875;852\n94;SANY SY1250H;20511;\n';const url=URL.createObjectURL(new Blob([content],{type:'text/csv;charset=utf-8'}));const link=document.createElement('a');link.href=url;link.download='Шаблон моточасов.csv';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000)}
+/** Запрашивает право текущего пользователя изменять моточасы. */
 async function loadAccess(){try{const response=await fetch('/api/vehicles/fleet-options',{headers:headers()});if(response.ok)canManage.value=(await response.json()).canManageHours===true}catch{canManage.value=false}}
 onMounted(()=>Promise.all([load(),loadAccess()]));onBeforeUnmount(()=>controller?.abort())
 </script>
@@ -39,6 +48,9 @@ onMounted(()=>Promise.all([load(),loadAccess()]));onBeforeUnmount(()=>controller
   </div>
   <dialog ref="modal" class="hours-import" @cancel="importing && $event.preventDefault()">
    <header><h2>Импорт моточасов</h2><button type="button" aria-label="Закрыть импорт" :disabled="importing" @click="modal.close()">×</button></header>
+   <label>Формат файла <select v-model="importMode" :disabled="importing"><option value="daily">Excel: лист на каждую дату</option><option value="legacy">CSV / Excel: одна дата (прежний формат)</option></select></label>
+   <DailyHoursImport v-if="importMode==='daily'" :token="token" @busy="importing=$event" @saved="load" />
+   <template v-else>
    <p>CSV в UTF-8 или Excel XLSX, до 5 МБ. Дата показаний: {{date.split('-').reverse().join('.')}}.</p>
    <p>Колонки: <b>garage_number, model, engine_1, engine_2</b>. Для одного ДВС последняя колонка пустая. Также поддерживается значение <b>875/852</b> в одной колонке наработки.</p>
    <p>Пустые значения двух колонок не изменяют показания. Техника определяется по гаражному номеру и модели. Ошибочные строки пропускаются.</p>
@@ -47,6 +59,7 @@ onMounted(()=>Promise.all([load(),loadAccess()]));onBeforeUnmount(()=>controller
    <p v-if="error" role="alert" class="form-message--error">{{error}}</p>
    <div v-if="importResult" role="status"><p>Сохранено показаний: {{importResult.imported}}</p><ul><li v-for="(item,index) in importResult.errors" :key="index">Строка {{item.line}}: {{item.message}}</li></ul></div>
    <button class="primary-button" type="button" :disabled="!file || importing || !date" @click="importFile">{{importing?'Импорт…':'Импортировать'}}</button>
+   </template>
   </dialog>
  </section>
 </template>

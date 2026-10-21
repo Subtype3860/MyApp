@@ -27,6 +27,7 @@ const selectedInterval = computed(() =>
   ),
 )
 
+/** Формирует заголовки запроса с токеном текущей сессии. */
 function headers(json = false) {
   return {
     Authorization: `Bearer ${props.token}`,
@@ -34,6 +35,7 @@ function headers(json = false) {
   }
 }
 
+/** Извлекает понятное сообщение об ошибке из ответа API. */
 async function readError(response, fallback) {
   const problem = await response.json().catch(() => null)
   return problem?.errors
@@ -41,6 +43,7 @@ async function readError(response, fallback) {
     : problem?.detail || problem?.message || problem?.title || fallback
 }
 
+/** Выполняет авторизованный запрос управления шаблонами ТО и обрабатывает ответ. */
 async function request(url, options, fallback) {
   errorMessage.value = ''
   successMessage.value = ''
@@ -51,6 +54,7 @@ async function request(url, options, fallback) {
   return response
 }
 
+/** Загружает иерархию оборудования, интервалов ТО и материалов. */
 async function loadTemplates() {
   isLoading.value = true
   try {
@@ -77,6 +81,7 @@ async function loadTemplates() {
   }
 }
 
+/** Создаёт вид оборудования в шаблонах ТО и обновляет список. */
 async function createEquipment() {
   try {
     const response = await request(
@@ -99,6 +104,7 @@ async function createEquipment() {
   }
 }
 
+/** Создаёт интервал обслуживания выбранного оборудования. */
 async function createInterval() {
   if (!selectedEquipmentId.value) return
   try {
@@ -121,6 +127,7 @@ async function createInterval() {
   }
 }
 
+/** Запрашивает новое название и сохраняет его для выбранного элемента шаблона. */
 async function renameEntity(type, item) {
   const name = window.prompt('Новое название', item.name)?.trim()
   if (!name || name === item.name) return
@@ -141,6 +148,7 @@ async function renameEntity(type, item) {
   }
 }
 
+/** Удаляет выбранный элемент шаблона ТО после подтверждения. */
 async function deleteEntity(type, item) {
   if (!window.confirm(`Удалить «${item.name}»?`)) return
   try {
@@ -156,6 +164,7 @@ async function deleteEntity(type, item) {
   }
 }
 
+/** Добавляет найденный материал в интервал обслуживания. */
 async function addMaterial() {
   if (!selectedIntervalId.value) return
   try {
@@ -181,6 +190,7 @@ async function addMaterial() {
   }
 }
 
+/** Сохраняет новое количество материала в шаблоне ТО. */
 async function saveQuantity(item) {
   try {
     await request(
@@ -202,6 +212,7 @@ async function saveQuantity(item) {
   }
 }
 
+/** Удаляет материал из интервала обслуживания. */
 async function deleteMaterial(item) {
   try {
     await request(
@@ -216,10 +227,12 @@ async function deleteMaterial(item) {
   }
 }
 
+/** Переключает выбранный вид оборудования и связанное состояние формы. */
 function changeEquipment() {
   selectedIntervalId.value = selectedEquipment.value?.intervals[0]?.id ?? ''
 }
 
+/** Запускает поиск материалов по введённому тексту. */
 function searchMaterials() {
   clearTimeout(searchTimer)
   searchTimer = setTimeout(async () => {

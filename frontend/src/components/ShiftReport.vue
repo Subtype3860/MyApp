@@ -25,6 +25,7 @@ const controller = new AbortController()
 let previewGeneration = 0
 const previewPromises = new Map()
 
+/** Загружает данные ремонтных и вспомогательных работ для сменного отчёта. */
 async function load() {
   loading.value = true
   dataLoaded.value = false
@@ -51,6 +52,7 @@ async function load() {
   finally { loading.value = false }
 }
 
+/** Загружает изображения для предварительного просмотра вложений отчёта. */
 async function loadPreviews() {
   const generation = ++previewGeneration
   const items = cards.value.flatMap(card => cardMedia(card, 'image').slice(0, 2))
@@ -73,11 +75,13 @@ async function loadPreviews() {
   }
 }
 
+/** Открывает выбранное вложение карточки сменного отчёта. */
 function openMedia(items, type) {
   viewerItems.value = items
   viewerType.value = type
   viewerOpen.value = true
 }
+/** Формирует и скачивает PDF текущего сменного отчёта. */
 async function download() {
   if (!dataLoaded.value || !date.value || !workCount.value || missingLocations.value.length || loading.value || exporting.value) return
   exporting.value = true

@@ -4,12 +4,14 @@ using System.Text;
 using Microsoft.IdentityModel.Tokens;
 using MyApp.Application.Abstractions;
 using MyApp.Application.Security;
-using MyApp.Domain.Entities;
+using MyApp.Application.Models;
 
 namespace MyApp.Infrastructure.Security;
 
+/// <summary>Выпуск JWT с идентификатором пользователя, правами и меткой сессии.</summary>
 public sealed class JwtTokenProvider(JwtOptions options) : ITokenProvider
 {
+    /// <summary>Выпускает JWT с правами пользователя и текущей меткой сессии.</summary>
     public string Create(User user)
     {
         var credentials = new SigningCredentials(

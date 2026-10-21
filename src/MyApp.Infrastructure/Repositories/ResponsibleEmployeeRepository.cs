@@ -6,9 +6,11 @@ using MyApp.Infrastructure.Db;
 
 namespace MyApp.Infrastructure.Repositories;
 
+/// <summary>Доступ к данным выбора ответственных сотрудников.</summary>
 public sealed partial class ResponsibleEmployeeRepository(
     AppDbContext db) : IResponsibleEmployeeRepository
 {
+    /// <summary>Возвращает сотрудников указанной профессии.</summary>
     public async Task<IReadOnlyList<ResponsibleEmployeeResponse>> GetByProfessionAsync(
         string profession,
         CancellationToken cancellationToken)
@@ -36,6 +38,7 @@ public sealed partial class ResponsibleEmployeeRepository(
             .ToArray();
     }
 
+    /// <summary>Проверяет наличие ответственного сотрудника.</summary>
     public async Task<bool> ExistsAsync(
         ResponsibleEmployeeSelection employee,
         string profession,
@@ -61,6 +64,7 @@ public sealed partial class ResponsibleEmployeeRepository(
             NormalizeWhitespace(candidate) == fullName);
     }
 
+    /// <summary>Разбивает полное имя сотрудника на составляющие.</summary>
     private static EmployeeName ParseFullName(string fullName)
     {
         var parts = fullName.Split(
@@ -79,12 +83,15 @@ public sealed partial class ResponsibleEmployeeRepository(
             parts[0]);
     }
 
+    /// <summary>Убирает лишние пробелы из текста.</summary>
     private static string NormalizeWhitespace(string value) =>
         WhitespaceRegex().Replace(value.Trim(), " ");
 
+    /// <summary>Возвращает регулярное выражение для последовательностей пробельных символов.</summary>
     [GeneratedRegex(@"\s+")]
     private static partial Regex WhitespaceRegex();
 
+    /// <summary>Отдельные части полного имени сотрудника.</summary>
     private sealed record EmployeeName(
         string FirstName,
         string Patronymic,

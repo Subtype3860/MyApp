@@ -6,14 +6,15 @@ import FleetActionMenu from './FleetActionMenu.vue'
 const props = defineProps({
   navigationCollapsed: { type: Boolean, required: true },
   token: { type: String, required: true },
-  permissions: { type: Array, default: () => [] },
+  permissions: { type: Array, default: /** Создаёт независимое значение по умолчанию для свойства компонента. */ () => [] },
   isAdmin: { type: Boolean, default: false },
 })
 const emit = defineEmits(['navigate', 'navigate-vehicle'])
-const canView = (permission) =>
+const /** Проверяет наличие разрешения на отображение раздела. */ canView = (permission) =>
   props.isAdmin || props.permissions.includes(permission)
 const fleetOptions = ref({ canManage: false, groups: [], types: [], models: [] })
 const fleetEditorOpen = ref(false), editingVehicle = ref(null), mutationBusy = ref(false), fleetMessage = ref(''), fleetError = ref('')
+/** Загружает справочники парка и права управления техникой. */
 async function loadFleetOptions() {
   if (!canView('menu.vehicles')) return
   try {
@@ -21,17 +22,20 @@ async function loadFleetOptions() {
     if (response.ok) { const data = await response.json(); if (data && !Array.isArray(data)) fleetOptions.value = data }
   } catch { /* Do not expose editing controls without server permission. */ }
 }
+/** Открывает форму создания или редактирования карточки техники. */
 function openFleetEditor(vehicle = null) {
   if (!fleetOptions.value.canManage || mutationBusy.value) return
   editingVehicle.value = vehicle
   fleetError.value = ''; fleetMessage.value = ''
   fleetEditorOpen.value = true
 }
+/** Обновляет список техники после сохранения карточки. */
 async function fleetSaved(result) {
   query.value = ''
   await Promise.all([loadVehicles(), loadFleetOptions()])
   fleetMessage.value = result.editing ? 'Изменения техники сохранены.' : 'Техника добавлена в парк.'
 }
+/** Архивирует выбранную технику после подтверждения. */
 async function removeFleetVehicle(vehicle) {
   if (!fleetOptions.value.canManage || mutationBusy.value) return
   if (!window.confirm(`Удалить ${vehicle.modelName} № ${vehicle.garageNumber ?? vehicle.stateNumber} из парка? История ремонтов, моточасы и старые отчёты будут сохранены.`)) return
@@ -139,6 +143,7 @@ const shortcuts = computed(() =>
   ),
 )
 
+/** Загружает список техники для отображения. */
 async function loadVehicles() {
   if (!canView('menu.vehicles')) return
   controller?.abort()
@@ -170,6 +175,7 @@ async function loadVehicles() {
 }
 onMounted(() => Promise.all([loadVehicles(), loadFleetOptions()]))
 onBeforeUnmount(() => controller?.abort())
+/** Открывает раздел приложения по выбранной быстрой ссылке. */
 function openShortcut(item) {
   if (item.section) emit('navigate-vehicle', item.section)
   else emit('navigate', item.page)

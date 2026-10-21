@@ -8,9 +8,11 @@ using Xunit;
 
 namespace MyApp.Infrastructure.Tests;
 
+/// <summary>Тесты импорта CSV в PostgreSQL и согласованности складских остатков.</summary>
 [Trait("Category", "Integration")]
 public sealed class CsvDatabaseImportTests
 {
+    /// <summary>Проверяет обнуление отсутствующих остатков с сохранением идентификаторов и учётом фактических изменений.</summary>
     [Fact]
     public async Task Snapshot_zeroes_absent_preserves_ids_and_records_actual_changes()
     {
@@ -35,6 +37,7 @@ public sealed class CsvDatabaseImportTests
         Assert.Equal(2L, (long)(await history.ExecuteScalarAsync())!);
     }
 
+    /// <summary>Проверяет отсутствие изменений остатков при неизвестном идентификаторе или пустом снимке.</summary>
     [Fact]
     public async Task Unknown_id_and_empty_snapshot_leave_all_balances_unchanged()
     {
@@ -46,6 +49,7 @@ public sealed class CsvDatabaseImportTests
         Assert.Equal(10m, await fixture.StockAsync());
     }
 
+    /// <summary>Проверяет сохранение идентификатора при переименовании и сохранение отсутствующих в импорте сотрудников.</summary>
     [Fact]
     public async Task Worker_rename_keeps_id_and_absent_workers()
     {
@@ -61,6 +65,7 @@ public sealed class CsvDatabaseImportTests
         Assert.Equal(id, updated.Rows.Single(row => row.Key == "Сидоров Иван").Data["ID"]);
     }
 
+    /// <summary>Проверяет трактовку отсутствующих прежних остатков как нулевых при переносе данных.</summary>
     [Fact]
     public async Task Bootstrap_treats_absent_legacy_quantities_as_zero()
     {
@@ -79,6 +84,7 @@ public sealed class CsvDatabaseImportTests
         Assert.Equal(2.5m, await fixture.StockAsync("Comma"));
     }
 
+    /// <summary>Проверяет суммирование совместимых дублей до ограничения остатков при первичном переносе.</summary>
     [Fact]
     public async Task Bootstrap_sums_matching_duplicates_before_clamping_without_persistent_snapshots()
     {
@@ -100,6 +106,7 @@ public sealed class CsvDatabaseImportTests
         Assert.True((bool)(await snapshot.ExecuteScalarAsync())!);
     }
 
+    /// <summary>Проверяет отклонение конфликтующих дублей и откат первичного переноса.</summary>
     [Theory]
     [InlineData("unit")]
     [InlineData("details")]
@@ -125,6 +132,7 @@ public sealed class CsvDatabaseImportTests
         Assert.False((bool)(await initialized.ExecuteScalarAsync())!);
     }
 
+    /// <summary>Проверяет ограничение отрицательных старых остатков и отсутствие повторного переноса.</summary>
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -158,6 +166,7 @@ public sealed class CsvDatabaseImportTests
         Assert.True((bool)(await snapshot.ExecuteScalarAsync())!);
     }
 
+    /// <summary>Проверяет отображение статуса подписи и поиск в таблице сотрудников.</summary>
     [Fact]
     public async Task Worker_table_preserves_signature_status_join_and_search()
     {
@@ -173,6 +182,7 @@ public sealed class CsvDatabaseImportTests
         Assert.True(((JsonElement)Assert.Single(table.Rows)["Роспись"]!).GetBoolean());
     }
 
+    /// <summary>Проверяет перенос сотрудников из прежнего представления с сохранением снимка.</summary>
     [Fact]
     public async Task Worker_bootstrap_accepts_legacy_employees_view_and_preserves_a_snapshot()
     {
@@ -189,6 +199,7 @@ public sealed class CsvDatabaseImportTests
         Assert.Equal("Иванович", Assert.Single(employees).Patronymic);
     }
 
+    /// <summary>Проверяет откат остатков и документа при ошибке после первого изменения склада.</summary>
     [Fact]
     public async Task Requirement_failure_after_first_balance_update_rolls_back_all_balances_and_document()
     {
@@ -207,6 +218,7 @@ public sealed class CsvDatabaseImportTests
         Assert.Equal(0L, await fixture.CountAsync());
     }
 
+    /// <summary>Проверяет обновление, добавление и обнуление остатков, а также повторяемость импорта снимка.</summary>
     [Fact]
     public async Task Snapshot_updates_existing_adds_new_zeroes_absent_and_is_repeatable()
     {
@@ -233,6 +245,7 @@ public sealed class CsvDatabaseImportTests
         Assert.Equal(0m, ((JsonElement)table.Rows.Single(row => ((JsonElement)row["Наименование"]!).GetString() == "Filter")["Количество"]!).GetDecimal());
     }
 
+    /// <summary>Проверяет откат всех строк импорта при ошибке обновления метаданных.</summary>
     [Fact]
     public async Task Import_rolls_back_all_rows_when_metadata_update_fails()
     {
@@ -246,6 +259,7 @@ public sealed class CsvDatabaseImportTests
         Assert.Single(exported.Rows);
     }
 
+    /// <summary>Проверяет обновление профессий и справочника ответственных при импорте сотрудников.</summary>
     [Fact]
     public async Task Worker_import_updates_profession_and_responsible_employee_directory()
     {
@@ -261,6 +275,7 @@ public sealed class CsvDatabaseImportTests
         Assert.Single(table.Rows);
     }
 
+    /// <summary>Проверяет согласованность параллельного импорта и выдачи и экспорт актуального остатка базы.</summary>
     [Fact]
     public async Task Concurrent_import_and_issue_are_serialized_and_export_contains_database_balance()
     {
@@ -269,6 +284,7 @@ public sealed class CsvDatabaseImportTests
         await fixture.ExecuteAsync("INSERT INTO app_users(id) VALUES (@id)", ("id", userId));
         await using var source = fixture.CreateDataSource();
         var csv = new CsvFileRepository(source);
+        /** Выдаёт материалы через тестовый сценарий создания требования. */
         async Task Issue() {
             await using var db = fixture.CreateContext();
             await new RequirementJournalRepository(db).SaveAsync(userId, "Author", "Issuer",

@@ -4,6 +4,7 @@ using MyApp.Application.DTO;
 
 namespace MyApp.Application.Services;
 
+/// <summary>Прикладные операции документов требований на материалы.</summary>
 public sealed class ComponentDocumentService(
     IUserRepository userRepository,
     IResponsibleEmployeeService responsibleEmployeeService,
@@ -13,18 +14,21 @@ public sealed class ComponentDocumentService(
 {
     private const int MaximumItems = 100;
 
+    /// <summary>Проверяет данные требования и формирует предварительный результат.</summary>
     public Task<ServiceResult<ComponentDocumentResponse>> PrepareAsync(
         ComponentDocumentRequest request,
         Guid userId,
         CancellationToken cancellationToken) =>
         ProcessAsync(request, userId, false, cancellationToken);
 
+    /// <summary>Проверяет, формирует и сохраняет документ требования.</summary>
     public Task<ServiceResult<ComponentDocumentResponse>> GenerateAsync(
         ComponentDocumentRequest request,
         Guid userId,
         CancellationToken cancellationToken) =>
         ProcessAsync(request, userId, true, cancellationToken);
 
+    /// <summary>Проверяет данные требования и формирует результат для просмотра либо сохранения.</summary>
     private async Task<ServiceResult<ComponentDocumentResponse>> ProcessAsync(
         ComponentDocumentRequest request,
         Guid userId,
@@ -121,6 +125,7 @@ public sealed class ComponentDocumentService(
             new ComponentDocumentResponse(normalizedRequest));
     }
 
+    /// <summary>Форматирует имя автора для документа требования.</summary>
     private static string BuildAuthorName(
         string firstName,
         string middleName,
@@ -132,6 +137,7 @@ public sealed class ComponentDocumentService(
         return $"{string.Concat(initials)} {lastName.Trim()}".Trim();
     }
 
+    /// <summary>Собирает полное имя сотрудника из отдельных частей.</summary>
     private static string BuildFullName(
         string firstName,
         string middleName,
@@ -142,6 +148,7 @@ public sealed class ComponentDocumentService(
                 .Where(value => !string.IsNullOrWhiteSpace(value))
                 .Select(value => value.Trim()));
 
+    /// <summary>Приводит список номеров техники к единому виду для документа.</summary>
     private static IReadOnlyList<string> NormalizeVehicleNumbers(
         string vehicleNumber,
         int itemCount)
@@ -157,6 +164,7 @@ public sealed class ComponentDocumentService(
             .ToArray();
     }
 
+    /// <summary>Распределяет позиции требования по страницам документа.</summary>
     private static DocumentLayout BuildDocumentLayout(
         IReadOnlyList<ComponentDocumentItem> items,
         IReadOnlyList<string> vehicleNumbers,
@@ -211,6 +219,7 @@ public sealed class ComponentDocumentService(
             pages);
     }
 
+    /// <summary>Добавляет страницы с позициями в формируемый макет документа.</summary>
     private static void AddPages(
         IReadOnlyList<IndexedDocumentItem> items,
         ICollection<IReadOnlyList<ComponentDocumentItem>> pages,
@@ -232,12 +241,14 @@ public sealed class ComponentDocumentService(
         }
     }
 
+    /// <summary>Разбирает строку с номерами техники на отдельные значения.</summary>
     private static string[] ParseVehicleNumbers(string value) =>
         value.Split(
             ';',
             StringSplitOptions.RemoveEmptyEntries |
             StringSplitOptions.TrimEntries);
 
+    /// <summary>Проверяет обязательные реквизиты и позиции документа требования.</summary>
     private static Dictionary<string, string[]> Validate(
         ComponentDocumentRequest request)
     {
@@ -311,10 +322,12 @@ public sealed class ComponentDocumentService(
         return errors;
     }
 
+    /// <summary>Позиция требования с индексом для размещения в документе.</summary>
     private sealed record IndexedDocumentItem(
         ComponentDocumentItem Item,
         string? VehicleNumber);
 
+    /// <summary>Подготовленный макет страниц документа требования.</summary>
     private sealed record DocumentLayout(
         IReadOnlyList<ComponentDocumentItem> Items,
         IReadOnlyList<string> VehicleNumbers,

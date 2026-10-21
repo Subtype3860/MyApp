@@ -9,6 +9,7 @@ const vehicles = Array.from({ length: 12 }, (_, index) => ({
   stateNumber: `А${index}АА`,
   vin: `VIN${index}`,
 }))
+/** Настраивает ответы тестового API для проверки интерфейса. */
 async function mockApi(page, { status = 200, items = vehicles } = {}) {
   await page.route('**/api/**', (route) => {
     const path = new URL(route.request().url()).pathname
@@ -19,6 +20,7 @@ async function mockApi(page, { status = 200, items = vehicles } = {}) {
     return route.fulfill({ json: [] })
   })
 }
+/** Подготавливает данные авторизации в браузере теста. */
 async function authenticate(page, role = 'Administrator', permissions = []) {
   await page.addInitScript(
     ({ role, permissions }) => {
@@ -29,6 +31,7 @@ async function authenticate(page, role = 'Administrator', permissions = []) {
     { role, permissions },
   )
 }
+/** Проверяет отсутствие горизонтального переполнения на текущем размере экрана. */
 async function expectNoOverflow(page) {
   expect(
     await page.evaluate(

@@ -9,17 +9,23 @@ using MyApp.Infrastructure.Db.Entities;
 
 namespace MyApp.API.Controllers;
 
+/// <summary>HTTP-эндпоинты настроек отчёта ГТО.</summary>
 [ApiController]
 [Route("api/gto-settings")]
 [Authorize(Policy = Permissions.VehiclesView)]
 public sealed class GtoSettingsController(AppDbContext db, IVehicleService service) : ControllerBase
 {
+    /// <summary>Организация и участок пользователя для сохранения настроек ГТО.</summary>
     public sealed record UserSettingsRequest(string Organisation, string Site);
+    /// <summary>Климатическая установка, план выпуска и актуальные неисправности техники.</summary>
     public sealed record VehicleSettingsRequest(string Climate, string PlannedRelease, Guid[] DefectIds);
+    /// <summary>Показания двигателя и моточасы на момент его замены.</summary>
     public sealed record EngineSettingsRequest(DateOnly ReadingDate, decimal? EngineHours, decimal? HoursAtReplacement);
     private Guid? Actor => Guid.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub"), out var id) ? id : null;
+    /// <summary>Проверяет право пользователя изменять настройки ГТО через права управления парком.</summary>
     private async Task<bool> CanEdit(Guid id, CancellationToken ct) => (await service.GetVehicleCatalogOptionsAsync(id, ct)).CanManage;
 
+    /// <summary>Возвращает пользовательские настройки ГТО, климатические установки, планы выпуска и настройки ДВС.</summary>
     [HttpGet]
     public async Task<IActionResult> Get(CancellationToken ct)
     {
@@ -31,6 +37,7 @@ public sealed class GtoSettingsController(AppDbContext db, IVehicleService servi
         return Ok(new { Engines = engines, HasUserSettings = preferences != null, Organisation = preferences?.Organisation ?? "", Site = preferences?.Site ?? "", Vehicles = vehicles, Plans = plans });
     }
 
+    /// <summary>Сохраняет настройки двигателя и, при наличии, показание моточасов в одной транзакции.</summary>
     [HttpPut("vehicles/{vehicleId:guid}/engines/{engineNumber:int}")]
     public async Task<IActionResult> SaveEngine(Guid vehicleId, int engineNumber, EngineSettingsRequest request, CancellationToken ct)
     {
@@ -55,6 +62,7 @@ public sealed class GtoSettingsController(AppDbContext db, IVehicleService servi
         return Ok(new { EngineNumber = engineNumber, EngineHours = latest?.EngineHours, ReadingDate = latest?.ReadingDate, request.HoursAtReplacement });
     }
 
+    /// <summary>Сохраняет организацию и участок пользователя для отчёта ГТО.</summary>
     [HttpPut("user")]
     public async Task<IActionResult> SaveUser(UserSettingsRequest request, CancellationToken ct)
     {
@@ -65,6 +73,7 @@ public sealed class GtoSettingsController(AppDbContext db, IVehicleService servi
         return NoContent();
     }
 
+    /// <summary>Сохраняет климатическую установку и план выпуска для актуального состава неисправностей.</summary>
     [HttpPut("vehicles/{vehicleId:guid}")]
     public async Task<IActionResult> SaveVehicle(Guid vehicleId, VehicleSettingsRequest request, CancellationToken ct)
     {

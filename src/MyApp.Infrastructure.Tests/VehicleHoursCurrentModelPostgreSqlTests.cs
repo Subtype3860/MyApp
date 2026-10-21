@@ -8,8 +8,10 @@ using MyApp.Infrastructure.Storage;
 
 namespace MyApp.Infrastructure.Tests;
 
+/// <summary>Тесты импорта моточасов в PostgreSQL.</summary>
 public sealed class VehicleHoursCurrentModelPostgreSqlTests
 {
+    /// <summary>Создаёт репозиторий техники на изолированном тестовом контексте.</summary>
     private static VehicleRepository CreateRepository(
         MyApp.Infrastructure.Db.AppDbContext db)
     {
@@ -19,6 +21,7 @@ public sealed class VehicleHoursCurrentModelPostgreSqlTests
         return new VehicleRepository(db, new MediaStorageService(storage), storage);
     }
 
+    /// <summary>Проверяет заполнение пустых ячеек прошлым показанием той же техники.</summary>
     [Xunit.Fact]
     [Xunit.Trait("Category", "Integration")]
     public async Task Blank_values_use_last_reading_not_later_readings_or_other_vehicles()
@@ -68,6 +71,7 @@ public sealed class VehicleHoursCurrentModelPostgreSqlTests
                    row.Date == new DateOnly(2026, 10, 15)).Hours);
     }
 
+    /// <summary>Проверяет учёт предыдущих строк импорта без создания дублирующих записей.</summary>
     [Xunit.Fact]
     [Xunit.Trait("Category", "Integration")]
     public async Task Repeated_rows_use_prior_import_updates_and_remain_single_row()
@@ -98,6 +102,7 @@ public sealed class VehicleHoursCurrentModelPostgreSqlTests
         Xunit.Assert.Equal(75m, Xunit.Assert.Single(await fixture.ReadingsAsync()).Hours);
     }
 
+    /// <summary>Проверяет полный откат импорта при некорректном показании.</summary>
     [Xunit.Fact]
     [Xunit.Trait("Category", "Integration")]
     public async Task Invalid_value_rolls_back_whole_import()
@@ -122,6 +127,7 @@ public sealed class VehicleHoursCurrentModelPostgreSqlTests
         }
         Xunit.Assert.Empty(await fixture.ReadingsAsync());
     }
+    /// <summary>Проверяет создание одного показания при параллельном импорте на одну дату.</summary>
     [Xunit.Fact]
     [Xunit.Trait("Category", "Integration")]
     public async Task Concurrent_imports_for_same_date_create_one_reading()
@@ -135,6 +141,7 @@ public sealed class VehicleHoursCurrentModelPostgreSqlTests
         await fixture.ExecuteAsync(
             "INSERT INTO app_users(id) VALUES (@id)", ("id", user));
 
+        /** Запускает тестовый импорт показаний моточасов. */
         async Task ImportAsync(decimal hours)
         {
             await using var db = fixture.CreateContext();
@@ -149,6 +156,7 @@ public sealed class VehicleHoursCurrentModelPostgreSqlTests
         Xunit.Assert.Contains(reading.Hours, new[] { 100m, 200m });
     }
 
+    /// <summary>Проверяет использование одного запроса для заполнения множества пустых показаний.</summary>
     [Xunit.Fact]
     [Xunit.Trait("Category", "Integration")]
     public async Task Many_empty_cells_use_a_single_carry_forward_query()
@@ -186,11 +194,13 @@ public sealed class VehicleHoursCurrentModelPostgreSqlTests
         Xunit.Assert.Equal(1, counter.SelectCount);
     }
 
+    /// <summary>Перехватчик запросов для подсчёта чтений показаний моточасов.</summary>
     private sealed class HoursSelectCounter : DbCommandInterceptor
     {
         private int selectCount;
         public int SelectCount => Volatile.Read(ref selectCount);
 
+        /// <summary>Считает запросы чтения моточасов перед их выполнением.</summary>
         public override ValueTask<InterceptionResult<DbDataReader>>
             ReaderExecutingAsync(
                 DbCommand command,

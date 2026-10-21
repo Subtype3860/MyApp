@@ -22,6 +22,7 @@ const mediaViewerType = ref('image')
 
 let currentRequestId = 0
 let currentController
+/** Нормализует номер техники для поиска в истории ремонта. */
 function normalizedNumber(value) {
   return String(value ?? '').replace(/[\s-]+/g, '').toLocaleUpperCase('ru-RU')
 }
@@ -43,11 +44,13 @@ const requestCount = computed(() => filteredHistories.value.reduce((sum, history
 watch([plateNumber, downtimeReason], () => { page.value = 1 })
 onMounted(search)
 onBeforeUnmount(() => currentController?.abort())
+/** Сбрасывает ограничения отображения истории ремонта. */
 function showAll() {
   plateNumber.value = ''
   downtimeReason.value = ''
   page.value = 1
 }
+/** Применяет введённые параметры поиска к истории ремонта. */
 async function search() {
   currentController?.abort()
   const controller = new AbortController()
@@ -76,6 +79,7 @@ async function search() {
 
 const mutationBusy = ref(false)
 const mutationError = ref('')
+/** Передаёт выбранную запись истории для выполнения действия. */
 async function manageEntry(action, category, entry) {
   if (!props.isAdministrator || mutationBusy.value) return
   let description
@@ -101,6 +105,7 @@ async function manageEntry(action, category, entry) {
   finally { mutationBusy.value = false }
 }
 
+/** Открывает вложения выбранной записи истории ремонта. */
 function openMedia(items, type) {
   if (!items.length) return
   mediaViewerItems.value = items.map((media) => ({
@@ -111,6 +116,7 @@ function openMedia(items, type) {
   mediaViewerOpen.value = true
 }
 
+/** Закрывает просмотр вложений и очищает выбранные медиа. */
 function closeMedia() {
   mediaViewerOpen.value = false
   mediaViewerItems.value = []
@@ -174,13 +180,13 @@ function closeMedia() {
 <style scoped>
 .repair-history {
   display: grid;
-  gap: 1rem;
+  gap: 0.65rem;
 }
 
 .repair-history__search,
 .repair-history__loading,
 .repair-history__message {
-  padding: 1.25rem;
+  padding: 0.75rem;
   border: 1px solid var(--border);
   border-radius: 1rem;
   background: var(--bg-surface);
@@ -188,12 +194,13 @@ function closeMedia() {
 
 .repair-history__search label {
   display: block;
-  margin-bottom: 0.55rem;
+  margin-bottom: 0.3rem;
   color: var(--text-main);
   font-weight: 650;
 }
 
-.repair-history__filters { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; margin-bottom: 1rem; }
+.repair-history__search { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 0.5rem 0.75rem; }
+.repair-history__filters { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.75rem; }
 .repair-history__pagination { align-items: center; justify-content: center; }
 .repair-history__search-row {
   display: flex;
@@ -204,14 +211,16 @@ function closeMedia() {
   min-width: 0;
   width: 100%;
   box-sizing: border-box;
-  padding: 0.75rem 0.9rem;
+  padding: 0.5rem 0.7rem;
+  min-height: 40px;
   border: 1px solid var(--border);
   border-radius: 0.65rem;
   font: inherit;
 }
 
 .repair-history__search-row button {
-  padding: 0.7rem 1.25rem;
+  padding: 0.5rem 0.85rem;
+  min-height: 40px;
   border: 0;
   border-radius: 0.65rem;
   background: var(--accent);
@@ -227,7 +236,8 @@ function closeMedia() {
 }
 
 .repair-history__hint {
-  margin: 0.5rem 0 0;
+  grid-column: 1 / -1;
+  margin: 0;
   color: var(--text-secondary);
   font-size: 0.9rem;
 }
@@ -264,10 +274,14 @@ function closeMedia() {
   }
 }
 
+@media (max-width: 900px) {
+  .repair-history__search { grid-template-columns: minmax(0, 1fr); }
+}
+
 @media (max-width: 560px) {
   .repair-history__filters { grid-template-columns: minmax(0, 1fr); }
   .repair-history__search-row {
-    flex-direction: column;
+    flex-wrap: wrap;
   }
 }
 </style>

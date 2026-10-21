@@ -11,8 +11,10 @@ using Xunit;
 
 namespace MyApp.Infrastructure.Tests;
 
+/// <summary>Тесты доступа к видео после отзыва сессии.</summary>
 public sealed class VideoSessionRevocationTests
 {
+    /// <summary>Проверяет отклонение и удаление билета видео техники после отзыва сессии.</summary>
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -29,6 +31,7 @@ public sealed class VideoSessionRevocationTests
         Assert.IsType<NotFoundResult>(await controller.StreamVideo(ticket, RevokedSessions(), cache, service, default));
     }
 
+    /// <summary>Проверяет отклонение билета видео вспомогательной работы после отзыва сессии.</summary>
     [Fact]
     public async Task Auxiliary_video_ticket_is_rejected_after_session_revocation()
     {
@@ -42,6 +45,7 @@ public sealed class VideoSessionRevocationTests
         Assert.IsType<NotFoundResult>(await controller.VideoStream(ticket, RevokedSessions(), default));
     }
 
+    /// <summary>Создаёт тестовое хранилище, отклоняющее проверку актуальности сессии.</summary>
     private static IUserSessionStore RevokedSessions()
     {
         var store = DispatchProxy.Create<IUserSessionStore, WorkParticipationAuthorizationTests.InvocationProxy>();
@@ -49,12 +53,14 @@ public sealed class VideoSessionRevocationTests
         return store;
     }
 
+    /// <summary>Создаёт набор утверждений тестовой пользовательской сессии.</summary>
     private static ControllerContext Identity() => new() { HttpContext = new DefaultHttpContext {
         User = new ClaimsPrincipal(new ClaimsIdentity([
             new Claim(ClaimTypes.NameIdentifier, Guid.NewGuid().ToString()),
             new Claim(UserAccess.SessionStampClaim, Guid.NewGuid().ToString())], "Bearer"))
     } };
 
+    /// <summary>Создаёт билет просмотра видео для проверки отзыва сессии.</summary>
     private static string Ticket(IActionResult result)
     {
         var value = Assert.IsType<OkObjectResult>(result).Value!;

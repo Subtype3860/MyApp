@@ -1,13 +1,15 @@
 using Microsoft.EntityFrameworkCore;
 using MyApp.Application.Abstractions;
 using MyApp.Application.Security;
-using MyApp.Domain.Entities;
+using MyApp.Application.Models;
 using MyApp.Infrastructure.Db.Entities;
 
 namespace MyApp.Infrastructure.Db;
 
+/// <summary>Создание и обновление необходимой структуры и исходных данных базы.</summary>
 public sealed class DatabaseInitializer(AppDbContext db) : IDatabaseInitializer
 {
+    /// <summary>Инициализирует структуру и исходные данные хранилища.</summary>
     public async Task InitializeAsync(
         CancellationToken cancellationToken = default)
     {
@@ -462,6 +464,7 @@ public sealed class DatabaseInitializer(AppDbContext db) : IDatabaseInitializer
             );
 
             ALTER TABLE vehicle_hour_readings ADD COLUMN IF NOT EXISTS engine_number integer NOT NULL DEFAULT 0;
+            ALTER TABLE vehicle_hour_readings ADD COLUMN IF NOT EXISTS reading_time time without time zone;
             CREATE TABLE IF NOT EXISTS vehicle_engine_settings (
                 vehicle_id uuid NOT NULL REFERENCES number_car(id) ON DELETE CASCADE,
                 engine_number integer NOT NULL CHECK (engine_number IN (1,2)),
@@ -772,6 +775,7 @@ public sealed class DatabaseInitializer(AppDbContext db) : IDatabaseInitializer
         await db.SaveChangesAsync(cancellationToken);
     }
 
+    /// <summary>Создаёт недостающие исходные данные шаблонов ТО.</summary>
     private async Task EnsureMaintenanceDefaultsAsync(
         CancellationToken cancellationToken)
     {

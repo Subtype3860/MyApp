@@ -8,6 +8,7 @@ let templateDocumentPromise
 let fontBytesPromise
 let pdfLibrariesPromise
 
+/** Загружает библиотеки формирования PDF с повторным использованием результата. */
 function getPdfLibraries() {
   pdfLibrariesPromise ??= Promise.all([
     import('pdf-lib'),
@@ -31,6 +32,7 @@ function getPdfLibraries() {
   return pdfLibrariesPromise
 }
 
+/** Загружает ресурс и возвращает его двоичное содержимое. */
 async function fetchBytes(url, token) {
   const response = await fetch(url, {
     headers: { Authorization: 'Bearer ' + token },
@@ -41,6 +43,7 @@ async function fetchBytes(url, token) {
   return new Uint8Array(await response.arrayBuffer())
 }
 
+/** Получает байты PDF-шаблона требования. */
 function getTemplateBytes(token) {
   templateBytesPromise ??= fetchBytes(
     '/api/documents/components/template',
@@ -52,6 +55,7 @@ function getTemplateBytes(token) {
   return templateBytesPromise
 }
 
+/** Получает байты шрифта для заполнения PDF. */
 function getFontBytes() {
   fontBytesPromise ??= fetch(notoSansUrl)
     .then(async (response) => {
@@ -65,6 +69,7 @@ function getFontBytes() {
   return fontBytesPromise
 }
 
+/** Загружает PDF-шаблон как документ для дальнейшего заполнения. */
 function getTemplateDocument(templateBytes, PDFDocument) {
   templateDocumentPromise ??= PDFDocument.load(templateBytes)
     .catch((error) => {
@@ -74,11 +79,13 @@ function getTemplateDocument(templateBytes, PDFDocument) {
   return templateDocumentPromise
 }
 
+/** Форматирует дату для поля PDF-документа. */
 function formatDate(value) {
   const [year, month, day] = String(value).split('-')
   return year && month && day ? `${day}.${month}.${year}` : String(value)
 }
 
+/** Форматирует количество материала для отображения. */
 function formatQuantity(value) {
   const quantity = Number(value)
   return Number.isFinite(quantity)
@@ -89,6 +96,7 @@ function formatQuantity(value) {
     : ''
 }
 
+/** Разбивает текст на строки с учётом ширины и метрик шрифта. */
 function wrapText(text, font, fontSize, width) {
   if (!text) return ['']
 
@@ -137,6 +145,7 @@ function wrapText(text, font, fontSize, width) {
   return lines.length ? lines : ['']
 }
 
+/** Проверяет, помещается ли текст в заданную область PDF. */
 function fitsField(text, font, fontSize, width, height, multiline) {
   const availableWidth = Math.max(width - 2, 1)
   const availableHeight = Math.max(height - 2, 1)
@@ -156,6 +165,7 @@ function fitsField(text, font, fontSize, width, height, multiline) {
   return font.heightAtSize(fontSize) * 1.2 * lineCount <= availableHeight
 }
 
+/** Приводит прямоугольник поля к формату координат отрисовки. */
 function normalizeRectangle(rectangle) {
   return {
     x: rectangle.width < 0
@@ -169,6 +179,7 @@ function normalizeRectangle(rectangle) {
   }
 }
 
+/** Извлекает расположение полей из PDF-шаблона. */
 function getFieldLayouts(templateDocument) {
   const form = templateDocument.getForm()
   const pageIndices = new Map(
@@ -189,6 +200,7 @@ function getFieldLayouts(templateDocument) {
   }))
 }
 
+/** Размещает текст в области поля PDF с выбранным оформлением. */
 function drawFieldText(
   page,
   layout,
@@ -259,6 +271,7 @@ function drawFieldText(
   page.pushOperators(operators.popGraphicsState())
 }
 
+/** Заполняет страницу шаблона данными требования. */
 function fillPage(
   pages,
   fieldLayouts,
@@ -269,7 +282,7 @@ function fillPage(
   operators,
   TextAlignment,
 ) {
-  const draw = (
+  const /** Рисует текст в PDF с заданными координатами и оформлением. */ draw = (
     name,
     value,
     multiline = false,
@@ -317,6 +330,7 @@ function fillPage(
   }
 }
 
+/** Создаёт заполненный PDF-документ требования из данных сервера. */
 export async function createPdfDocument(request, token) {
   const [templateBytes, fontBytes, libraries] = await Promise.all([
     getTemplateBytes(token),
@@ -380,6 +394,7 @@ export async function createPdfDocument(request, token) {
   )
 }
 
+/** Формирует PDF требования и открывает его для просмотра. */
 export function renderPdfDocument(previewWindow, pdfBlob) {
   previewWindow.document.title = 'Требование-накладная'
   previewWindow.document.body.replaceChildren()

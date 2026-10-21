@@ -33,6 +33,7 @@ const journals = [{ vehicle: { id: 'v1', modelName: 'SANY SY1250H', garageNumber
   { id: 'w3', completedAt: '2026-10-11T23:00:00+06:00', description: 'Подготовка к демонтажу ГСТ № 2', participants: [approved], location: 'РММ', operationalState: 'stopped' },
 ] }]
 
+/** Настраивает данные и API для проверки сменного отчёта. */
 async function prepare(page) {
   const photo = await readFile(new URL('./fixtures/repair-cylinder.webp', import.meta.url))
   await page.addInitScript(() => {

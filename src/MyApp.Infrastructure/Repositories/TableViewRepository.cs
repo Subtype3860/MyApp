@@ -5,8 +5,10 @@ using Npgsql;
 
 namespace MyApp.Infrastructure.Repositories;
 
+/// <summary>Доступ к данным просмотра табличных данных.</summary>
 public sealed class TableViewRepository(NpgsqlDataSource dataSource) : ITableViewRepository
 {
+    /// <summary>Получает страницу табличных данных с поиском, сортировкой и фильтрами.</summary>
     public async Task<TableViewResponse> QueryAsync(TableViewRequest request, CancellationToken cancellationToken)
     {
         var fileName = request.TableName switch {
@@ -17,6 +19,7 @@ public sealed class TableViewRepository(NpgsqlDataSource dataSource) : ITableVie
         if (request.Search is not null) filters.Add(("t.data::text ILIKE @search", "search", request.Search));
         if (fileName == "p.csv")
         {
+            /** Добавляет условия поиска и фильтрации к запросу табличных данных. */
             void Filter(string column, string parameter, string? value) {
                 if (value is not null) filters.Add(($"t.data->>'{column}' ILIKE @{parameter}", parameter, value));
             }
@@ -33,6 +36,7 @@ public sealed class TableViewRepository(NpgsqlDataSource dataSource) : ITableVie
         var columns = (string[]?)await metadata.ExecuteScalarAsync(cancellationToken)
             ?? throw new InvalidOperationException("CSV storage is not initialized.");
         var common = $"WITH t AS ({CsvFileRepository.DataQuery(fileName)}) ";
+        /** Формирует параметры запроса табличных данных. */
         void Parameters(NpgsqlCommand command) {
             if (fileName != "p.csv") command.Parameters.AddWithValue("source", CsvFileRepository.StockSource(fileName));
             foreach (var filter in filters) command.Parameters.AddWithValue(filter.Parameter, $"%{filter.Value}%");

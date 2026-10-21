@@ -11,15 +11,18 @@ using MyApp.Application.Services;
 
 namespace MyApp.API.Controllers;
 
+/// <summary>HTTP-эндпоинты вспомогательных работ.</summary>
 [ApiController]
 [Route("api/auxiliary-works")]
 [Authorize]
 public sealed class AuxiliaryWorkController(IVehicleService service, IMemoryCache cache) : ControllerBase
 {
+    /// <summary>Возвращает список вспомогательных работ.</summary>
     [HttpGet]
     [Authorize(Policy = Permissions.AuxiliaryWorksRead)]
     public async Task<IActionResult> List(CancellationToken cancellationToken) => Ok(await service.GetAuxiliaryWorksAsync(cancellationToken));
 
+    /// <summary>Создаёт вспомогательную работу.</summary>
     [HttpPost]
     [Authorize(Policy = Permissions.AuxiliaryWorksView)]
     public async Task<IActionResult> Create([FromBody] AuxiliaryWorkRequest request, CancellationToken cancellationToken)
@@ -28,6 +31,7 @@ public sealed class AuxiliaryWorkController(IVehicleService service, IMemoryCach
         return this.ToActionResult(await service.AddAuxiliaryWorkAsync(request, userId, cancellationToken), id => Created($"/api/auxiliary-works/{id}", new { id }));
     }
 
+    /// <summary>Принимает фотографию вспомогательной работы для сохранения.</summary>
     [HttpPost("{workId:guid}/photos")]
     [Authorize(Policy = Permissions.AuxiliaryWorksView)]
     [RequestSizeLimit(9 * 1024 * 1024)]
@@ -42,6 +46,7 @@ public sealed class AuxiliaryWorkController(IVehicleService service, IMemoryCach
         return this.ToActionResult(result, ids => Ok(new { id = ids[0] }));
     }
 
+    /// <summary>Принимает видео вспомогательной работы для сохранения.</summary>
     [HttpPost("{workId:guid}/videos")]
     [Authorize(Policy = Permissions.AuxiliaryWorksView)]
     [RequestSizeLimit(101 * 1024 * 1024)]
@@ -57,6 +62,7 @@ public sealed class AuxiliaryWorkController(IVehicleService service, IMemoryCach
         return this.ToActionResult(result, ids => Ok(new { id = ids[0] }));
     }
 
+    /// <summary>Возвращает содержимое фотографии вспомогательной работы.</summary>
     [HttpGet("photos/{photoId:guid}")]
     [Authorize(Policy = Permissions.AuxiliaryWorksRead)]
     public async Task<IActionResult> Photo(Guid photoId, CancellationToken cancellationToken)
@@ -66,6 +72,7 @@ public sealed class AuxiliaryWorkController(IVehicleService service, IMemoryCach
         return photo is null ? NotFound() : File(photo.Content, photo.ContentType, enableRangeProcessing: true);
     }
 
+    /// <summary>Выдаёт временный билет для просмотра видео вспомогательной работы.</summary>
     [HttpPost("videos/{videoId:guid}/stream-ticket")]
     [Authorize(Policy = Permissions.AuxiliaryWorksRead)]
     public async Task<IActionResult> VideoTicket(Guid videoId, CancellationToken cancellationToken)
@@ -77,6 +84,7 @@ public sealed class AuxiliaryWorkController(IVehicleService service, IMemoryCach
         return Ok(new { url = $"/api/auxiliary-works/video-stream/{ticket}" });
     }
 
+    /// <summary>Проверяет билет и актуальность сессии перед выдачей видеопотока.</summary>
     [HttpGet("video-stream/{ticket}")]
     [AllowAnonymous]
     public async Task<IActionResult> VideoStream(string ticket, [FromServices] IUserSessionStore sessions, CancellationToken cancellationToken)
@@ -94,6 +102,7 @@ public sealed class AuxiliaryWorkController(IVehicleService service, IMemoryCach
         return video is null ? NotFound() : File(video.Content, video.ContentType, enableRangeProcessing: true);
     }
 
+    /// <summary>Возвращает участников вспомогательной работы.</summary>
     [HttpGet("{workId:guid}/participants")]
     [Authorize(Policy = Permissions.AuxiliaryWorksView)]
     public async Task<IActionResult> Participants(Guid workId, CancellationToken cancellationToken)
@@ -102,6 +111,7 @@ public sealed class AuxiliaryWorkController(IVehicleService service, IMemoryCach
         return this.ToActionResult(await service.GetWorkParticipantsAsync(workId, cancellationToken), rows => Ok(rows));
     }
 
+    /// <summary>Регистрирует текущего сотрудника участником вспомогательной работы.</summary>
     [HttpPost("{workId:guid}/participants")]
     [Authorize(Policy = Permissions.AuxiliaryWorksView)]
     public async Task<IActionResult> Join(Guid workId, CancellationToken cancellationToken)
@@ -111,6 +121,7 @@ public sealed class AuxiliaryWorkController(IVehicleService service, IMemoryCach
         return this.ToActionResult(await service.RequestWorkParticipationAsync(workId, userId, cancellationToken), _ => Ok());
     }
 
+    /// <summary>Передаёт решение механика по заявке сотрудника на участие в работе.</summary>
     [HttpPost("{workId:guid}/participants/{participantId:guid}/review")]
     [Authorize(Policy = Permissions.AuxiliaryWorksView)]
     public async Task<IActionResult> Review(Guid workId, Guid participantId, [FromBody] VehicleWorkParticipantReviewRequest request, CancellationToken cancellationToken)
@@ -120,7 +131,9 @@ public sealed class AuxiliaryWorkController(IVehicleService service, IMemoryCach
         return this.ToActionResult(await service.ReviewWorkParticipationAsync(workId, participantId, request.Approved, userId, cancellationToken), _ => Ok());
     }
 
+    /// <summary>Данные сессии, привязанной к билету просмотра видео.</summary>
     private sealed record VideoTicketSession(Guid VideoId, Guid UserId, Guid Stamp);
 
+    /// <summary>Извлекает идентификатор пользователя из утверждений текущей сессии.</summary>
     private bool TryGetUserId(out Guid id) => Guid.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue(JwtRegisteredClaimNames.Sub), out id);
 }

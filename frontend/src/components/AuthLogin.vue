@@ -18,6 +18,7 @@ const passwordHasCyrillic = computed(() => /\p{Script=Cyrillic}/u.test(password.
 const errorMessage = ref('')
 const isSubmitting = ref(false)
 
+/** Отправляет учётные данные и сообщает родителю об успешном входе. */
 async function submitLogin() {
   errorMessage.value = ''
   isSubmitting.value = true

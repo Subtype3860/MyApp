@@ -8,8 +8,10 @@ using Xunit;
 
 namespace MyApp.Infrastructure.Tests;
 
+/// <summary>Тесты чтения и проверки книг Excel.</summary>
 public sealed class ImportWorkbookTests
 {
+    /// <summary>Проверяет применение общей проверки CSV к выбранному листу Excel.</summary>
     [Fact]
     public void Selected_excel_sheet_uses_the_same_validation_as_csv()
     {
@@ -21,6 +23,7 @@ public sealed class ImportWorkbookTests
         Assert.Equal(2.5m, Assert.Single(CsvImportCodec.Parse("o.csv", csv).Rows).Data["Количество"]);
     }
 
+    /// <summary>Проверяет отклонение некорректного Excel до сохранения.</summary>
     [Theory]
     [InlineData("name;unit;amount\nFilter;pcs;-1")]
     [InlineData("name;unit;amount\nFilter;pcs;2\nFilter;pcs;3")]
@@ -31,10 +34,12 @@ public sealed class ImportWorkbookTests
         Assert.Throws<CsvImportValidationException>(() => CsvImportCodec.Parse("o.csv", csv));
     }
 
+    /// <summary>Проверяет представление повреждённого Excel как ошибки валидации.</summary>
     [Fact]
     public void Malformed_excel_is_reported_as_validation_error() =>
         Assert.Throws<CsvImportValidationException>(() => ImportWorkbook.Sheets(Encoding.UTF8.GetBytes("not a workbook")));
 
+    /// <summary>Проверяет идентификаторы сотрудников и допустимость одинаковых имён при разных идентификаторах.</summary>
     [Fact]
     public void Invalid_id_is_rejected_and_distinct_worker_ids_allow_equal_names()
     {
@@ -43,11 +48,13 @@ public sealed class ImportWorkbookTests
         Assert.Equal(2, CsvImportCodec.Parse("p.csv", Encoding.UTF8.GetBytes(csv)).Rows.Count);
     }
 
+    /// <summary>Собирает тестовую книгу Excel в памяти.</summary>
     private static byte[] Workbook(params string[] sheets)
     {
         using var output = new MemoryStream();
         using (var zip = new ZipArchive(output, ZipArchiveMode.Create, true))
         {
+            /** Добавляет XML-часть в ZIP-архив тестовой книги Excel. */
             void Entry(string path, string text) { using var writer = new StreamWriter(zip.CreateEntry(path).Open()); writer.Write(text); }
             Entry("[Content_Types].xml", """<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/></Types>""");
             Entry("_rels/.rels", """<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>""");

@@ -5,7 +5,7 @@ const emit = defineEmits(['close', 'saved'])
 const dialog = ref(null), busy = ref(false), error = ref('')
 const draft = ref({ groupName: '', typeName: '', modelName: '', garageNumber: '', stateNumber: '', vin: '' })
 const controller = new AbortController()
-const normalize = value => String(value || '').trim().toLocaleLowerCase('ru-RU')
+const /** Обрезает пробелы и приводит текст к нижнему регистру для сравнения значений справочника. */ normalize = value => String(value || '').trim().toLocaleLowerCase('ru-RU')
 const group = computed(() => (props.options.groups || []).find(item => normalize(item.name) === normalize(draft.value.groupName)))
 const types = computed(() => (props.options.types || []).filter(item => item.parentId === group.value?.id))
 const type = computed(() => types.value.find(item => normalize(item.name) === normalize(draft.value.typeName)))
@@ -17,7 +17,9 @@ watch(() => props.open, async open => {
   await nextTick()
   dialog.value?.showModal()
 })
+/** Закрывает форму редактирования техники. */
 function close() { if (!busy.value) emit('close') }
+/** Проверяет поля карточки техники и отправляет запрос создания или изменения. */
 async function save() {
   if (busy.value) return
   busy.value = true; error.value = ''

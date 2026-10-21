@@ -1,5 +1,6 @@
 namespace MyApp.Infrastructure.Db.Entities;
 
+/// <summary>Общие поля записи фотографии или видеозаписи техники.</summary>
 public interface IVehicleMediaRecord
 {
     Guid Id { get; set; }
@@ -10,6 +11,7 @@ public interface IVehicleMediaRecord
     DateTimeOffset CreatedAt { get; set; }
 }
 
+/// <summary>Запись справочника групп техники.</summary>
 public sealed class GroupCarRecord
 {
     public Guid Id { get; set; }
@@ -17,6 +19,7 @@ public sealed class GroupCarRecord
     public int ReportSortOrder { get; set; }
 }
 
+/// <summary>Запись справочника типов техники.</summary>
 public sealed class TypeCarRecord
 {
     public Guid Id { get; set; }
@@ -25,6 +28,7 @@ public sealed class TypeCarRecord
     public string? IconPath { get; set; }
 }
 
+/// <summary>Запись справочника моделей техники.</summary>
 public sealed class ModelCarRecord
 {
     public Guid Id { get; set; }
@@ -32,6 +36,7 @@ public sealed class ModelCarRecord
     public Guid? CarTypeId { get; set; }
 }
 
+/// <summary>Запись карточки техники и её идентификационных номеров.</summary>
 public sealed class NumberCarRecord
 {
     public Guid Id { get; set; }
@@ -42,6 +47,7 @@ public sealed class NumberCarRecord
     public string? Vin { get; set; }
 }
 
+/// <summary>Запись заявки на закупку для техники.</summary>
 public sealed class VehiclePurchaseRequestRecord
 {
     public Guid Id { get; set; }
@@ -56,6 +62,7 @@ public sealed class VehiclePurchaseRequestRecord
     public DateTimeOffset CreatedAt { get; set; }
 }
 
+/// <summary>Запись неисправности и связанных с ней условий простоя техники.</summary>
 public sealed class VehicleDefectRecord
 {
     public Guid Id { get; set; }
@@ -72,11 +79,13 @@ public sealed class VehicleDefectRecord
     public DateTimeOffset CreatedAt { get; set; }
 }
 
+/// <summary>Показание счётчика моточасов техники на указанную дату.</summary>
 public sealed class VehicleHourReadingRecord
 {
     public Guid Id { get; set; }
     public Guid VehicleId { get; set; }
     public DateOnly ReadingDate { get; set; }
+    public TimeOnly? ReadingTime { get; set; }
     public decimal EngineHours { get; set; }
     public int EngineNumber { get; set; }
     public string Note { get; set; } = string.Empty;
@@ -84,6 +93,7 @@ public sealed class VehicleHourReadingRecord
     public DateTimeOffset CreatedAt { get; set; }
 }
 
+/// <summary>Запись выполненной работы и её связи с неисправностью техники.</summary>
 public sealed class VehicleWorkRecord
 {
     public Guid Id { get; set; }
@@ -108,6 +118,7 @@ public sealed class VehicleWorkRecord
     public DateTimeOffset CreatedAt { get; set; }
 }
 
+/// <summary>Метаданные фотографии выполненной работы.</summary>
 public sealed class VehicleWorkPhotoRecord : IVehicleMediaRecord
 {
     public Guid Id { get; set; }
@@ -120,6 +131,7 @@ public sealed class VehicleWorkPhotoRecord : IVehicleMediaRecord
     public DateTimeOffset CreatedAt { get; set; }
 }
 
+/// <summary>Метаданные фотографии неисправности.</summary>
 public sealed class VehicleDefectPhotoRecord : IVehicleMediaRecord
 {
     public Guid Id { get; set; }
@@ -132,6 +144,7 @@ public sealed class VehicleDefectPhotoRecord : IVehicleMediaRecord
     public DateTimeOffset CreatedAt { get; set; }
 }
 
+/// <summary>Метаданные видеозаписи выполненной работы.</summary>
 public sealed class VehicleWorkVideoRecord : IVehicleMediaRecord
 {
     public Guid Id { get; set; }
@@ -144,6 +157,7 @@ public sealed class VehicleWorkVideoRecord : IVehicleMediaRecord
     public DateTimeOffset CreatedAt { get; set; }
 }
 
+/// <summary>Метаданные видеозаписи неисправности.</summary>
 public sealed class VehicleDefectVideoRecord : IVehicleMediaRecord
 {
     public Guid Id { get; set; }
@@ -156,6 +170,7 @@ public sealed class VehicleDefectVideoRecord : IVehicleMediaRecord
     public DateTimeOffset CreatedAt { get; set; }
 }
 
+/// <summary>Запись участия сотрудника в работе и решения механика.</summary>
 public sealed class VehicleWorkParticipantRecord
 {
     public Guid Id { get; set; }

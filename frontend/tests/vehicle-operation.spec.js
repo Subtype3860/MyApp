@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test'
 
+/** Подготавливает страницу и ответы API для сценариев браузерного теста. */
 async function setup(page) {
   await page.addInitScript(() => {
     localStorage.setItem('myapp.authToken', `test.${btoa(JSON.stringify({ sub: 'admin', role: 'administrator' }))}.test`)

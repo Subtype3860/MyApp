@@ -4,6 +4,7 @@ using MyApp.Application.Common;
 
 namespace MyApp.Application.Services;
 
+/// <summary>Прикладные операции импорта и экспорта табличных данных.</summary>
 public sealed class CsvFileService(ICsvFileRepository repository) : ICsvFileService
 {
     private static readonly HashSet<string> AllowedFileNames =
@@ -14,6 +15,7 @@ public sealed class CsvFileService(ICsvFileRepository repository) : ICsvFileServ
             "p.csv"
         };
 
+    /// <summary>Возвращает данные табличного источника.</summary>
     public async Task<ServiceResult<byte[]>> GetAsync(
         string fileName,
         CancellationToken cancellationToken)
@@ -28,6 +30,7 @@ public sealed class CsvFileService(ICsvFileRepository repository) : ICsvFileServ
             await repository.GetAsync(normalizedFileName, cancellationToken));
     }
 
+    /// <summary>Заменяет данные табличного источника содержимым проверенного импорта.</summary>
     public async Task<ServiceResult<CsvImportResult>> ReplaceAsync(
         string fileName,
         byte[] content,
@@ -61,6 +64,7 @@ public sealed class CsvFileService(ICsvFileRepository repository) : ICsvFileServ
         return ServiceResult<CsvImportResult>.Success(result);
     }
 
+    /// <summary>Проверяет загруженный CSV или лист Excel без сохранения изменений.</summary>
     public async Task<ServiceResult<CsvImportPreview>> PreviewAsync(string fileName, byte[] content, CancellationToken cancellationToken,
         string fileExtension = ".csv", string? sheetName = null)
     {
@@ -73,6 +77,7 @@ public sealed class CsvFileService(ICsvFileRepository repository) : ICsvFileServ
         return ServiceResult<CsvImportPreview>.Success(await repository.PreviewAsync(source, content, cancellationToken));
     }
 
+    /// <summary>Приводит имя импортируемого файла к поддерживаемому имени источника данных.</summary>
     private static string? NormalizeFileName(string fileName)
     {
         var normalized = fileName.Trim().ToLowerInvariant();

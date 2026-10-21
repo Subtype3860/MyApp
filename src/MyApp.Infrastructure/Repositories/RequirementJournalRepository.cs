@@ -9,12 +9,14 @@ using MyApp.Infrastructure.Db.Entities;
 
 namespace MyApp.Infrastructure.Repositories;
 
+/// <summary>Доступ к данным журнала требований.</summary>
 public sealed class RequirementJournalRepository(
     AppDbContext db) : IRequirementJournalRepository
 {
     private static readonly JsonSerializerOptions JsonOptions =
         new(JsonSerializerDefaults.Web);
 
+    /// <summary>Сохраняет требование.</summary>
     public async Task SaveAsync(
         Guid userId,
         string authorName,
@@ -87,6 +89,7 @@ public sealed class RequirementJournalRepository(
         await transaction.CommitAsync(cancellationToken);
     }
 
+    /// <summary>Возвращает последние записи журнала требований с заданными фильтрами.</summary>
     public async Task<IReadOnlyList<RequirementJournalEntry>> GetRecentAsync(
         CancellationToken cancellationToken)
     {
@@ -141,6 +144,7 @@ public sealed class RequirementJournalRepository(
             .ToArray();
     }
 
+    /// <summary>Восстанавливает запрос формирования документа по сохранённому требованию.</summary>
     public async Task<ComponentDocumentRequest?> GetDocumentRequestAsync(
         Guid id,
         CancellationToken cancellationToken)
@@ -157,6 +161,7 @@ public sealed class RequirementJournalRepository(
                 JsonOptions);
     }
 
+    /// <summary>Удаляет требование.</summary>
     public async Task<bool> DeleteAsync(
         Guid id,
         CancellationToken cancellationToken)
@@ -223,6 +228,7 @@ public sealed class RequirementJournalRepository(
 
     private const int StockLockNamespace = 4386202;
 
+    /// <summary>Определяет таблицу или представление для выбранного складского источника.</summary>
     private static (string Source, int LockKey) ResolveSource(string sourceTable) =>
         sourceTable switch
         {
@@ -232,6 +238,7 @@ public sealed class RequirementJournalRepository(
                 "Неизвестный источник компонентов.")
         };
 
+    /// <summary>Получает транзакционную блокировку источника перед изменением остатков.</summary>
     private async Task AcquireSourceLockAsync(
         int sourceKey,
         CancellationToken cancellationToken)
@@ -241,6 +248,7 @@ public sealed class RequirementJournalRepository(
             cancellationToken);
     }
 
+    /// <summary>Объединяет изменения количества по одинаковым материалам.</summary>
     private static IReadOnlyList<(string Name, decimal Quantity)> AggregateStockChanges(
         IReadOnlyList<ComponentDocumentItem> items)
     {
@@ -261,6 +269,7 @@ public sealed class RequirementJournalRepository(
         return totals.Select(pair => (pair.Key, pair.Value)).ToArray();
     }
 
+    /// <summary>Читает актуальный остаток материала из базы данных.</summary>
     private async Task<decimal> GetCurrentQuantityAsync(
         string sourceTable,
         string itemName,
@@ -277,6 +286,7 @@ public sealed class RequirementJournalRepository(
             : throw new InvalidOperationException($"Компонент «{itemName.Trim()}» не найден в остатках.");
     }
 
+    /// <summary>Обновляет остаток материала в выбранном складском источнике.</summary>
     private async Task UpdateQuantityAsync(string source, string name, decimal quantity, CancellationToken cancellationToken)
     {
         await using var command = db.Database.GetDbConnection().CreateCommand();
@@ -289,6 +299,7 @@ public sealed class RequirementJournalRepository(
             throw new InvalidOperationException($"Компонент «{name}» не найден в остатках.");
     }
 
+    /// <summary>Добавляет типизированный параметр SQL-команды.</summary>
     private static void AddParameter(
         DbCommand command,
         string name,

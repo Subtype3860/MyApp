@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test'
+import { fileURLToPath } from 'node:url'
 import { readFile } from 'node:fs/promises'
 import { PDFDocument, PDFName } from 'pdf-lib'
 import { selectAuxiliaryWorks, groupAuxiliaryWorks, reportMediaLink } from '../src/utils/shiftReport.js'
@@ -7,6 +8,7 @@ test.use({ timezoneId: 'Asia/Omsk' })
 const confirmed = { id: 'participant', userId: 'worker', name: 'Петров Пётр Петрович', position: 'Разнорабочий', status: 'approved', reviewedBy: 'mechanic' }
 const sample = { id: 'a1', title: 'Уборка территории', description: 'Собран мусор и очищены проходы.', location: 'РММ', workKind: 'auxiliary', completedAt: '2026-10-11T10:00:00+06:00', createdAt: '2026-10-11T10:00:00+06:00', participants: [confirmed], photos: [{ id: 'p1', fileName: 'Территория.webp' }], videos: [{ id: 'video1', fileName: 'Работы.webm' }] }
 
+/** Подготавливает страницу и ответы API для сценариев браузерного теста. */
 async function setup(page, { width = 1440, initial = [], mechanic = false, report = true, failUpload = false } = {}) {
   await page.setViewportSize({ width, height: 1000 })
   await page.clock.setFixedTime(new Date('2026-10-11T14:00:00+06:00'))
@@ -57,9 +59,11 @@ async function setup(page, { width = 1440, initial = [], mechanic = false, repor
   })
   return { works, requests }
 }
+/** Открывает меню навигации в браузерном тесте. */
 async function openMenu(page, width) {
   if (width < 761) await page.getByRole('button', { name: 'Открыть меню' }).click()
 }
+/** Открывает раздел вспомогательных работ в браузерном тесте. */
 async function openAuxiliary(page, width) {
   await page.goto('/')
   await openMenu(page, width)
@@ -89,6 +93,7 @@ for (const width of [390, 1440]) {
     await page.screenshot({ path: `test-results/auxiliary-works-${width}.png`, fullPage: true })
     await openMenu(page, width)
     await page.getByRole('button', { name: 'Транспорт', exact: true }).click()
+    await page.getByRole('button', { name: 'Отчёты', exact: true }).click()
     await page.getByRole('button', { name: 'Отчёт за смену', exact: true }).click()
     await expect(page.locator('.shift-report__paper')).toContainText('Вспомогательные работы')
     await expect(page.locator('.shift-report__paper')).toContainText('Уборка территории')
@@ -128,7 +133,7 @@ test('failed media upload retries without creating duplicate work', async ({ pag
   await page.getByLabel('Название работы', { exact: true }).fill('Уборка')
   await page.getByLabel('Место работ', { exact: true }).selectOption('РММ')
   await page.getByLabel('Выполненные работы', { exact: true }).fill('Убран мусор')
-  await page.locator('.auxiliary-upload input').setInputFiles(new URL('./fixtures/repair-cylinder.webp', import.meta.url).pathname)
+  await page.locator('.auxiliary-upload input').setInputFiles(fileURLToPath(new URL('./fixtures/repair-cylinder.webp', import.meta.url)))
   await page.getByRole('button', { name: 'Сохранить работу' }).click()
   await expect(page.getByRole('alert')).toContainText('Запись сохранена')
   await page.getByRole('button', { name: 'Продолжить загрузку' }).click()

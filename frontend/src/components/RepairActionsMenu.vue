@@ -14,12 +14,15 @@ defineProps({
 })
 const emit = defineEmits(['add', 'edit', 'delete', 'complete'])
 const menu = ref(null)
+/** Закрывает меню действий с записью ремонта. */
 function close() {
   if (menu.value) menu.value.open = false
 }
+/** Закрывает меню действий при нажатии за его пределами. */
 function handleOutside(event) {
   if (!menu.value?.contains(event.target)) close()
 }
+/** Сообщает родителю о выбранном действии и закрывает меню. */
 function choose(action) {
   close()
   emit(action)

@@ -3,13 +3,15 @@ using MyApp.Application.Abstractions;
 using MyApp.Application.Common;
 using MyApp.Application.DTO;
 using MyApp.Application.Services;
-using MyApp.Domain.Entities;
+using MyApp.Application.Models;
 using Xunit;
 
 namespace MyApp.Infrastructure.Tests;
 
+/// <summary>Тесты прав доступа к документам требований.</summary>
 public sealed class ComponentDocumentAuthorizationTests
 {
+    /// <summary>Проверяет, что формировать требование может только сотрудник с профессией механика.</summary>
     [Theory]
     [InlineData("Механик", "user", true)]
     [InlineData(" механик ", "user", true)]
@@ -49,10 +51,12 @@ public sealed class ComponentDocumentAuthorizationTests
         Assert.Equal(allowed ? 1 : 0, saved);
     }
 
+    /// <summary>Проверяет отказ в создании требования для отсутствующего пользователя.</summary>
     [Fact]
     public async Task Missing_user_cannot_create_a_requirement()
     {
         var users = Proxy<IUserRepository>((_, _) => Task.FromResult<User?>(null));
+        /** Проверяет, что запрещённая операция возвращает ожидаемый отказ. */
         object? Reject(MethodInfo _, object?[] __) => throw new Exception("No document data access expected.");
         var service = new ComponentDocumentService(users, Proxy<IResponsibleEmployeeService>(Reject),
             Proxy<IRequirementJournalRepository>(Reject), Proxy<IMaterialGroupService>(Reject));
@@ -60,6 +64,7 @@ public sealed class ComponentDocumentAuthorizationTests
         Assert.Equal(ServiceResultStatus.Unauthorized, result.Status);
     }
 
+    /// <summary>Создаёт прокси зависимости с заданным обработчиком вызовов для теста.</summary>
     private static T Proxy<T>(Func<MethodInfo, object?[], object?> handler) where T : class
     {
         var proxy = DispatchProxy.Create<T, WorkParticipationAuthorizationTests.InvocationProxy>();

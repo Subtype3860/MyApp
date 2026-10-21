@@ -6,11 +6,15 @@ using MyApp.Application.DTO;
 
 namespace MyApp.Infrastructure.Storage;
 
+/// <summary>Распознанная строка CSV, подготовленная к проверке и сохранению.</summary>
 public sealed record CsvImportRow(string Key, Dictionary<string, object?> Data);
+/// <summary>Результат разбора CSV с заголовками и строками данных.</summary>
 public sealed record ParsedCsv(string[] Columns, IReadOnlyList<CsvImportRow> Rows);
 
+/// <summary>Разбор, проверка и экспорт CSV для складских данных и сотрудников.</summary>
 public static class CsvImportCodec
 {
+    /// <summary>Разбирает и проверяет CSV с учётом типа импортируемых данных.</summary>
     public static ParsedCsv Parse(string fileName, byte[] content, CancellationToken cancellationToken = default)
     {
         if (content.Length > 20 * 1024 * 1024) throw new CsvImportValidationException("CSV должен быть не больше 20 МБ.");
@@ -96,8 +100,10 @@ public static class CsvImportCodec
         catch (MalformedLineException error) { throw Error(error.LineNumber, "Некорректные кавычки или разделители CSV."); }
     }
 
+    /// <summary>Сериализует заголовки и строки данных в CSV.</summary>
     public static byte[] Export(string[] columns, IEnumerable<Dictionary<string, object?>> rows)
     {
+        /** Экранирует значение ячейки для записи в CSV. */
         static string Cell(object? value)
         {
             var text = value is JsonElement json ? json.ValueKind == JsonValueKind.Null ? "" : json.ToString()
@@ -109,8 +115,10 @@ public static class CsvImportCodec
         return Encoding.UTF8.GetPreamble().Concat(Encoding.UTF8.GetBytes(output.ToString())).ToArray();
     }
 
+    /// <summary>Создаёт ошибку проверки импортируемого CSV.</summary>
     private static CsvImportValidationException Error(long line, string message) => new($"Строка {line}: {message}");
 
+    /// <summary>Определяет разделитель столбцов импортируемого CSV.</summary>
     private static string DetectDelimiter(string line)
     {
         var counts = new Dictionary<char, int> { [';'] = 0, [','] = 0, ['\t'] = 0 };
@@ -123,6 +131,7 @@ public static class CsvImportCodec
         return counts.MaxBy(item => item.Value).Key.ToString();
     }
 
+    /// <summary>Приводит заголовок столбца к принятому имени для сопоставления.</summary>
     private static string CanonicalHeader(string header, bool workers)
     {
         var key = string.Concat(header.Where(char.IsLetterOrDigit)).ToLowerInvariant();

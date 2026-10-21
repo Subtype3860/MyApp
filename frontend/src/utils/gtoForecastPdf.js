@@ -3,9 +3,11 @@ import boldFontUrl from '../assets/LiberationSans-Bold.ttf?url'
 import italicFontUrl from '../assets/LiberationSans-Italic.ttf?url'
 import { climateLabels, forecastLabel, forecastPdfNoteBlocks, forecastDocumentRow, responsibleShortName, engineHoursText } from './gtoForecast'
 import { formatReportDate, vehicleTitle } from './shiftReport'
+import { fixedHoursText, hoursReportHeader } from './gtoForecast'
 
+/** Создаёт PDF прогноза ГТО с группами техники, показаниями и примечаниями. */
 export async function createGtoForecastPdf({ date, shift, mechanic, organisation, site, groups }) {
-  const [{ PDFDocument, rgb }, { default: fontkit }, fontResponse, boldResponse, italicResponse] = await Promise.all([
+  const [{ PDFDocument, rgb, StandardFonts }, { default: fontkit }, fontResponse, boldResponse, italicResponse] = await Promise.all([
     import('pdf-lib'), import('@pdf-lib/fontkit'), fetch(notoSansUrl), fetch(boldFontUrl), fetch(italicFontUrl),
   ])
   if (!fontResponse.ok || !boldResponse.ok || !italicResponse.ok) throw new Error('Не удалось загрузить шрифт.')
@@ -15,18 +17,29 @@ export async function createGtoForecastPdf({ date, shift, mechanic, organisation
   const font = await pdf.embedFont(regularBytes, { subset: true })
   const boldFont = await pdf.embedFont(boldBytes, { subset: true })
   const italicFont = await pdf.embedFont(italicBytes, { subset: true })
+  const hoursFont = await pdf.embedFont(StandardFonts.CourierBold)
   const italicMetrics = fontkit.create(new Uint8Array(italicBytes))
   const regularMetrics = fontkit.create(new Uint8Array(regularBytes)), boldMetrics = fontkit.create(new Uint8Array(boldBytes))
   const red = rgb(.8, .08, .08)
   const ink = rgb(.12, .17, .23), muted = rgb(.4, .45, .5), accent = rgb(.08, .37, .42)
   const widths = [28, 124, 63, 65, 94, 28, 35, 186, 94, 64, 69].map(width => width * .94)
-  const headers = ['№', 'Техника / номер', 'Наработка, м/ч', 'М/ч при замене ДВС', 'Исправно/Неисправно', 'КТГ', 'ТО', 'Неисправность / примечание', 'Плановый выход', 'Начало простоя', 'Система кондиционирования и отопления'].map(text => [{ text, bold: true }])
+  // Five positions per engine plus " / ": exactly thirteen monospaced positions.
+  const hoursWidth = hoursFont.widthOfTextAtSize('00000 / 00000', 7) + 8
+  widths[7] += widths[2] - hoursWidth
+  widths[2] = hoursWidth
+  // Fit the ten-character status labels using the actual regular/bold font metrics.
+  const statusWidth = Math.max(...['Неисправно', 'Неисправен'].flatMap(text =>
+    [font, boldFont].map(face => face.widthOfTextAtSize(text, 7)))) + 8.1
+  widths[7] += widths[4] - statusWidth
+  widths[4] = statusWidth
+  const headers = ['№', 'Техника / номер', hoursReportHeader(groups), 'М/ч при замене ДВС', 'Исправно /\nНеисправно', 'КТГ', 'ТО', 'Неисправность / примечание', 'Плановый выход', 'Начало простоя', 'Система кондиционирования и отопления'].map(text => [{ text, bold: true }])
   const left = 20, rowHeight = 8, rowPadding = 3, tableWidth = widths.reduce((a,b)=>a+b,0)
   let page, y
   let pageHasRows = false
   let pageHeight = 595.28
   const bottom = 30
-  const clean = text => String(text ?? '').replace(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g, '')
+  const /** Нормализует пробельные символы перед размещением текста в PDF. */ clean = text => String(text ?? '').replace(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g, '')
+  /** Разбивает текст на строки, помещающиеся в заданную ширину PDF-ячейки. */
   function wrap(text, width, size = 7, textFont = font) {
     const lines = []
     for (const paragraph of clean(text).split('\n')) {
@@ -42,12 +55,14 @@ export async function createGtoForecastPdf({ date, shift, mechanic, organisation
     }
     return lines.length ? lines : ['']
   }
+  /** Рисует строки текста в PDF, добавляя страницу при нехватке места. */
   function textLines(text, size = 10, color = ink) {
     for (const line of wrap(text, tableWidth, size)) {
       if (y < 40) newPage()
       page.drawText(line, { x: left, y, font, size, color }); y -= size + 5
     }
   }
+  /** Рисует текст с уменьшенными межстрочными отступами в PDF. */
   function compactText(text, size, color) {
     for (const line of wrap(text, tableWidth, size)) {
       y -= size
@@ -55,9 +70,10 @@ export async function createGtoForecastPdf({ date, shift, mechanic, organisation
       y -= 3
     }
   }
+  /** Переносит фрагменты текста с сохранением их выделения. */
   function wrapSpans(spans, width) {
     const lines = []; let runs = [], used = 0
-    const flush = () => { lines.push({ runs }); runs = []; used = 0 }
+    const /** Добавляет накопленную строку в результат переноса текста и очищает буфер. */ flush = () => { lines.push({ runs }); runs = []; used = 0 }
     for (const span of spans) {
       const face = span.italic ? italicFont : span.bold ? boldFont : font
       for (const token of clean(span.text).split(/(\s+)/).filter(Boolean)) {
@@ -77,6 +93,7 @@ export async function createGtoForecastPdf({ date, shift, mechanic, organisation
     return lines
   }
   const cellLineCache = new Map()
+  /** Подготавливает строки и стили содержимого ячейки PDF-таблицы. */
   function cellLines(cells) {
     return cells.map((cell, i) => {
       const key = `${widths[i]}:${JSON.stringify(cell)}`
@@ -84,6 +101,7 @@ export async function createGtoForecastPdf({ date, shift, mechanic, organisation
       const blocks = Array.isArray(cell) ? cell : [{ text: cell ?? '' }]
       const result = blocks.flatMap(block => {
         const item = typeof block === 'object' ? block : { text: block }
+        if (item.fixedHours) return [{ text: item.text, fixedHours: true, bold: true }]
         if (item.spans) return wrapSpans(item.spans, widths[i] - 8)
         const wrapped = wrap(item.text, widths[i] - 8, 7, item.italic ? italicFont : item.bold ? boldFont : font)
         return wrapped.map((text, index) => ({ text, bold: item.bold, italic: item.italic, red: item.red, divider: item.divider && index === wrapped.length - 1 }))
@@ -92,6 +110,7 @@ export async function createGtoForecastPdf({ date, shift, mechanic, organisation
       return result
     })
   }
+  /** Рисует линию сетки таблицы в PDF. */
   function tableLine(cells, fill, continuation = false, keepTogether = true) {
     const lines = cellLines(cells)
     const count = Math.max(1, ...lines.map(item=>item.length))
@@ -115,7 +134,7 @@ export async function createGtoForecastPdf({ date, shift, mechanic, organisation
         for (let j=0;j<cellLines.length;j++) {
           const line = cellLines[j]
           const baseline = firstBaseline-j*rowHeight
-          const textFont = line.italic ? italicFont : line.bold ? boldFont : font
+          const textFont = line.fixedHours ? hoursFont : line.italic ? italicFont : line.bold ? boldFont : font
           if (line.runs) {
             let runX = x+4
             for (const run of line.runs) {
@@ -149,6 +168,7 @@ export async function createGtoForecastPdf({ date, shift, mechanic, organisation
   const nameRowHeight = Math.max(1, mechanicLines.length) * responsibleLineHeight + 4
   const responsibleHeight = 13 + nameRowHeight
   const reportHeaderHeight = Math.max(companyLines.length * 8 + 8, responsibleHeight + 12)
+  /** Создаёт следующую страницу PDF и обновляет позицию вывода. */
   function newPage(withTableHeader = true) {
     page = pdf.addPage([841.89, pageHeight]); pageHasRows = false
     const top = pageHeight - 20
@@ -169,12 +189,13 @@ export async function createGtoForecastPdf({ date, shift, mechanic, organisation
     page.drawText(String(shift),{x:left+tableWidth*.95,y:y+4,font:boldFont,size:7,color:ink})
     if (withTableHeader) tableLine(headers,rgb(.92,.95,.96))
   }
+  /** Преобразует строку прогноза в содержимое ячеек PDF-таблицы. */
   function rowCells(source, index) {
     const row = forecastDocumentRow(source)
     const noteBlocks = forecastPdfNoteBlocks(row)
     return [
         index, vehicleTitle(row.vehicle),
-        engineHoursText(row),
+        [{ text: fixedHoursText(row), fixedHours: true }],
         [{ text: engineHoursText(row, true), red: true }],
         [{ text: forecastLabel(row.forecast), bold: row.forecast === 'faulty', red: row.forecast === 'faulty' }],
         row.ktg != null && row.ktg !== '' ? `${row.ktg}%` : '',

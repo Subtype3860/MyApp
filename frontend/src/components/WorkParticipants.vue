@@ -14,7 +14,9 @@ const statusLabels = { pending: 'Ожидает подтверждения', app
 watch(() => props.work.participants, value => {
   if (Array.isArray(value)) { participants.value = value; loaded.value = true }
 })
+/** Формирует заголовки запроса с токеном текущей сессии. */
 function headers() { return { Authorization: `Bearer ${context?.token.value}`, 'Content-Type': 'application/json' } }
+/** Обновляет список участников работы. */
 async function refresh() {
   if (!context) return
   const response = await fetch(`${baseUrl.value}/participants`, { headers: headers(), signal: controller.signal })
@@ -23,6 +25,7 @@ async function refresh() {
   participants.value = result
   loaded.value = true
 }
+/** Отправляет действие участия в работе и обновляет список участников. */
 async function act(participant, approved) {
   if (busy.value || !context) return
   busy.value = true

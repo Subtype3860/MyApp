@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace MyApp.API.Controllers;
 
+/// <summary>HTTP-эндпоинты профиля пользователя.</summary>
 [ApiController]
 [Route("api/profile")]
 [Authorize]
@@ -21,6 +22,7 @@ public class UserProfileController : ControllerBase
             "image/webp"
         };
 
+    /// <summary>Возвращает профиль указанного пользователя.</summary>
     [HttpGet]
     public async Task<IActionResult> GetProfile(
         [FromServices] IUserService service,
@@ -35,6 +37,7 @@ public class UserProfileController : ControllerBase
         return this.ToActionResult(result, value => Ok(value));
     }
 
+    /// <summary>Обновляет личные данные пользователя с проверкой запроса.</summary>
     [HttpPut]
     public async Task<IActionResult> UpdateProfile(
         [FromBody] UpdateProfileRequest request,
@@ -50,6 +53,7 @@ public class UserProfileController : ControllerBase
         return this.ToActionResult(result, value => Ok(value));
     }
 
+    /// <summary>Возвращает изображение аватара пользователя.</summary>
     [HttpGet("avatar")]
     public async Task<IActionResult> GetAvatar(
         [FromServices] IUserService service,
@@ -64,6 +68,7 @@ public class UserProfileController : ControllerBase
         return this.ToActionResult(result, avatar => File(avatar.Content, avatar.ContentType, enableRangeProcessing: false));
     }
 
+    /// <summary>Принимает файл нового аватара текущего пользователя.</summary>
     [HttpPost("avatar")]
     [IgnoreAntiforgeryToken]
     public async Task<IActionResult> UploadAvatar(
@@ -92,6 +97,7 @@ public class UserProfileController : ControllerBase
         return this.ToActionResult(result, _ => Ok());
     }
 
+    /// <summary>Удаляет аватар пользователя.</summary>
     [HttpDelete("avatar")]
     public async Task<IActionResult> DeleteAvatar(
         [FromServices] IUserService service,
@@ -106,6 +112,7 @@ public class UserProfileController : ControllerBase
         return this.ToActionResult(result, _ => Ok());
     }
 
+    /// <summary>Извлекает идентификатор пользователя из утверждений текущей сессии.</summary>
     private bool TryGetUserId(out Guid userId)
     {
         var value = User.FindFirstValue(ClaimTypes.NameIdentifier)

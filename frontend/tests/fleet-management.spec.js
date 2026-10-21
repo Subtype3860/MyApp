@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test'
 
+/** Подготавливает страницу и ответы API для сценариев браузерного теста. */
 async function setup(page, { width = 1440, manager = true, denied = false } = {}) {
   await page.setViewportSize({ width, height: 1100 })
   await page.addInitScript(() => {

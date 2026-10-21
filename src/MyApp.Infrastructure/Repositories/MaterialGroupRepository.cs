@@ -6,9 +6,11 @@ using MyApp.Infrastructure.Db.Entities;
 
 namespace MyApp.Infrastructure.Repositories;
 
+/// <summary>Доступ к данным групп материалов.</summary>
 public sealed class MaterialGroupRepository(
     AppDbContext db) : IMaterialGroupRepository
 {
+    /// <summary>Возвращает список групп материалов.</summary>
     public async Task<IReadOnlyList<MaterialGroupResponse>> GetAllAsync(
         CancellationToken cancellationToken)
     {
@@ -53,6 +55,7 @@ public sealed class MaterialGroupRepository(
             .ToArray();
     }
 
+    /// <summary>Возвращает соответствия материалов их группам.</summary>
     public async Task<IReadOnlyList<MaterialGroupMappingResponse>> GetMappingsAsync(
         string sourceTable,
         CancellationToken cancellationToken) =>
@@ -75,6 +78,7 @@ public sealed class MaterialGroupRepository(
                 item.GroupName))
             .ToArrayAsync(cancellationToken);
 
+    /// <summary>Проверяет существование группы материалов.</summary>
     public Task<bool> GroupExistsAsync(
         Guid id,
         CancellationToken cancellationToken) =>
@@ -82,6 +86,7 @@ public sealed class MaterialGroupRepository(
             group => group.Id == id,
             cancellationToken);
 
+    /// <summary>Проверяет, занято ли название группы материалов.</summary>
     public Task<bool> GroupNameExistsAsync(
         string name,
         CancellationToken cancellationToken)
@@ -92,6 +97,7 @@ public sealed class MaterialGroupRepository(
             cancellationToken);
     }
 
+    /// <summary>Проверяет наличие материала в доступном источнике складских данных.</summary>
     public Task<bool> MaterialExistsAsync(
         string sourceTable,
         string materialName,
@@ -110,6 +116,7 @@ public sealed class MaterialGroupRepository(
         };
     }
 
+    /// <summary>Проверяет, включён ли материал в группу.</summary>
     public Task<bool> MaterialIsAssignedAsync(
         string sourceTable,
         string materialName,
@@ -123,6 +130,7 @@ public sealed class MaterialGroupRepository(
             cancellationToken);
     }
 
+    /// <summary>Создаёт группу материалов.</summary>
     public async Task<Guid> CreateGroupAsync(
         string name,
         CancellationToken cancellationToken)
@@ -137,6 +145,7 @@ public sealed class MaterialGroupRepository(
         return group.Id;
     }
 
+    /// <summary>Включает материал в выбранную группу.</summary>
     public async Task<Guid> AddItemAsync(
         Guid groupId,
         string sourceTable,
@@ -155,6 +164,7 @@ public sealed class MaterialGroupRepository(
         return item.Id;
     }
 
+    /// <summary>Удаляет группу материалов.</summary>
     public async Task<bool> DeleteGroupAsync(
         Guid id,
         CancellationToken cancellationToken) =>
@@ -162,6 +172,7 @@ public sealed class MaterialGroupRepository(
             .Where(group => group.Id == id)
             .ExecuteDeleteAsync(cancellationToken) > 0;
 
+    /// <summary>Исключает материал из группы.</summary>
     public async Task<bool> DeleteItemAsync(
         Guid id,
         CancellationToken cancellationToken) =>

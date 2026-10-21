@@ -3,8 +3,10 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace MyApp.API.Controllers;
 
+/// <summary>Преобразование результатов прикладного слоя в HTTP-ответы контроллеров.</summary>
 internal static class ControllerResultMapper
 {
+    /// <summary>Преобразует результат прикладного сервиса в HTTP-ответ с подходящим статусом.</summary>
     public static IActionResult ToActionResult<T>(
         this ControllerBase controller,
         ServiceResult<T> result,

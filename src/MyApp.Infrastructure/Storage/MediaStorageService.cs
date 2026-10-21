@@ -3,20 +3,24 @@ using MyApp.Application.Storage;
 
 namespace MyApp.Infrastructure.Storage;
 
+/// <summary>Сохранение фотографий и видео в настроенные файловые каталоги.</summary>
 public sealed class MediaStorageService(MediaStorageOptions options) : IMediaStorageService
 {
+    /// <summary>Сохраняет фотографию в настроенное файловое хранилище.</summary>
     public Task<string> SavePhotoAsync(
         byte[] content,
         string fileName,
         CancellationToken cancellationToken) =>
         SaveAsync(options.StagingPhotoDirectory, content, fileName, cancellationToken);
 
+    /// <summary>Сохраняет видео в настроенное файловое хранилище.</summary>
     public Task<string> SaveVideoAsync(
         byte[] content,
         string fileName,
         CancellationToken cancellationToken) =>
         SaveAsync(options.StagingVideoDirectory, content, fileName, cancellationToken);
 
+    /// <summary>Записывает содержимое файла в хранилище и возвращает результат сохранения.</summary>
     private static async Task<string> SaveAsync(
         string directory,
         byte[] content,

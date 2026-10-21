@@ -5,11 +5,13 @@ using MyApp.Application.Security;
 
 namespace MyApp.Application.Services;
 
+/// <summary>Прикладные операции аутентификации.</summary>
 public sealed class AuthenticationService(
     IUserRepository userRepository,
     IPasswordHasher passwordHasher,
     ITokenProvider tokenProvider) : IAuthenticationService
 {
+    /// <summary>Проверяет учётные данные и возвращает результат входа с токеном доступа.</summary>
     public async Task<ServiceResult<AuthResponse>> LoginAsync(
         LoginRequest request,
         CancellationToken cancellationToken)

@@ -6,8 +6,10 @@ using MyApp.Application.DTO;
 
 namespace MyApp.Application.Services;
 
+/// <summary>Чтение листов Excel и преобразование выбранного листа в формат CSV.</summary>
 public static class ImportWorkbook
 {
+    /// <summary>Открывает загруженную книгу Excel для чтения.</summary>
     private static IExcelDataReader Open(byte[] content)
     {
         Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
@@ -21,6 +23,7 @@ public static class ImportWorkbook
         return ExcelReaderFactory.CreateOpenXmlReader(new MemoryStream(content));
     }
 
+    /// <summary>Перечисляет доступные листы книги Excel.</summary>
     public static string[] Sheets(byte[] content)
     {
         try
@@ -35,6 +38,7 @@ public static class ImportWorkbook
         { throw new CsvImportValidationException("Не удалось прочитать XLSX-файл."); }
     }
 
+    /// <summary>Преобразует выбранный лист Excel в CSV для общей проверки импорта.</summary>
     public static byte[] ToCsv(byte[] content, string? sheetName, CancellationToken cancellationToken)
     {
         try

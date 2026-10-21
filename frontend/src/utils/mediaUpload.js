@@ -1,3 +1,4 @@
+/** Преобразует загруженное изображение в WebP для отправки на сервер. */
 export async function convertImageToWebp(file) {
   let bitmap
   try {

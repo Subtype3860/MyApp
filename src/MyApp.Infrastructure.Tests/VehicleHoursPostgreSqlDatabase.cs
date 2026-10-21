@@ -15,6 +15,7 @@ internal sealed class VehicleHoursPostgreSqlDatabase : IAsyncDisposable
     private readonly string schema;
     private readonly string scopedConnectionString;
 
+    /// <summary>Подготавливает объект тестового окружения с заданными зависимостями.</summary>
     private VehicleHoursPostgreSqlDatabase(string connectionString, string schema)
     {
         adminConnectionString = connectionString;
@@ -25,6 +26,7 @@ internal sealed class VehicleHoursPostgreSqlDatabase : IAsyncDisposable
         }.ConnectionString;
     }
 
+    /// <summary>Создаёт контекст EF Core, подключённый к изолированной тестовой схеме.</summary>
     public AppDbContext CreateContext(DbCommandInterceptor? interceptor = null)
     {
         var options = new DbContextOptionsBuilder<AppDbContext>()
@@ -34,6 +36,7 @@ internal sealed class VehicleHoursPostgreSqlDatabase : IAsyncDisposable
         return new AppDbContext(options.Options);
     }
 
+    /// <summary>Создаёт изолированную схему PostgreSQL и подготавливает данные теста.</summary>
     public static async Task<VehicleHoursPostgreSqlDatabase> CreateAsync()
     {
         var connectionString = Environment.GetEnvironmentVariable("MYAPP_TEST_POSTGRES");
@@ -67,6 +70,7 @@ internal sealed class VehicleHoursPostgreSqlDatabase : IAsyncDisposable
         }
     }
 
+    /// <summary>Создаёт таблицы и исходные данные изолированной тестовой схемы.</summary>
     private async Task InitializeAsync()
     {
         await using var dataSource = NpgsqlDataSource.Create(scopedConnectionString);
@@ -78,6 +82,7 @@ internal sealed class VehicleHoursPostgreSqlDatabase : IAsyncDisposable
                 id uuid PRIMARY KEY,
                 vehicle_id uuid NOT NULL REFERENCES number_car(id) ON DELETE CASCADE,
                 reading_date date NOT NULL,
+                reading_time time without time zone,
                 engine_hours numeric NOT NULL CHECK (engine_hours >= 0),
                 engine_number integer NOT NULL DEFAULT 0,
                 note text NOT NULL DEFAULT '',
@@ -90,6 +95,7 @@ internal sealed class VehicleHoursPostgreSqlDatabase : IAsyncDisposable
         await cmd.ExecuteNonQueryAsync();
     }
 
+    /// <summary>Выполняет SQL-команду в изолированной тестовой схеме.</summary>
     public async Task ExecuteAsync(string sql, params (string Name, object Value)[] values)
     {
         await using var dataSource = NpgsqlDataSource.Create(scopedConnectionString);
@@ -99,6 +105,7 @@ internal sealed class VehicleHoursPostgreSqlDatabase : IAsyncDisposable
         await cmd.ExecuteNonQueryAsync();
     }
 
+    /// <summary>Читает показания моточасов для проверки результатов теста.</summary>
     public async Task<IReadOnlyList<(Guid VehicleId, DateOnly Date, decimal Hours)>>
         ReadingsAsync()
     {
@@ -111,6 +118,7 @@ internal sealed class VehicleHoursPostgreSqlDatabase : IAsyncDisposable
         return rows.Select(x => (x.VehicleId, x.ReadingDate, x.EngineHours)).ToArray();
     }
 
+    /// <summary>Удаляет изолированную схему после завершения теста.</summary>
     public async ValueTask DisposeAsync()
     {
         await using var connection = new NpgsqlConnection(adminConnectionString);

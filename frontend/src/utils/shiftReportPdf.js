@@ -17,6 +17,7 @@ export async function compactPhoto(blob) {
   } finally { bitmap.close() }
 }
 
+/** Создаёт PDF сменного отчёта с карточками работ и ссылками на вложения. */
 export async function createShiftReportPdf({ groups, date, shift, photos }) {
   const [{ PDFDocument, PDFName, PDFString, rgb }, { default: fontkit }, fontResponse] = await Promise.all([
     import('pdf-lib'), import('@pdf-lib/fontkit'), fetch(notoSansUrl),
@@ -28,9 +29,11 @@ export async function createShiftReportPdf({ groups, date, shift, photos }) {
   const ink = rgb(.12, .17, .23), muted = rgb(.40, .45, .50), accent = rgb(.08, .37, .42)
   let page, y
   const width = 499, left = 48
+  /** Рисует текст в PDF с заданными координатами и оформлением. */
   function draw(text, size = 10, color = ink, x = left) {
     page.drawText(String(text), { x, y, size, font, color })
   }
+  /** Создаёт следующую страницу PDF и обновляет позицию вывода. */
   function newPage() {
     page = document.addPage([595.28, 841.89])
     y = 790
@@ -39,7 +42,9 @@ export async function createShiftReportPdf({ groups, date, shift, photos }) {
     draw(`${formatReportDate(date)}  ·  ${shift} смена`, 10, muted)
     y -= 32
   }
+  /** Создаёт новую страницу, если оставшейся высоты недостаточно для следующего блока. */
   function ensure(height) { if (y - height < 54) newPage() }
+  /** Разбивает текст на строки для вывода в PDF сменного отчёта. */
   function lines(text, size = 10) {
     const result = []
     for (const paragraph of String(text).replace(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g, '').split('\n')) {
@@ -56,6 +61,7 @@ export async function createShiftReportPdf({ groups, date, shift, photos }) {
     }
     return result
   }
+  /** Добавляет ссылку на вложение в PDF сменного отчёта. */
   function link(label, url, x = left, linkY = y, linkWidth) {
     page.drawText(label, { x, y: linkY, size: 9, font, color: accent })
     const annotation = document.context.register(document.context.obj({

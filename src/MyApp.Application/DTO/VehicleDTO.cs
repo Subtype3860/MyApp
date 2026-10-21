@@ -80,7 +80,8 @@ public sealed record VehicleHoursResponse(
     decimal EngineHours,
     string Note,
     DateTimeOffset CreatedAt,
-    int EngineNumber = 0);
+    int EngineNumber = 0,
+    TimeOnly? ReadingTime = null);
 
 /// <summary>Одна строка данных, распознанная при импорте моточасов из файла.</summary>
 public sealed record VehicleHoursImportItem(
@@ -184,6 +185,7 @@ public sealed record VehiclePartsRequest(
     string? RequiredParts = null,
     DateOnly? CompletedDate = null);
 
+/// <summary>Реквизиты и состояние заявки на закупку запчастей.</summary>
 public sealed record VehiclePartsRequestResponse(
     Guid Id,
     Guid DefectId,
@@ -207,6 +209,7 @@ public sealed record VehicleJournalResponse(
     IReadOnlyList<VehicleWorkResponse> Works,
     IReadOnlyList<VehiclePartsRequestResponse>? PartsRequests = null);
 
+/// <summary>Изменяемые поля записи истории техники.</summary>
 public sealed record VehicleHistoryEditRequest(string Description);
 
 /// <summary>Участие сотрудника в конкретной работе; в отчёт попадает после подтверждения механиком.</summary>
@@ -215,13 +218,17 @@ public sealed record VehicleWorkParticipantResponse(
     DateTimeOffset RequestedAt, Guid? ReviewedBy, DateTimeOffset? ReviewedAt,
     string ReviewedByName = "");
 
+/// <summary>Решение механика по участию сотрудника в работе.</summary>
 public sealed record VehicleWorkParticipantReviewRequest(bool Approved);
 
 /// <summary>Работа на участке без привязки к транспорту.</summary>
 public sealed record AuxiliaryWorkRequest(string Title, string Description, string Location, DateTimeOffset PerformedAt);
 
+/// <summary>Поля карточки техники для создания или изменения.</summary>
 public sealed record VehicleCatalogRequest(string GroupName, string TypeName, string ModelName, int? GarageNumber, string StateNumber, string Vin);
+/// <summary>Значение справочника, доступное при редактировании техники.</summary>
 public sealed record VehicleCatalogOption(Guid Id, string Name, Guid? ParentId = null);
+/// <summary>Справочники парка и признаки доступных пользователю действий.</summary>
 public sealed record VehicleCatalogOptions(bool CanManage, IReadOnlyList<VehicleCatalogOption> Groups, IReadOnlyList<VehicleCatalogOption> Types, IReadOnlyList<VehicleCatalogOption> Models)
 {
     public bool CanManageHours { get; init; }

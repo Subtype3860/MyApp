@@ -19,6 +19,7 @@ const successMessage = ref('')
 const isLoading = ref(false)
 const isSubmitting = ref(false)
 
+/** Формирует заголовки запроса с токеном текущей сессии. */
 function headers(json = false) {
   return {
     Authorization: `Bearer ${props.token}`,
@@ -26,6 +27,7 @@ function headers(json = false) {
   }
 }
 
+/** Заменяет URL аватара, освобождая предыдущий адрес объекта Blob. */
 function replaceAvatarUrl(url) {
   if (avatarUrl.value?.startsWith('blob:')) {
     URL.revokeObjectURL(avatarUrl.value)
@@ -33,6 +35,7 @@ function replaceAvatarUrl(url) {
   avatarUrl.value = url
 }
 
+/** Извлекает понятное сообщение об ошибке из ответа API. */
 async function readError(response, fallback) {
   const problem = await response.json().catch(() => null)
   return problem?.errors
@@ -40,6 +43,7 @@ async function readError(response, fallback) {
     : problem?.detail || problem?.title || fallback
 }
 
+/** Загружает аватар пользователя с авторизацией. */
 async function loadAvatar() {
   if (!profile.value?.hasAvatar) {
     replaceAvatarUrl('')
@@ -51,6 +55,7 @@ async function loadAvatar() {
   }
 }
 
+/** Загружает профиль текущего пользователя. */
 async function loadProfile() {
   isLoading.value = true
   errorMessage.value = ''
@@ -69,6 +74,7 @@ async function loadProfile() {
   }
 }
 
+/** Проверяет выбранный файл аватара и готовит его предварительный просмотр. */
 function selectAvatar(event) {
   const file = event.target.files?.[0]
   selectedAvatar.value = file ?? null
@@ -79,6 +85,7 @@ function selectAvatar(event) {
   }
 }
 
+/** Отправляет выбранное изображение аватара на сервер. */
 async function uploadAvatar() {
   if (!selectedAvatar.value) return
   isSubmitting.value = true
@@ -107,6 +114,7 @@ async function uploadAvatar() {
   }
 }
 
+/** Удаляет аватар на сервере и обновляет его отображение. */
 async function deleteAvatar() {
   const response = await fetch('/api/profile/avatar', {
     method: 'DELETE',
@@ -123,6 +131,7 @@ async function deleteAvatar() {
   successMessage.value = 'Аватар удалён.'
 }
 
+/** Сохраняет изменения профиля и обрабатывает ответ сервера. */
 async function saveProfile() {
   errorMessage.value = ''
   successMessage.value = ''

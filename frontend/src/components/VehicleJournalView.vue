@@ -29,6 +29,7 @@ const session = computed(() => {
   } catch { return {} }
 })
 const isAdministrator = computed(() => String(session.value.role ?? session.value['http://schemas.microsoft.com/ws/2008/06/identity/claims/role'] ?? '').trim().toLowerCase() === 'administrator')
+/** Определяет доступность удаления работы для текущего пользователя. */
 function canDeleteWork(work) {
   return isAdministrator.value || Boolean(work.createdById && String(work.createdById).toLowerCase() === String(session.value.sub ?? '').toLowerCase())
 }
@@ -38,6 +39,7 @@ provide('workParticipation', {
   userId: computed(() => participationProfile.value?.id || session.value.sub || ''),
   canReview: computed(() => String(participationProfile.value?.position || '').trim().toLocaleLowerCase('ru-RU') === 'механик'),
 })
+/** Загружает профиль для проверки действий с участниками работ. */
 async function loadParticipationProfile() {
   try {
     const response = await fetch('/api/profile', { headers: authHeaders() })
@@ -109,6 +111,7 @@ watch(partsActionRowId, () => { partsActionItemId.value = selectedPartsActionRow
 watch(selectedPartsActionItem, item => {
   if (partsAction.value !== 'add') partsActionDraft.value = { date: item?.requestDate ?? '', description: item?.description || item?.requestNumber || '', completed: partsAction.value === 'complete' || Boolean(item?.completedDate), completedDate: item?.completedDate || new Date().toISOString().slice(0, 10) }
 })
+/** Открывает форму выбранного действия с заявкой на запчасти. */
 async function openPartsAction(action, row) {
   if (isSaving.value || isLoading.value || !row || !partsRequests.value.includes(row)) return
   if (action !== 'add' && !row.partsRequests.length) return
@@ -124,9 +127,11 @@ async function openPartsAction(action, row) {
   await nextTick()
   partsActionDialog.value?.showModal()
 }
+/** Закрывает форму действия с заявкой на запчасти. */
 function closePartsAction() {
   partsActionDialog.value?.close()
 }
+/** Выполняет выбранное действие с заявкой на запчасти по данным формы. */
 async function submitPartsAction() {
   if (isSaving.value || !selectedPartsActionRow.value) return
   const row = selectedPartsActionRow.value
@@ -146,6 +151,7 @@ async function submitPartsAction() {
   if (saved) closePartsAction()
 }
 
+/** Возвращает или создаёт черновик редактирования заявки на запчасти. */
 function partsRequestDraft(request) {
   if (!partsRequestDrafts.value[request.id]) {
     partsRequestDrafts.value[request.id] = {
@@ -156,11 +162,13 @@ function partsRequestDraft(request) {
   return partsRequestDrafts.value[request.id]
 }
 
+/** Форматирует дату заявки на запчасти. */
 function formatPartsRequestDate(value) {
   const date = new Date(`${value}T00:00:00`)
   return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString('ru-RU')
 }
 
+/** Подготавливает историю заявок на запчасти для отображения. */
 function partsRequestHistory(request) {
   return request.partsRequests ?? []
 }
@@ -200,6 +208,7 @@ function authHeaders(json = false) {
   }
 }
 
+/** Собирает вложения из списка работ для просмотра. */
 function workMediaForWorks(works, type) {
   return works.flatMap((work) =>
     (type === 'video' ? work.videos ?? [] : work.photos ?? [])
@@ -232,6 +241,7 @@ async function loadRepairSection() {
   }
 }
 
+/** Загружает заявки на запчасти выбранной неисправности. */
 async function loadPartsRequests() {
   isLoading.value = true
   errorMessage.value = ''
@@ -283,6 +293,7 @@ async function loadPartsRequests() {
   }
 }
 
+/** Проверяет и создаёт заявку на запчасти. */
 async function savePartsRequest(request) {
   const draft = partsRequestDraft(request)
   if (!draft.date || !draft.description.trim()) {
@@ -347,6 +358,7 @@ async function savePartsRequest(request) {
   }
 }
 
+/** Проверяет и сохраняет изменённые реквизиты заявки на запчасти. */
 async function saveEditedPartsRequest(item) {
   const draft = partsRequestEditDrafts.value[item.id]
   if (!draft?.date || !draft.description.trim()) {
@@ -393,6 +405,7 @@ async function saveEditedPartsRequest(item) {
   }
 }
 
+/** Удаляет заявку на запчасти после подтверждения и обновляет список. */
 async function deletePartsRequest(request, item) {
   if (!window.confirm('Удалить эту заявку на закупку?')) return
   isSaving.value = true
@@ -435,6 +448,7 @@ async function loadVehicles() {
   }
 }
 
+/** Загружает историю ремонта, включая архивную технику. */
 async function loadRepairHistory(signal) {
   const response = await fetch('/api/vehicles/repair-journal?includeArchived=true', {
     headers: authHeaders(),
@@ -444,6 +458,7 @@ async function loadRepairHistory(signal) {
   return (await response.json()).map(mapRepairHistory)
 }
 
+/** Группирует работы, вложения и заявки вокруг неисправностей для истории ремонта. */
 function mapRepairHistory(journal) {
   const worksByDefect = new Map()
   for (const work of journal.works ?? []) {
@@ -610,15 +625,18 @@ function repairStatusLabel(status) {
   }[repairStatus(status)]
 }
 
+/** Возвращает понятное название рабочего состояния техники. */
 function operationalStateLabel(state) {
   return { healthy: 'Исправна', operating: 'Работает с неисправностью', operating_with_defect: 'Работает с неисправностью', stopped: 'Простаивает' }[state] || 'Простаивает'
 }
 
+/** Возвращает этапы ремонта в хронологическом порядке. */
 function repairWorksInOrder(defect) {
   return [...(defect.repairWorks ?? [])].sort((first, second) =>
     new Date(first.createdAt ?? 0) - new Date(second.createdAt ?? 0))
 }
 
+/** После подтверждения удаляет этап ремонта вместе с его вложениями. */
 async function deleteRepairWork(defect, workId) {
   const work = defect.repairWorks?.find(item => item.id === workId)
   if (!window.confirm(`Удалить этап от ${formatDateTime(work?.createdAt)} вместе с фото и видео?`)) return
@@ -648,6 +666,7 @@ async function deleteRepairWork(defect, workId) {
   }
 }
 
+/** Возвращает или создаёт черновик отчёта о ремонте выбранной неисправности. */
 function repairDraft(defect) {
   if (!repairDrafts.value[defect.id]) {
     repairDrafts.value[defect.id] = {
@@ -715,6 +734,7 @@ async function uploadRepairFiles(defect, event) {
   }
 }
 
+/** Проверяет отчёт о работе, сохраняет этап ремонта и загружает его вложения. */
 async function completeRepair(defect) {
   const draft = repairDraft(defect)
   const description = draft.description.trim()
@@ -996,11 +1016,13 @@ async function uploadFiles(category, entryId, type, files) {
   }
 }
 
+/** Подготавливает список фотографий или видео неисправности для просмотрщика. */
 function defectMedia(defect, type) {
   return (type === 'video' ? defect.videos ?? [] : defect.photos ?? [])
     .map((media) => ({ media, type }))
 }
 
+/** Открывает просмотр непустого списка вложений ремонта. */
 function openRepairMedia(items, type) {
   if (!items.length) return
   mediaViewerItems.value = items
@@ -1008,10 +1030,12 @@ function openRepairMedia(items, type) {
   mediaViewerOpen.value = true
 }
 
+/** Открывает фотографии или видео выбранной неисправности. */
 function openRepairMediaCollection(defect, type) {
   return openRepairMedia(defectMedia(defect, type), type)
 }
 
+/** Закрывает просмотрщик и очищает список вложений. */
 function closeMediaViewer() {
   mediaViewerOpen.value = false
   mediaViewerItems.value = []

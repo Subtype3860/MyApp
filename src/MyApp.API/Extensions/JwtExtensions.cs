@@ -8,8 +8,10 @@ using MyApp.Application.Security;
 
 namespace MyApp.API.Extensions
 {
+    /// <summary>Настройка аутентификации по JWT и проверки отозванных сессий.</summary>
     public static class JwtExtensions
     {
+        /// <summary>Настраивает проверку JWT и актуальности пользовательской сессии.</summary>
         public static IServiceCollection AddJwtAuthentication(this IServiceCollection services, IConfiguration config)
         {
             var jwt = config.GetRequiredSection("Jwt");

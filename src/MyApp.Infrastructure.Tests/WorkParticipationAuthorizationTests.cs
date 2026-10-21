@@ -3,23 +3,26 @@ using MyApp.Application.Abstractions;
 using MyApp.Application.Common;
 using MyApp.Application.DTO;
 using MyApp.Application.Services;
-using MyApp.Domain.Entities;
+using MyApp.Application.Models;
 using Xunit;
 
 namespace MyApp.Infrastructure.Tests;
 
+/// <summary>Тесты прав участия в работах и управления парком.</summary>
 public sealed class WorkParticipationAuthorizationTests
 {
     private readonly Guid workId = Guid.NewGuid();
     private readonly Guid userId = Guid.NewGuid();
     private readonly Guid participantId = Guid.NewGuid();
 
+    /// <summary>Создаёт пользователя с заданной ролью и профессией для теста.</summary>
     private static User MakeUser(Guid id, string profession, string role = "user") => new() {
         Id = id, FirstName = "Иван", MiddleName = "Иванович", LastName = "Иванов",
         UserName = "worker", Email = "worker@example.test", PasswordHash = "test", Role = role,
         Profession = new Profession { Id = Guid.NewGuid(), Name = profession }
     };
 
+    /// <summary>Создаёт сервис с тестовыми зависимостями.</summary>
     private VehicleService MakeService(User? user, Func<MethodInfo, object?[], object?> repositoryHandler)
     {
         var users = DispatchProxy.Create<IUserRepository, InvocationProxy>();
@@ -30,6 +33,7 @@ public sealed class WorkParticipationAuthorizationTests
         return new VehicleService(repository, users);
     }
 
+    /// <summary>Проверяет обязательность профессии механика для согласования участия, в том числе у администратора.</summary>
     [Theory]
     [InlineData("Слесарь", "user")]
     [InlineData("Электрослесарь", "user")]
@@ -41,6 +45,7 @@ public sealed class WorkParticipationAuthorizationTests
         Assert.Equal(ServiceResultStatus.BadRequest, result.Status);
     }
 
+    /// <summary>Проверяет связь решения с текущим механиком и конкретной работой.</summary>
     [Theory]
     [InlineData(true)]
     [InlineData(false)]
@@ -59,6 +64,7 @@ public sealed class WorkParticipationAuthorizationTests
         Assert.True(reviewed);
     }
 
+    /// <summary>Проверяет регистрацию участия от имени текущего сотрудника.</summary>
     [Fact]
     public async Task Self_registration_uses_the_authenticated_employee()
     {
@@ -74,6 +80,7 @@ public sealed class WorkParticipationAuthorizationTests
         Assert.True(registered);
     }
 
+    /// <summary>Проверяет конфликт при повторной заявке на участие.</summary>
     [Fact]
     public async Task Duplicate_registration_returns_conflict()
     {
@@ -81,6 +88,7 @@ public sealed class WorkParticipationAuthorizationTests
         Assert.Equal(ServiceResultStatus.Conflict, (await service.RequestWorkParticipationAsync(workId, userId, default)).Status);
     }
 
+    /// <summary>Проверяет запрет повторного согласования и обработки заявки другой работы.</summary>
     [Fact]
     public async Task Already_reviewed_or_wrong_work_cannot_be_reviewed_again()
     {
@@ -88,6 +96,7 @@ public sealed class WorkParticipationAuthorizationTests
         Assert.Equal(ServiceResultStatus.Conflict, (await service.ReviewWorkParticipationAsync(workId, participantId, true, userId, default)).Status);
     }
 
+    /// <summary>Проверяет запрет регистрации участия без пользователя сессии.</summary>
     [Fact]
     public async Task Missing_session_user_cannot_register()
     {
@@ -95,6 +104,7 @@ public sealed class WorkParticipationAuthorizationTests
         Assert.Equal(ServiceResultStatus.Unauthorized, (await service.RequestWorkParticipationAsync(workId, userId, default)).Status);
     }
 
+    /// <summary>Проверяет создание вспомогательной работы сотрудником без ремонтной профессии.</summary>
     [Fact]
     public async Task Auxiliary_work_can_be_recorded_by_an_employee_without_a_repair_profession()
     {
@@ -111,6 +121,7 @@ public sealed class WorkParticipationAuthorizationTests
         Assert.Equal(workId, result.Value);
     }
 
+    /// <summary>Проверяет обязательность описания, места и допустимого времени вспомогательной работы.</summary>
     [Theory]
     [InlineData("", "Описание", "РММ", false)]
     [InlineData("Уборка", "", "РММ", false)]
@@ -123,6 +134,7 @@ public sealed class WorkParticipationAuthorizationTests
         Assert.Equal(ServiceResultStatus.ValidationError, result.Status);
     }
 
+    /// <summary>Проверяет загрузку вложений вспомогательной работы только её владельцем.</summary>
     [Theory]
     [InlineData(true)]
     [InlineData(false)]
@@ -141,6 +153,7 @@ public sealed class WorkParticipationAuthorizationTests
         Assert.Equal(owner, saved);
     }
 
+    /// <summary>Проверяет право механиков и администраторов управлять парком техники.</summary>
     [Theory]
     [InlineData("Механик", "user")]
     [InlineData("Старший механик", "user")]
@@ -160,6 +173,7 @@ public sealed class WorkParticipationAuthorizationTests
         Assert.Equal(workId, result.Value);
     }
 
+    /// <summary>Проверяет запрет обычному работнику создавать, изменять и удалять технику.</summary>
     [Fact]
     public async Task A_worker_cannot_create_edit_or_remove_fleet_vehicles()
     {
@@ -170,6 +184,7 @@ public sealed class WorkParticipationAuthorizationTests
         Assert.Equal(ServiceResultStatus.Forbidden, (await service.ArchiveVehicleAsync(workId, userId, default)).Status);
     }
 
+    /// <summary>Проверяет отсутствие записи некорректной карточки техники.</summary>
     [Theory]
     [InlineData("", "Экскаваторы", "SANY", 94)]
     [InlineData("Спецтехника", "", "SANY", 94)]
@@ -181,6 +196,7 @@ public sealed class WorkParticipationAuthorizationTests
         Assert.Equal(ServiceResultStatus.ValidationError, (await service.SaveVehicleCatalogAsync(null, new(group, type, model, garage, "", ""), userId, default)).Status);
     }
 
+    /// <summary>Проверяет обязательность хотя бы одного идентификационного номера техники.</summary>
     [Fact]
     public async Task Fleet_vehicle_requires_at_least_one_identifier()
     {
@@ -188,6 +204,7 @@ public sealed class WorkParticipationAuthorizationTests
         Assert.Equal(ServiceResultStatus.ValidationError, (await service.SaveVehicleCatalogAsync(null, new("Спецтехника", "Экскаваторы", "SANY", null, "", ""), userId, default)).Status);
     }
 
+    /// <summary>Проверяет архивирование техники с сохранением её истории.</summary>
     [Fact]
     public async Task Removing_a_vehicle_uses_archival_instead_of_cascading_history_deletion()
     {
@@ -199,9 +216,11 @@ public sealed class WorkParticipationAuthorizationTests
         Assert.Equal(ServiceResultStatus.Success, (await service.ArchiveVehicleAsync(workId, userId, default)).Status);
     }
 
+    /// <summary>Тестовый прокси, передающий вызовы настроенному обработчику.</summary>
     public class InvocationProxy : DispatchProxy
     {
         public Func<MethodInfo, object?[], object?> Handler { get; set; } = null!;
+        /// <summary>Передаёт вызов зависимости настроенному тестовому обработчику.</summary>
         protected override object? Invoke(MethodInfo? method, object?[]? args) => Handler(method!, args ?? []);
     }
 }

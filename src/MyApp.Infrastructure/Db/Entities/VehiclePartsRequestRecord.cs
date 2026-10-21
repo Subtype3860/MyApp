@@ -1,5 +1,6 @@
 namespace MyApp.Infrastructure.Db.Entities;
 
+/// <summary>Запись заявки на закупку запчастей для неисправности.</summary>
 public sealed class VehiclePartsRequestRecord
 {
     public Guid Id { get; set; }

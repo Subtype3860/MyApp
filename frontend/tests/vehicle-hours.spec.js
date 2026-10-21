@@ -12,6 +12,7 @@ for (const width of [390,1440]) test(`engine entry and file import ${width}`,asy
  await truck.getByRole('button',{name:'Сохранить',exact:true}).click();await expect(page.getByRole('status').filter({hasText:'сохранены'})).toContainText('сохранены')
  expect(writes.slice(0,2).map(x=>JSON.parse(x.data).engineNumber)).toEqual([1,2]);await expect(excavator.locator('input')).toHaveValue('20511')
  await page.getByRole('button',{name:'Импорт Excel / CSV'}).click();await expect(page.getByRole('dialog')).toBeVisible()
+ await page.getByRole('dialog').getByLabel('Формат файла').selectOption('legacy')
  await page.getByRole('dialog').locator('input[type=file]').setInputFiles({name:'hours.csv',mimeType:'text/csv',buffer:Buffer.from('garage_number;model;engine_1;engine_2\n901;SANY;875;852')})
  await page.getByRole('button',{name:'Импортировать',exact:true}).click();await expect(page.getByRole('dialog')).toContainText('Сохранено показаний: 2');await expect(page.getByRole('dialog')).toContainText('Строка 4')
  expect(writes.at(-1).data).toContain('readingDate');await page.keyboard.press('Escape');expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true)

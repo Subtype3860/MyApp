@@ -15,16 +15,18 @@ using MyApp.API.Controllers;
 using MyApp.API.Extensions;
 using MyApp.Application.Abstractions;
 using MyApp.Application.Security;
-using MyApp.Domain.Entities;
+using MyApp.Application.Models;
 using MyApp.Infrastructure.Security;
 using Xunit;
 
 namespace MyApp.Infrastructure.Tests;
 
+/// <summary>Тесты проверки JWT и отзыва сессий.</summary>
 public sealed class JwtRevocationTests
 {
     private const string Key = "test-signing-key-with-at-least-32-bytes";
 
+    /// <summary>Проверяет отклонение отозванных, старых токенов и токенов удалённого пользователя настоящей JWT-аутентификацией.</summary>
     [Fact]
     public async Task Real_bearer_middleware_rejects_revoked_legacy_and_deleted_user_tokens()
     {
@@ -71,6 +73,7 @@ public sealed class JwtRevocationTests
         await app.StopAsync();
     }
 
+    /// <summary>Проверяет доступ механика к моточасам и совпадение метки сессии JWT с базой.</summary>
     [Fact]
     public void Mechanic_receives_hours_navigation_and_token_identity_matches_database_stamp()
     {
@@ -84,15 +87,19 @@ public sealed class JwtRevocationTests
         Assert.Contains(Permissions.VehiclesView, UserAccess.EffectivePermissions(user));
     }
 
+    /// <summary>Создаёт пользователя с заданной ролью и профессией для теста.</summary>
     internal static User MakeUser() => new() { Id = Guid.NewGuid(), FirstName = "Иван", MiddleName = "", LastName = "Иванов",
         UserName = "worker", Email = "worker@local", PasswordHash = "hash", Role = "administrator",
         PositionId = Guid.NewGuid(), Profession = new() { Id = Guid.NewGuid(), Name = "Слесарь" } };
 
+    /// <summary>Тестовое хранилище актуальности и отзыва сессий.</summary>
     private sealed class Sessions(User user) : IUserSessionStore
     {
         public User? User = user;
+        /// <summary>Возвращает актуальность сессии из тестового хранилища.</summary>
         public Task<bool> IsCurrentAsync(Guid userId, Guid stamp, CancellationToken cancellationToken) =>
             Task.FromResult(User?.Id == userId && User.SessionStamp == stamp);
+        /// <summary>Помечает сессию отозванной в тестовом хранилище.</summary>
         public Task RevokeAsync(Guid userId, Guid stamp, CancellationToken cancellationToken)
         {
             if (User?.Id == userId && User.SessionStamp == stamp) User.SessionStamp = Guid.NewGuid();

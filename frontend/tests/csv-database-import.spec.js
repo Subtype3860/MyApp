@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test'
 
+/** Открывает настройки импорта табличных данных в тесте. */
 async function openImportSettings(page, previewError = false) {
   await page.addInitScript(() => {
     localStorage.setItem('myapp.authToken', 'test-token')
@@ -26,7 +27,7 @@ async function openImportSettings(page, previewError = false) {
   await page.getByRole('button', { name: /CSV/ }).click()
   return { imports, previews }
 }
-const warehouse = page => page.locator('.csv-file-card').filter({ hasText: 'Остатки на складе' })
+const /** Формирует тестовый ответ складского источника. */ warehouse = page => page.locator('.csv-file-card').filter({ hasText: 'Остатки на складе' })
 
 test('snapshot requires preview and explains absent-position zeroing', async ({ page }) => {
   const { imports } = await openImportSettings(page)

@@ -3,13 +3,15 @@ using MyApp.Application.Abstractions;
 using MyApp.Application.Common;
 using MyApp.Application.DTO;
 using MyApp.Application.Services;
-using MyApp.Domain.Entities;
+using MyApp.Application.Models;
 using Xunit;
 
 namespace MyApp.Infrastructure.Tests;
 
+/// <summary>Тесты прав изменения моточасов.</summary>
 public sealed class VehicleHoursAuthorizationTests
 {
+    /// <summary>Проверяет обязательность права работы с моточасами для записи, импорта и удаления.</summary>
     [Theory]
     [InlineData("Механик", "user", "", true)]
     [InlineData("Старший механик", "user", "", true)]
@@ -34,11 +36,14 @@ public sealed class VehicleHoursAuthorizationTests
                 nameof(IVehicleRepository.VehicleExistsAsync) => Task.FromResult(true),
                 nameof(IVehicleRepository.AddHoursAsync) => Save(),
                 nameof(IVehicleRepository.GetVehiclesAsync) => Task.FromResult<IReadOnlyList<VehicleResponse>>([]),
+                nameof(IVehicleRepository.ProcessDailyHoursAsync) => Task.FromResult(ServiceResult<DailyHoursPreview>.Success(new([], "test"))),
                 nameof(IVehicleRepository.DeleteEntryAsync) => Delete(),
                 _ => throw new Exception(method.Name)
             };
         };
+        /** Вызывает сохранение моточасов для проверки прав пользователя. */
         Task<Guid> Save() { writes++; return Task.FromResult(Guid.NewGuid()); }
+        /** Вызывает удаление записи для проверки прав пользователя. */
         Task<bool> Delete() { writes++; return Task.FromResult(true); }
         var service = new VehicleService(vehicles, users);
         var result = await service.AddHoursAsync(Guid.NewGuid(), new(new(2026, 10, 12), 100, "", 1), user.Id, default);
@@ -46,10 +51,15 @@ public sealed class VehicleHoursAuthorizationTests
         using var stream = new MemoryStream();
         var import = await service.ImportHoursAsync(stream, ".csv", user.Id, new(2026, 10, 12), default);
         Assert.Equal(allowed ? ServiceResultStatus.Success : ServiceResultStatus.Forbidden, import.Status);
+        foreach (var commit in new[] { false, true }) {
+            var daily = await service.ProcessDailyHoursAsync(new([new(new(2026,10,12),901,1,100,false,"12.10!D3")]), commit, user.Id, default);
+            Assert.Equal(allowed ? ServiceResultStatus.Success : ServiceResultStatus.Forbidden, daily.Status);
+        }
         Assert.Equal(allowed, await service.DeleteEntryAsync("hours", Guid.NewGuid(), user.Id, default));
         Assert.Equal(allowed ? 2 : 0, writes);
     }
 
+    /// <summary>Проверяет запрет изменения моточасов отсутствующим пользователем.</summary>
     [Fact]
     public async Task Missing_user_cannot_modify_hours()
     {

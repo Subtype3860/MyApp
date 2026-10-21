@@ -18,6 +18,7 @@ const emit = defineEmits(['view-media', 'manage-entry'])
         <div>
         <time :datetime="request.date">{{ request.dateLabel || request.date || 'Дата не указана' }}</time>
         <h4>Заявка на ремонт</h4>
+        <span class="repair-request__status" :class="`repair-request__status--${request.status || 'queue'}`">{{ request.statusLabel || 'Зарегистрирована' }}</span>
         </div>
         <RepairActionsMenu v-if="isAdministrator" label="Действия с заявкой" edit-label="Редактировать заявку" delete-label="Удалить заявку" :busy="busy"
           @edit="emit('manage-entry', 'edit', 'defects', request)" @delete="emit('manage-entry', 'delete', 'defects', request)" />
@@ -47,8 +48,6 @@ const emit = defineEmits(['view-media', 'manage-entry'])
       </button>
     </div>
 
-    <span class="repair-request__status" :class="`repair-request__status--${request.status || 'queue'}`">{{ request.statusLabel || 'Зарегистрирована' }}</span>
-
     <p v-if="!request.works?.length" class="repair-request__empty">
       Работы по заявке не зарегистрированы.
     </p>
@@ -72,8 +71,8 @@ const emit = defineEmits(['view-media', 'manage-entry'])
 <style scoped>
 .repair-request {
   display: grid;
-  gap: 0.75rem;
-  padding: 1rem;
+  gap: 0.4rem;
+  padding: 0.6rem 0.75rem;
   border: 1px solid var(--border);
   border-radius: 0.85rem;
   background: var(--bg-main);
@@ -85,8 +84,8 @@ const emit = defineEmits(['view-media', 'manage-entry'])
 }
 
 .repair-request__heading { display: flex; justify-content: space-between; align-items: flex-start; gap: 0.75rem; }
-.repair-request__heading > div { min-width: 0; }
-.repair-request__status { justify-self: end; width: fit-content; padding: 0.3rem 0.6rem; border-radius: 999px; font-size: 0.8rem; font-weight: 700; background: var(--bg-surface); color: var(--text-secondary); }
+.repair-request__heading > div { min-width: 0; display: flex; align-items: center; flex-wrap: wrap; gap: 0.25rem 0.65rem; }
+.repair-request__status { width: fit-content; padding: 0.15rem 0.5rem; border-radius: 999px; font-size: 0.8rem; font-weight: 700; background: var(--bg-surface); color: var(--text-secondary); }
 .repair-request__status--done { background: #e9f7ef; color: #187647; }
 .repair-request__status--repair, .repair-request__status--waiting { background: #fff4df; color: #9a5b00; }
 
@@ -96,7 +95,7 @@ const emit = defineEmits(['view-media', 'manage-entry'])
 }
 
 .repair-request h4 {
-  margin: 0.2rem 0 0;
+  margin: 0;
   color: var(--text-main);
 }
 
@@ -123,18 +122,19 @@ const emit = defineEmits(['view-media', 'manage-entry'])
 }
 
 .repair-request__details[open] summary {
-  margin-bottom: 0.7rem;
+  margin-bottom: 0.4rem;
 }
 
 .repair-request__works {
   display: grid;
   gap: 0.55rem;
-  padding-left: 0.85rem;
+  padding-left: 0.5rem;
   border-left: 2px solid var(--border);
 }
 
 .repair-request__media button {
-  padding: 0.55rem 0.75rem;
+  padding: 0.35rem 0.65rem;
+  min-height: 36px;
   border: 1px solid var(--border);
   border-radius: 0.6rem;
   background: var(--bg-surface);

@@ -4,6 +4,7 @@ export const forecastOptions = [
   { value: 'healthy', label: 'Исправен', ready: true },
   { value: 'faulty', label: 'Неисправен', ready: false },
 ]
+/** Выбирает следующую смену относительно текущего отчётного периода. */
 export function nextForecastSelection(now = new Date()) {
   const current = defaultReportSelection(now)
   if (current.shift === '1') return { date: current.date, shift: '2' }
@@ -11,9 +12,11 @@ export function nextForecastSelection(now = new Date()) {
   date.setDate(date.getDate() + 1)
   return { date: localDate(date), shift: '1' }
 }
+/** Возвращает подпись выбранного состояния прогноза ГТО. */
 export function forecastLabel(value) {
   return forecastOptions.find(option => option.value === value)?.label || 'Неисправен'
 }
+/** Собирает строки прогноза из журналов техники, открытых неисправностей, заявок и показаний ДВС. */
 export function buildForecastRows(journals) {
   return journals.filter(journal => !journal.vehicle.isArchived).map(journal => {
     const completed = [...(journal.works ?? [])].filter(work => work.completedAt)
@@ -36,7 +39,7 @@ export function buildForecastRows(journals) {
     })
     for (const request of requests.values()) {
       const number = String(request.requestNumber ?? '').trim()
-      const normalize = value => String(value ?? '').trim().replace(/\s+/g, ' ').toLocaleLowerCase('ru')
+      const /** Нормализует текст заявки для исключения повторяющихся фрагментов примечания. */ normalize = value => String(value ?? '').trim().replace(/\s+/g, ' ').toLocaleLowerCase('ru')
       const heading = [number, request.requestDate && `от ${String(request.requestDate).split('-').reverse().join('.')}`].filter(Boolean).join(' ')
       const seen = new Set(number ? [normalize(number)] : [])
       const body = [request.description, request.requiredParts].map(value => String(value ?? '').trim()).filter(value => {
@@ -79,6 +82,7 @@ export function buildForecastRows(journals) {
     }
   })
 }
+/** Группирует и сортирует технику для отчёта, подсчитывая готовые к работе машины. */
 export function forecastGroups(rows) {
   const groups = new Map()
   for (const row of rows) {
@@ -93,11 +97,13 @@ export function forecastGroups(rows) {
     ready: items.filter(row => forecastOptions.find(option => option.value === row.forecast)?.ready).length,
   }))
 }
+/** Возвращает подпись текущей исправности техники. */
 export function currentStateLabel(state) {
   return state === 'healthy' ? 'Исправен' : 'Неисправен'
 }
 export const climateLabels = { unknown: 'Не указано', healthy: 'Исправна', faulty: 'Неисправна', absent: 'Отсутствует' }
 
+/** Подготавливает блоки примечаний для строки прогноза. */
 export function forecastNoteBlocks(row) {
   const blocks = row.noteBlocks ?? [{ text: row.currentNotes ?? '', kind: 'defect' }]
   if (row.forecast !== 'healthy') return blocks
@@ -108,10 +114,12 @@ export function forecastNoteBlocks(row) {
   })
 }
 
+/** Преобразует строку прогноза в данные для документа. */
 export function forecastDocumentRow(row) {
   return row.forecast === 'healthy' ? { ...row, downtimeStartedAt: '', plannedRelease: '' } : row
 }
 
+/** Подготавливает примечания и выделения для PDF прогноза. */
 export function forecastPdfNoteBlocks(row) {
   const blocks = forecastNoteBlocks(row).map(block => ({ ...block, spans: block.spans ? [...block.spans] : [{ text: block.text, bold: block.bold, italic: block.italic }] }))
   const note = String(row.note ?? '').trim()
@@ -124,13 +132,38 @@ export function forecastPdfNoteBlocks(row) {
   return blocks
 }
 
+/** Сокращает имя ответственного до принятого формата с инициалами. */
 export function responsibleShortName(name) {
   const [surname, ...names] = String(name ?? '').trim().split(/\s+/).filter(Boolean)
   return [surname, ...names.map(part => `${Array.from(part)[0]}.`)].filter(Boolean).join(' ')
 }
 
+/** Форматирует показания ДВС либо моточасы на момент замены двигателя. */
 export function engineHoursText(row, replacement = false) {
   if (!row.engines) return replacement ? '' : row.hours == null ? '' : String(row.hours)
   const values=row.engines.map(engine=>replacement ? engine.hoursAtReplacement : engine.hours)
-  return values.every(value=>value == null || value==='') ? '' : values.map(value=>value == null ? '' : String(value)).join('/')
+  return values.every(value=>value == null || value==='') ? '' : values.map(value=>value == null ? '' : String(value)).join(' / ')
+}
+
+/** Форматирует зафиксированные показания моточасов для отчёта. */
+export function fixedHoursText(row) {
+  const values = row.engines ? row.engines.map(engine => engine.hours) : [row.hours]
+  if (values.every(value => value == null || value === '')) return ''
+  const slots = values.map(value => {
+    const text = value == null ? '' : String(value)
+    if (text.length > 5) throw new Error(`Наработка ${text} у техники № ${row.vehicle?.garageNumber ?? ''} не помещается в поле из 5 символов. Показание не обрезано.`)
+    return text.padStart(5, ' ')
+  })
+  return slots.join(' / ')
+}
+
+/** Формирует заголовок показаний с учётом дат данных в группах техники. */
+export function hoursReportHeader(groups) {
+  const dates = groups.flatMap(group => group.rows.flatMap(row => row.engines
+    ? row.engines.filter(engine => engine.hours != null && engine.hours !== '').map(engine => engine.readingDate)
+    : row.hours != null && row.hours !== '' ? [row.hoursDate] : []))
+    .filter(date => typeof date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(date))
+    .sort()
+  const latest = dates.at(-1)
+  return latest ? `Наработка, м/ч\nна\n${latest.split('-').reverse().join('.')}` : 'Наработка, м/ч'
 }

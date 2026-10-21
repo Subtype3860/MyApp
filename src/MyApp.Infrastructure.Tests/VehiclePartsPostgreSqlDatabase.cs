@@ -14,6 +14,7 @@ internal sealed class VehiclePartsPostgreSqlDatabase : IAsyncDisposable
     private readonly string schema;
     private readonly string scopedConnectionString;
 
+    /// <summary>Подготавливает объект тестового окружения с заданными зависимостями.</summary>
     private VehiclePartsPostgreSqlDatabase(string connectionString, string schema)
     {
         adminConnectionString = connectionString;
@@ -24,10 +25,12 @@ internal sealed class VehiclePartsPostgreSqlDatabase : IAsyncDisposable
         }.ConnectionString;
     }
 
+    /// <summary>Создаёт контекст EF Core, подключённый к изолированной тестовой схеме.</summary>
     public AppDbContext CreateContext() =>
         new(new DbContextOptionsBuilder<AppDbContext>()
             .UseNpgsql(scopedConnectionString).Options);
 
+    /// <summary>Создаёт изолированную схему PostgreSQL и подготавливает данные теста.</summary>
     public static async Task<VehiclePartsPostgreSqlDatabase> CreateAsync()
     {
         var connectionString = Environment.GetEnvironmentVariable("MYAPP_TEST_POSTGRES");
@@ -62,6 +65,7 @@ internal sealed class VehiclePartsPostgreSqlDatabase : IAsyncDisposable
         }
     }
 
+    /// <summary>Создаёт таблицы и исходные данные изолированной тестовой схемы.</summary>
     private async Task InitializeAsync()
     {
         await ExecuteAsync(
@@ -101,6 +105,7 @@ internal sealed class VehiclePartsPostgreSqlDatabase : IAsyncDisposable
             """);
     }
 
+    /// <summary>Заполняет изолированную схему исходными данными теста.</summary>
     public async Task<(Guid Vehicle, Guid Defect, Guid User)> SeedAsync(
         string workStatus = "awaiting_parts")
     {
@@ -128,6 +133,7 @@ internal sealed class VehiclePartsPostgreSqlDatabase : IAsyncDisposable
         return (vehicle, defect, user);
     }
 
+    /// <summary>Выполняет SQL-команду в изолированной тестовой схеме.</summary>
     public async Task ExecuteAsync(string sql, params (string Name, object Value)[] parameters)
     {
         await using var dataSource = NpgsqlDataSource.Create(scopedConnectionString);
@@ -137,6 +143,7 @@ internal sealed class VehiclePartsPostgreSqlDatabase : IAsyncDisposable
         await command.ExecuteNonQueryAsync();
     }
 
+    /// <summary>Возвращает количество записей для проверки состояния тестовой базы.</summary>
     public async Task<long> CountAsync()
     {
         await using var dataSource = NpgsqlDataSource.Create(scopedConnectionString);
@@ -145,6 +152,7 @@ internal sealed class VehiclePartsPostgreSqlDatabase : IAsyncDisposable
         return (long)(await cmd.ExecuteScalarAsync())!;
     }
 
+    /// <summary>Удаляет изолированную схему после завершения теста.</summary>
     public async ValueTask DisposeAsync()
     {
         await using var connection = new NpgsqlConnection(adminConnectionString);

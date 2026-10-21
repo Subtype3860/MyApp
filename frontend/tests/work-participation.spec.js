@@ -2,6 +2,7 @@ import { test, expect } from '@playwright/test'
 
 test.use({ timezoneId: 'Asia/Omsk' })
 
+/** Подготавливает страницу и ответы API для сценариев браузерного теста. */
 async function setup(page, position, width = 1440) {
   await page.setViewportSize({ width, height: 1000 })
   await page.clock.setFixedTime(new Date('2026-10-11T14:00:00+06:00'))
@@ -56,6 +57,7 @@ for (const width of [390, 1440]) {
     await expect(page.getByRole('button', { name: 'Подтвердить участие: Петров Пётр Петрович' })).toHaveCount(0)
     expect(mutations).toEqual([{ path: '/api/vehicles/works/w1/participants', body: null }])
     if (width < 761) await page.getByRole('button', { name: 'Открыть меню' }).click()
+    await page.getByRole('button', { name: 'Отчёты', exact: true }).click()
     await page.getByRole('button', { name: 'Отчёт за смену', exact: true }).click()
     await expect(page.locator('.shift-report__paper')).toContainText('Иванов Иван Иванович')
     await expect(page.locator('.shift-report__paper')).not.toContainText('Петров Пётр Петрович')
@@ -68,6 +70,7 @@ test('mechanic confirms a colleague and the confirmed performer appears in repor
   await page.getByRole('button', { name: 'Подтвердить участие: Петров Пётр Петрович' }).click()
   await expect(page.locator('.work-participants__status--approved')).toHaveCount(2)
   expect(mutations[0]).toEqual({ path: '/api/vehicles/works/w1/participants/pending/review', body: { approved: true } })
+  await page.getByRole('button', { name: 'Отчёты', exact: true }).click()
   await page.getByRole('button', { name: 'Отчёт за смену', exact: true }).click()
   await expect(page.locator('.shift-report__performers')).toContainText('Электрослесарь · Петров Пётр Петрович')
 })

@@ -3,6 +3,7 @@ import { onBeforeUnmount, onMounted, ref } from 'vue'
 
 defineProps({ label: { type: String, required: true }, disabled: Boolean })
 const menu = ref(null)
+/** Закрывает меню при нажатии вне его области или клавиши Escape. */
 function dismiss(event) {
   if (!menu.value?.open) return
   if (event.type === 'keydown') {
@@ -11,6 +12,7 @@ function dismiss(event) {
   } else if (menu.value.contains(event.target)) return
   menu.value.open = false
 }
+/** Закрывает меню действий с техникой. */
 function close() { menu.value.open = false }
 onMounted(() => {
   document.addEventListener('click', dismiss)

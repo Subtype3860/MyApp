@@ -11,8 +11,7 @@ const emit = defineEmits(['view-media', 'manage-entry'])
 </script>
 
 <template>
-  <section class="repair-list">
-    <h3>История ремонтов</h3>
+  <section class="repair-list" aria-label="История ремонтов">
     <p v-if="!requests.length" class="repair-list__empty">
       Ремонтов не производилось
     </p>
@@ -33,22 +32,17 @@ const emit = defineEmits(['view-media', 'manage-entry'])
 <style scoped>
 .repair-list {
   display: grid;
-  gap: 0.85rem;
-}
-
-.repair-list h3 {
-  margin: 0;
-  color: var(--text-main);
+  gap: 0.5rem;
 }
 
 .repair-list__items {
   display: grid;
-  gap: 0.85rem;
+  gap: 0.5rem;
 }
 
 .repair-list__empty {
   margin: 0;
-  padding: 1rem;
+  padding: 0.5rem;
   border-radius: 0.7rem;
   background: var(--bg-main);
   color: var(--text-secondary);

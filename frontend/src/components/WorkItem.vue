@@ -50,8 +50,8 @@ const emit = defineEmits(['view-media', 'manage-entry'])
 .work-item {
   min-width: 0;
   display: grid;
-  gap: 0.6rem;
-  padding: 0.9rem;
+  gap: 0.4rem;
+  padding: 0.6rem;
   border: 1px solid var(--border);
   border-radius: 0.75rem;
   background: var(--bg-surface);
@@ -64,7 +64,7 @@ const emit = defineEmits(['view-media', 'manage-entry'])
   gap: 0.75rem;
 }
 
-.work-item__header > div { min-width: 0; overflow-wrap: anywhere; }
+.work-item__header > div { min-width: 0; overflow-wrap: anywhere; display: flex; align-items: baseline; flex-wrap: wrap; gap: 0.25rem 0.65rem; }
 
 .work-item time,
 .work-item__performer,
@@ -74,7 +74,7 @@ const emit = defineEmits(['view-media', 'manage-entry'])
 }
 
 .work-item h5 {
-  margin: 0.25rem 0 0;
+  margin: 0;
   color: var(--text-main);
   font-size: 1rem;
 }
@@ -91,7 +91,8 @@ const emit = defineEmits(['view-media', 'manage-entry'])
 }
 
 .work-item__media button {
-  padding: 0.55rem 0.75rem;
+  padding: 0.35rem 0.65rem;
+  min-height: 36px;
   border: 1px solid var(--border);
   border-radius: 0.6rem;
   background: var(--bg-surface);

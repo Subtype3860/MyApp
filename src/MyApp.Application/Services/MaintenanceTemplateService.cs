@@ -4,13 +4,16 @@ using MyApp.Application.DTO;
 
 namespace MyApp.Application.Services;
 
+/// <summary>Прикладные операции шаблонов технического обслуживания.</summary>
 public sealed class MaintenanceTemplateService(
     IMaintenanceTemplateRepository repository) : IMaintenanceTemplateService
 {
+    /// <summary>Возвращает список шаблонов ТО.</summary>
     public Task<IReadOnlyList<MaintenanceEquipmentResponse>> GetAllAsync(
         CancellationToken cancellationToken) =>
         repository.GetAllAsync(cancellationToken);
 
+    /// <summary>Создаёт вид оборудования в шаблонах технического обслуживания.</summary>
     public async Task<ServiceResult<Guid>> CreateEquipmentAsync(
         MaintenanceEquipmentRequest request,
         CancellationToken cancellationToken)
@@ -29,6 +32,7 @@ public sealed class MaintenanceTemplateService(
             await repository.CreateEquipmentAsync(name, cancellationToken));
     }
 
+    /// <summary>Создаёт интервал обслуживания для выбранного оборудования.</summary>
     public async Task<ServiceResult<Guid>> CreateIntervalAsync(
         Guid equipmentId,
         MaintenanceIntervalRequest request,
@@ -55,6 +59,7 @@ public sealed class MaintenanceTemplateService(
                 equipmentId, name, cancellationToken));
     }
 
+    /// <summary>Добавляет материал и его количество в интервал ТО.</summary>
     public async Task<ServiceResult<Guid>> AddItemAsync(
         Guid intervalId,
         MaintenanceItemRequest request,
@@ -85,6 +90,7 @@ public sealed class MaintenanceTemplateService(
                 intervalId, materialName, request.Quantity, cancellationToken));
     }
 
+    /// <summary>Изменяет название вида оборудования в шаблонах ТО.</summary>
     public async Task<ServiceResult<Guid>> RenameEquipmentAsync(
         Guid id,
         MaintenanceEquipmentRequest request,
@@ -105,6 +111,7 @@ public sealed class MaintenanceTemplateService(
             : ServiceResult<Guid>.NotFound();
     }
 
+    /// <summary>Изменяет название интервала обслуживания.</summary>
     public async Task<ServiceResult<Guid>> RenameIntervalAsync(
         Guid id,
         MaintenanceIntervalRequest request,
@@ -121,6 +128,7 @@ public sealed class MaintenanceTemplateService(
             : ServiceResult<Guid>.NotFound();
     }
 
+    /// <summary>Обновляет количество материала в позиции шаблона обслуживания.</summary>
     public async Task<ServiceResult<Guid>> UpdateItemAsync(
         Guid id,
         MaintenanceItemRequest request,
@@ -135,26 +143,31 @@ public sealed class MaintenanceTemplateService(
             : ServiceResult<Guid>.NotFound();
     }
 
+    /// <summary>Удаляет вид оборудования из шаблонов ТО.</summary>
     public Task<ServiceResult<Guid>> DeleteEquipmentAsync(
         Guid id,
         CancellationToken cancellationToken) =>
         DeleteAsync(id, repository.DeleteEquipmentAsync, cancellationToken);
 
+    /// <summary>Удаляет интервал обслуживания.</summary>
     public Task<ServiceResult<Guid>> DeleteIntervalAsync(
         Guid id,
         CancellationToken cancellationToken) =>
         DeleteAsync(id, repository.DeleteIntervalAsync, cancellationToken);
 
+    /// <summary>Удаляет позицию материала из интервала ТО.</summary>
     public Task<ServiceResult<Guid>> DeleteItemAsync(
         Guid id,
         CancellationToken cancellationToken) =>
         DeleteAsync(id, repository.DeleteItemAsync, cancellationToken);
 
+    /// <summary>Проверяет допустимость названия элемента шаблона ТО.</summary>
     private static ServiceResult<Guid>? ValidateName(string name, string entity) =>
         name.Length is < 1 or > 100
             ? Validation($"Название {entity} должно содержать от 1 до 100 символов.")
             : null;
 
+    /// <summary>Проверяет материал и количество в позиции шаблона ТО.</summary>
     private static ServiceResult<Guid>? ValidateItem(
         string materialName,
         decimal quantity)
@@ -168,10 +181,12 @@ public sealed class MaintenanceTemplateService(
             : null;
     }
 
+    /// <summary>Создаёт результат с ошибками проверки полей запроса.</summary>
     private static ServiceResult<Guid> Validation(string message) =>
         ServiceResult<Guid>.Validation(
             new Dictionary<string, string[]> { ["maintenance"] = [message] });
 
+    /// <summary>Удаляет шаблон ТО.</summary>
     private static async Task<ServiceResult<Guid>> DeleteAsync(
         Guid id,
         Func<Guid, CancellationToken, Task<bool>> delete,

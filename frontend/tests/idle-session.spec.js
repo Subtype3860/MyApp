@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test'
 
+/** Подготавливает авторизованную страницу для проверки таймера бездействия. */
 async function openSession(page) {
   await page.clock.install()
   await page.addInitScript(() => {

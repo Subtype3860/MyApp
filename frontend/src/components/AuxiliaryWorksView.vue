@@ -19,17 +19,21 @@ const date = ref(/^\d{4}-\d{2}-\d{2}$/.test(query.get('reportDate') || '') ? que
 const shift = ref(['1', '2'].includes(query.get('reportShift')) ? query.get('reportShift') : initial.shift)
 const works = ref([]), loading = ref(false), saving = ref(false), preparing = ref(false), error = ref(''), success = ref('')
 const selectedWorks = computed(() => selectAuxiliaryWorks(works.value, date.value, shift.value))
+/** Возвращает местные дату и время в формате поля datetime-local. */
 function localTime() { const now = new Date(); return new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 16) }
 const draft = ref({ title: '', location: '', description: '', performedAt: localTime() })
 const files = ref([]), savedId = ref(null), fileInput = ref(null)
 const viewerOpen = ref(false), viewerItems = ref([]), viewerType = ref('image')
 const controller = new AbortController()
+/** Формирует заголовки запроса с токеном текущей сессии. */
 function headers(json = false) { return { Authorization: `Bearer ${props.token}`, ...(json ? { 'Content-Type': 'application/json' } : {}) } }
+/** Читает JSON-ответ и преобразует ошибку API в сообщение для формы. */
 async function responseData(response) {
   const data = await response.json().catch(() => null)
   if (!response.ok) throw new Error(Object.values(data?.errors || {}).flat()[0] || data?.message || (typeof data === 'string' ? data : null) || 'Не удалось сохранить работу.')
   return data
 }
+/** Загружает вспомогательные работы для выбранной даты и обновляет состояние загрузки. */
 async function load() {
   loading.value = true
   error.value = ''
@@ -40,6 +44,7 @@ async function load() {
   } catch (failure) { if (failure.name !== 'AbortError') error.value = failure.message }
   finally { loading.value = false }
 }
+/** Открывает вложения вспомогательной работы начиная с выбранного файла. */
 function openMedia(work, type, mediaId) {
   const items = cardMedia({ works: [work] }, type)
   const index = items.findIndex(item => item.id === mediaId)
@@ -47,6 +52,7 @@ function openMedia(work, type, mediaId) {
   if (!items.length) return
   viewerItems.value = items; viewerType.value = type; viewerOpen.value = true
 }
+/** Проверяет вложения, преобразует фотографии и готовит файлы к загрузке. */
 async function selectFiles(event) {
   const selected = [...event.target.files]
   event.target.value = ''
@@ -65,7 +71,9 @@ async function selectFiles(event) {
   } catch (failure) { error.value = failure.message }
   finally { preparing.value = false }
 }
+/** Удаляет выбранное вложение и освобождает его временный URL. */
 function removeFile(index) { const [item] = files.value.splice(index, 1); if (item.url) URL.revokeObjectURL(item.url) }
+/** Сохраняет вспомогательную работу и последовательно загружает вложения, позволяя повторить неудачную загрузку. */
 async function save() {
   if (saving.value || preparing.value) return
   saving.value = true; error.value = ''; success.value = ''

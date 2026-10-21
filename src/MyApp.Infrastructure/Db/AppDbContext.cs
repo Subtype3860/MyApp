@@ -1,9 +1,10 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
-using MyApp.Domain.Entities;
+using MyApp.Application.Models;
 using MyApp.Infrastructure.Db.Entities;
 
 namespace MyApp.Infrastructure.Db {
+    /// <summary>Контекст Entity Framework Core для таблиц и представлений приложения.</summary>
     public class AppDbContext : DbContext {
         public DbSet<VehicleEngineSettings> VehicleEngineSettings => Set<VehicleEngineSettings>();
         public DbSet<GtoUserSettings> GtoUserSettings => Set<GtoUserSettings>();
@@ -60,7 +61,9 @@ namespace MyApp.Infrastructure.Db {
             Set<FullStockLegacyRecord>();
         public DbSet<MechanicalStockLegacyRecord> MechanicalStockLegacy =>
             Set<MechanicalStockLegacyRecord>();
+        /// <summary>Создаёт AppDbContext и сохраняет переданные зависимости.</summary>
         public AppDbContext(DbContextOptions<AppDbContext> options) : base(options) {}
+        /// <summary>Настраивает таблицы, ключи, связи и ограничения моделей Entity Framework Core.</summary>
         protected override void OnModelCreating(ModelBuilder modelBuilder) {
             modelBuilder.Entity<User>(entity => {
                 entity.ToTable("app_users");
@@ -210,6 +213,7 @@ namespace MyApp.Infrastructure.Db {
             modelBuilder.Entity<VehicleHourReadingRecord>(entity => {
                 entity.Property(x => x.VehicleId).HasColumnName("vehicle_id");
                 entity.Property(x => x.ReadingDate).HasColumnName("reading_date").HasColumnType("date");
+                entity.Property(x => x.ReadingTime).HasColumnName("reading_time").HasColumnType("time without time zone");
                 entity.Property(x => x.EngineHours).HasColumnName("engine_hours");
                 entity.Property(x => x.EngineNumber).HasColumnName("engine_number");
                 entity.Property(x => x.Note).HasColumnName("note");
@@ -280,6 +284,7 @@ namespace MyApp.Infrastructure.Db {
             ConfigureStockViews(modelBuilder);
         }
 
+        /// <summary>Настраивает хранение требований и их позиций в базе данных.</summary>
         private static void ConfigureRequirementRecords(ModelBuilder modelBuilder) {
             modelBuilder.Entity<ComponentRequirementRecord>(entity => {
                 entity.ToTable("component_requirements");
@@ -308,6 +313,7 @@ namespace MyApp.Infrastructure.Db {
             });
         }
 
+        /// <summary>Настраивает хранение справочника сотрудников и подписей.</summary>
         private static void ConfigureEmployeeRecords(ModelBuilder modelBuilder) {
             modelBuilder.Entity<EmployeeSignatureRecord>(entity => {
                 entity.ToTable("employee_signatures");
@@ -336,6 +342,7 @@ namespace MyApp.Infrastructure.Db {
             });
         }
 
+        /// <summary>Настраивает связи оборудования, интервалов ТО и материалов шаблонов.</summary>
         private static void ConfigureMaintenanceRecords(ModelBuilder modelBuilder) {
             modelBuilder.Entity<MaintenanceEquipmentRecord>(entity => {
                 entity.ToTable("maintenance_equipment");
@@ -363,6 +370,7 @@ namespace MyApp.Infrastructure.Db {
             });
         }
 
+        /// <summary>Настраивает таблицы групп материалов и их состава.</summary>
         private static void ConfigureMaterialGroupRecords(ModelBuilder modelBuilder) {
             modelBuilder.Entity<MaterialGroupRecord>(entity => {
                 entity.ToTable("material_groups");
@@ -380,6 +388,7 @@ namespace MyApp.Infrastructure.Db {
             });
         }
 
+        /// <summary>Настраивает хранение параметров медиаархива.</summary>
         private static void ConfigureMediaStorageSettings(ModelBuilder modelBuilder) {
             modelBuilder.Entity<MediaStorageSettingsRecord>(entity => {
                 entity.ToTable("media_storage_settings");
@@ -392,6 +401,7 @@ namespace MyApp.Infrastructure.Db {
             });
         }
 
+        /// <summary>Настраивает модели чтения складских данных.</summary>
         private static void ConfigureStockViews(ModelBuilder modelBuilder) {
             modelBuilder.Entity<FullStockRecord>(entity => {
                 entity.HasNoKey();
@@ -437,6 +447,7 @@ namespace MyApp.Infrastructure.Db {
             });
         }
 
+        /// <summary>Настраивает поле времени создания записи.</summary>
         private static EntityTypeBuilder<T> ConfigureCreatedAt<T>(
             EntityTypeBuilder<T> entity,
             string tableName) where T : class {
@@ -449,6 +460,7 @@ namespace MyApp.Infrastructure.Db {
             return entity;
         }
 
+        /// <summary>Настраивает общие поля и связи модели медиафайла.</summary>
         private static void ConfigureMedia<T>(
             ModelBuilder modelBuilder,
             string tableName,
