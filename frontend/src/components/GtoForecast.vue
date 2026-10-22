@@ -1,6 +1,6 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { buildForecastRows, climateLabels, currentStateLabel, forecastGroups, forecastOptions, nextForecastSelection, forecastNoteBlocks, engineHoursText } from '../utils/gtoForecast'
+import { buildForecastRows, climateLabels, currentStateLabel, forecastGroups, forecastOptions, nextForecastSelection, forecastNoteBlocks, engineHoursText, hasReportRequests } from '../utils/gtoForecast'
 import { formatReportDate, vehicleTitle, localDate } from '../utils/shiftReport'
 import { createGtoForecastPdf } from '../utils/gtoForecastPdf'
 import FleetActionMenu from './FleetActionMenu.vue'
@@ -12,6 +12,121 @@ const rows = ref([]), organisation = ref(''), site = ref(''), mechanic = ref('')
 const loading = ref(false), exporting = ref(false), error = ref(''), draftMessage = ref(''), canEdit = ref(false), canManageHours = ref(false), query = ref('')
 const loaded = ref(false)
 const saving = ref(0)
+const reportReady = ref(false), reportDirty = ref(false), reportSaving = ref(false), reportConflict = ref(false)
+const reportStatus = ref(''), history = ref([]), historyChoice = ref(''), viewingHistory = ref(false), moreHistory = ref(false)
+const editable = computed(() => canEdit.value && reportReady.value && !viewingHistory.value && !reportConflict.value)
+let activeDate = date.value, activeShift = String(shift.value), revision = 0, reportVersion = 0
+let saveTimer, pendingReportSave, ignoreSelection = false
+const snapshot = () => JSON.parse(JSON.stringify({version:1,date:activeDate,shift:activeShift,mechanic:mechanic.value,organisation:organisation.value,site:site.value,rows:rows.value}))
+const recoveryKey = () => storageKey ? storageKey + '.' + activeDate + '.' + activeShift : null
+const headers = () => ({Authorization:`Bearer ${props.token}`,'Content-Type':'application/json'})
+function reportChanged() {
+  if (!reportReady.value || loading.value || !editable.value) return
+  reportVersion++; reportDirty.value = true
+  reportStatus.value = 'Есть несохранённые изменения…'
+  saveDraft()
+  try { if(recoveryKey())localStorage.setItem(recoveryKey(),JSON.stringify({revision,snapshot:snapshot()})) } catch { /* The server remains the primary store. */ }
+  clearTimeout(saveTimer); saveTimer = setTimeout(() => persistReport(), 500)
+}
+async function persistReport() {
+  clearTimeout(saveTimer)
+  if (pendingReportSave) {const saved=await pendingReportSave; if(!saved)return false; if(reportDirty.value && !reportConflict.value)return persistReport(); return !reportDirty.value}
+  if (!reportDirty.value) return true
+  if (reportConflict.value) return false
+  if(rows.value.some(row=>row.ktg!=='' && row.ktg!=null && (!Number.isFinite(Number(row.ktg)) || Number(row.ktg)<0 || Number(row.ktg)>100))) {
+    reportStatus.value='Не сохранено: КТГ должен быть от 0 до 100%.';return false
+  }
+  reportSaving.value=true
+  pendingReportSave=(async()=>{
+    try {
+      while(reportDirty.value) {
+        const version=reportVersion, data=snapshot()
+        const response=await fetch(`/api/gto-reports/${activeDate}/${activeShift}`,{method:'PUT',headers:headers(),body:JSON.stringify({revision,snapshot:data}),signal:AbortSignal.timeout(15000)})
+        const result=await response.json().catch(()=>null)
+        if(!response.ok) {
+          reportConflict.value=response.status===409
+          throw new Error(result?.message || 'Не удалось сохранить отчёт. Изменения остаются в этом браузере; повторите сохранение.')
+        }
+        revision=result.revision
+        if(version===reportVersion)reportDirty.value=false
+        reportStatus.value='Сохранено в базе: '+new Date(result.updatedAt).toLocaleString('ru-RU')
+        try { if(recoveryKey()) {if(reportDirty.value)localStorage.setItem(recoveryKey(),JSON.stringify({revision,snapshot:snapshot()}));else localStorage.removeItem(recoveryKey())} } catch {}
+      }
+      return true
+    } catch(failure) {reportStatus.value=failure.name==='TimeoutError'?'Сервер не ответил. Изменения остались в этом браузере; повторите сохранение.':failure.message;return false}
+    finally {reportSaving.value=false}
+  })()
+  const result=await pendingReportSave;pendingReportSave=null;return result
+}
+async function loadHistory(append=false) {
+  try {const response=await fetch('/api/gto-reports'+(append?'?offset='+history.value.length:''),{headers:headers()});if(!response.ok)throw new Error();const items=await response.json();history.value=append?[...history.value,...items]:items;moreHistory.value=items.length===100}
+  catch {error.value='Не удалось загрузить историю отчётов.'}
+}
+async function openHistory() {
+  if(!historyChoice.value)return
+  if(!await persistReport())return
+  const [selectedDate,selectedShift]=historyChoice.value.split('/')
+  ignoreSelection=true;date.value=selectedDate;shift.value=selectedShift;ignoreSelection=false
+  viewingHistory.value=true;await load()
+}
+async function returnToCurrent() {
+  if(!await persistReport())return
+  ignoreSelection=true;date.value=selection.date;shift.value=selection.shift;ignoreSelection=false
+  viewingHistory.value=false;await load()
+}
+function applySnapshot(data) {
+  rows.value=data.rows;organisation.value=data.organisation;site.value=data.site;mechanic.value=data.mechanic
+}
+async function load(refresh=false) {
+  if(loading.value)return
+  loading.value=true
+  if(!await persistReport()) {
+    ignoreSelection=true;date.value=activeDate;shift.value=activeShift;ignoreSelection=false
+    loading.value=false;return
+  }
+  reportReady.value=false;loaded.value=false;error.value='';reportConflict.value=false;draftMessage.value=''
+  const preserved=refresh ? {rows:Object.fromEntries(rows.value.map(row=>[row.vehicle.id,Object.fromEntries(draftFields.map(field=>[field,row[field]]))]))} : null
+  activeDate=date.value;activeShift=String(shift.value);revision=0
+  try {
+    const [saved,options]=await Promise.all([fetch(`/api/gto-reports/${activeDate}/${activeShift}`,{headers:headers()}),fetch('/api/vehicles/fleet-options',{headers:headers()})])
+    if(!options.ok)throw new Error('Не удалось проверить права отчёта.')
+    const rights=await options.json();canEdit.value=rights.canManage===true;canManageHours.value=rights.canManageHours===true
+    let stored
+    if(saved.ok) {stored=await saved.json();if(stored.snapshot?.version!==1)throw new Error('Неподдерживаемый формат сохранённого отчёта.');revision=stored.revision}
+    else if(saved.status!==404)throw new Error('Не удалось загрузить сохранённый отчёт.')
+    if(stored && !refresh) {
+      if(activeDate<localDate(new Date()))viewingHistory.value=true
+      applySnapshot(stored.snapshot);settingsReady=true;loaded.value=true
+      reportStatus.value='Сохранённый отчёт от '+new Date(stored.updatedAt).toLocaleString('ru-RU')
+    } else {
+      if(viewingHistory.value || (!stored && activeDate<localDate(new Date())))throw new Error('За выбранную дату и смену отчёт не был сохранён. Восстановить прошлый отчёт из текущих данных невозможно.')
+      const response=await fetch(`/api/gto-reports/defaults?date=${activeDate}&shift=${activeShift}`,{headers:headers()})
+      if(!response.ok)throw new Error('Не удалось загрузить предыдущие КТГ и вид ТО.')
+      const defaults=await response.json()
+      const draft=preserved ?? (defaults.rows?.length ? {rows:Object.fromEntries(defaults.rows.map(row=>[row.vehicle.id,{ktg:row.ktg,maintenance:row.maintenance}]))} : activeDate===selection.date && activeShift===selection.shift ? savedDraft() : null)
+      await loadLive(draft)
+      if(!loaded.value)throw new Error(error.value || 'Не удалось загрузить данные отчёта.')
+      reportStatus.value='Новый снимок: данные ремонта загружены сейчас.'
+    }
+    reportReady.value=true
+    if(!viewingHistory.value && canEdit.value) {
+      let recovery
+      try {recovery=JSON.parse(localStorage.getItem(recoveryKey()))} catch {}
+      if(recovery?.snapshot && recovery.revision===revision && !refresh) {applySnapshot(recovery.snapshot);reportDirty.value=true;reportVersion++}
+      else if(recovery?.snapshot && !refresh)reportStatus.value+=' В браузере есть несохранённая копия другой версии.'
+      if(!stored || refresh) {reportDirty.value=true;reportVersion++}
+    }
+  } catch(failure) {error.value=failure.message;settingsReady=false;loaded.value=false}
+  finally {loading.value=false}
+  if(reportDirty.value)await persistReport()
+  await loadHistory()
+}
+function beforeLeave(event) {if(reportDirty.value || reportSaving.value){event.preventDefault();event.returnValue=''}}
+async function reloadSaved() {
+  if(!window.confirm('Открыть серверную версию? Несохранённая копия останется в этом браузере.'))return
+  reportDirty.value=false;reportConflict.value=false
+  await load()
+}
 const saveQueues = new Map()
 const failedSaves = new Map()
 let settingsReady = false
@@ -27,11 +142,11 @@ const visibleGroups = computed(() => {
   const term = query.value.trim().toLocaleLowerCase('ru')
   return groups.value.map(group => ({ ...group, rows: group.rows.filter(row => term
     ? [row.vehicle.groupName,row.vehicle.typeName,row.vehicle.modelName,row.vehicle.garageNumber,row.vehicle.stateNumber,row.vehicle.vin].some(value => String(value ?? '').toLocaleLowerCase('ru').includes(term))
-    : row.isInRepair) })).filter(group => group.rows.length)
+    : viewingHistory.value || hasReportRequests(row)) })).filter(group => group.rows.length)
 })
 /** Последовательно сохраняет настройки одного объекта и запоминает неудачные запросы для повтора. */
 async function queueSave(key, url, body, afterSaved, allowed = canEdit.value) {
-  if (!settingsReady || !allowed) return
+  if (!settingsReady || !allowed || viewingHistory.value || reportConflict.value) return
   saving.value++
   const previous = saveQueues.get(key) ?? Promise.resolve()
   const pending = previous.catch(() => {}).then(async () => {
@@ -77,16 +192,15 @@ function applyDraft(row, draft) {
 }
 /** Сохраняет редактируемые поля прогноза в локальном хранилище браузера. */
 function saveDraft() {
-  if(!loaded.value || !canEdit.value || !storageKey)return
+  if(!loaded.value || !canEdit.value || !storageKey || viewingHistory.value)return
   try {
     localStorage.setItem(storageKey,JSON.stringify({version:2,
       rows:Object.fromEntries(rows.value.map(row=>[row.vehicle.id,Object.fromEntries(draftFields.map(field=>[field,row[field]]))]))}))
-    draftMessage.value='Черновик сохранён в этом браузере.'
+    draftMessage.value=''
   } catch { draftMessage.value='Браузер не смог сохранить черновик. Скачайте PDF перед закрытием формы.' }
 }
 /** Дожидается сохранений, загружает журналы и настройки ГТО, затем применяет локальный черновик. */
-async function load() {
-  saveDraft()
+async function loadLive(draft = null) {
   controller?.abort(); controller=new AbortController()
   loading.value=true;error.value=''
   try {
@@ -102,7 +216,6 @@ async function load() {
     if(profileResponse.ok) {const profile=await profileResponse.json();mechanic.value=[profile.lastName,profile.firstName,profile.middleName].filter(Boolean).join(' ')}
     if(!settingsResponse.ok)throw new Error('Не удалось загрузить сохранённые настройки отчёта.')
     const settings=await settingsResponse.json()
-    const draft=canEdit.value?savedDraft():null
     rows.value=buildForecastRows(await historyResponse.json()).map(row=>applyDraft(row,draft))
     organisation.value=settings.organisation ?? '';site.value=settings.site ?? ''
     const climate=new Map((settings.vehicles ?? []).map(item=>[item.vehicleId,item.climate]))
@@ -134,31 +247,34 @@ async function load() {
   } catch(failure){if(failure.name!=='AbortError')error.value=failure.message}
   finally{loading.value=false}
 }
-/** После подтверждения сбрасывает прогноз и примечания механика к исходному состоянию. */
-function clearDraft() {
-  if(!canEdit.value || !window.confirm('Сбросить прогноз и примечания механика? Данные ремонта останутся без изменений.'))return
-  for(const row of rows.value)Object.assign(row,{forecast:row.currentState === 'healthy' ? 'healthy' : 'faulty',ktg:'',maintenance:'',note:''})
-  saveDraft()
-}
-/** Повторяет неудачные сохранения настроек и скачивает PDF проверенного прогноза ГТО. */
-async function download() {
-  if(!loaded.value || loading.value || exporting.value || saving.value || !canEdit.value || !rows.value.length)return
+/** Повторяет неудачные сохранения и скачивает проверенный прогноз в выбранном формате. */
+async function download(format = 'pdf') {
+  if(!loaded.value || loading.value || exporting.value || saving.value || !rows.value.length)return
   if(!/^\d{4}-\d{2}-\d{2}$/.test(date.value)){error.value='Выберите дату прогноза.';return}
   if(rows.value.some(row=>row.ktg!=='' && (!Number.isFinite(Number(row.ktg)) || Number(row.ktg)<0 || Number(row.ktg)>100))){error.value='КТГ должен быть от 0 до 100%.';return}
   exporting.value=true;error.value='';saveDraft()
   try {
+    if(!await persistReport())throw new Error(reportStatus.value)
     for(const [key,item] of [...failedSaves])await queueSave(key,item.url,item.body,item.afterSaved)
     if(failedSaves.size)throw new Error('Настройки не сохранены. Проверьте соединение и попробуйте снова.')
-    const blob=await createGtoForecastPdf({date:date.value,shift:shift.value,mechanic:mechanic.value,organisation:organisation.value,site:site.value,groups:groups.value})
+    const report={date:date.value,shift:shift.value,mechanic:mechanic.value,organisation:organisation.value,site:site.value,groups:groups.value}
+    let blob, extension=format
+    if(format==='pdf')blob=await createGtoForecastPdf(report)
+    else {
+      const {createGtoForecastExcel,createGtoForecastImage}=await import('../utils/gtoForecastExport')
+      if(format==='xlsx')blob=await createGtoForecastExcel(report)
+      else {const result=await createGtoForecastImage(report);blob=result.blob;extension=result.extension}
+    }
     const url=URL.createObjectURL(blob),anchor=document.createElement('a')
-    anchor.href=url;anchor.download=`Выход ГТО ${date.value} (${shift.value} смена).pdf`;anchor.click()
+    anchor.href=url;anchor.download=`Выход ГТО ${report.date} (${report.shift} смена).${extension}`;anchor.click()
     setTimeout(()=>URL.revokeObjectURL(url),60000)
-  }catch(failure){error.value=failure.message||'Не удалось сформировать PDF.'}
+  }catch(failure){error.value=failure.message||'Не удалось сформировать отчёт.'}
   finally{exporting.value=false}
 }
-watch([rows,organisation,site],saveDraft,{deep:true})
-onMounted(load)
-onBeforeUnmount(()=>{saveDraft();controller?.abort()})
+watch([rows,organisation,site],reportChanged,{deep:true,flush:'sync'})
+watch([date,shift],()=>{if(!ignoreSelection && !loading.value)void load()}, {flush:'sync'})
+onMounted(()=>{void load();window.addEventListener('beforeunload',beforeLeave)})
+onBeforeUnmount(()=>{clearTimeout(saveTimer);void persistReport();controller?.abort();window.removeEventListener('beforeunload',beforeLeave)})
 </script>
 
 <template>
@@ -167,21 +283,33 @@ onBeforeUnmount(()=>{saveDraft();controller?.abort()})
       <header class="gto-heading">
         <h2>Прогноз готовности техники</h2>
         <FleetActionMenu label="Меню Выход ГТО" :disabled="loading || exporting">
-        <button type="button" class="secondary-button" :disabled="loading || exporting" @click="load">Обновить данные ремонта</button>
-        <button v-if="canEdit" type="button" class="secondary-button" :disabled="loading || exporting" @click="clearDraft">Сбросить прогноз</button>
-        <button v-if="canEdit" type="button" class="primary-button" :disabled="loading || exporting || !loaded || !rows.length || saving > 0" @click="download">{{ exporting ? 'Формирование…' : 'Скачать PDF' }}</button>
+        <button type="button" class="secondary-button" :disabled="loading || exporting" v-if="editable" @click="load(true)">Обновить данные ремонта</button>
+        <button v-if="loaded" type="button" class="primary-button" :disabled="loading || exporting || !loaded || !rows.length || saving > 0" @click="download('pdf')">Скачать PDF</button>
+        <button v-if="loaded" type="button" class="secondary-button" :disabled="loading || exporting || !loaded || !rows.length || saving > 0" @click="download('xlsx')">Скачать Excel</button>
+        <button v-if="loaded" type="button" class="secondary-button" :disabled="loading || exporting || !loaded || !rows.length || saving > 0" @click="download('png')">Скачать изображение</button>
       </FleetActionMenu>
       </header>
-      <p>Механик выбирает дату и смену, затем указывает, состояние техники к выбранной смене: исправен или неисправен.</p>
+      <p>Отчёт общий для выбранной даты и смены. Изменения автоматически сохраняются в базе. Новый отчёт использует текущие данные ремонта; КТГ и вид ТО переносятся из предыдущего отчёта.</p>
       <div class="gto-fields">
-        <label>Дата прогноза<input v-model="date" type="date" :disabled="exporting" /></label>
-        <label>Смена<select aria-label="Смена" v-model="shift" :disabled="exporting"><option value="1">1 смена</option><option value="2">2 смена</option></select></label>
-        <label>Организация<input v-model="organisation" maxlength="200" @change="saveUserSettings" :disabled="!canEdit || loading || exporting" /></label>
-        <label>Участок<input v-model="site" maxlength="200" @change="saveUserSettings" :disabled="!canEdit || loading || exporting" /></label>
+        <label>История отчётов<select aria-label="История отчётов" v-model="historyChoice" :disabled="loading || exporting"><option value="">Выберите сохранённый отчёт</option><option v-for="item in history" :key="item.date+'/'+item.shift" :value="item.date+'/'+item.shift">{{ formatReportDate(item.date) }} · {{ item.shift }} смена</option></select></label>
+        <button v-if="moreHistory" type="button" class="secondary-button" :disabled="loading || exporting" @click="loadHistory(true)">Более ранние отчёты</button>
+        <button type="button" class="secondary-button" :disabled="!historyChoice || loading || exporting" @click="openHistory">Открыть отчёт</button>
+        <button v-if="viewingHistory" type="button" class="secondary-button" :disabled="loading || exporting" @click="returnToCurrent">К текущему прогнозу</button>
+      </div>
+      <p v-if="viewingHistory" class="gto-hint">Просмотр сохранённого отчёта. Данные ремонта зафиксированы на момент сохранения.</p>
+      <p class="gto-hint" role="status">{{ reportSaving ? 'Сохранение отчёта…' : reportStatus }}</p>
+      <button v-if="reportDirty && !reportConflict" type="button" class="secondary-button" :disabled="reportSaving" @click="persistReport">Повторить сохранение</button>
+      <button v-if="reportConflict" type="button" class="secondary-button" @click="reloadSaved">Открыть серверную версию</button>
+      <div class="gto-fields">
+        <label>Дата прогноза<input v-model="date" type="date" :disabled="exporting || loading || viewingHistory" /></label>
+        <label>Смена<select aria-label="Смена" v-model="shift" :disabled="exporting || loading || viewingHistory"><option value="1">1 смена</option><option value="2">2 смена</option></select></label>
+        <label>Организация<input v-model="organisation" maxlength="200" @change="saveUserSettings" :disabled="!editable || loading || exporting" /></label>
+        <label>Участок<input v-model="site" maxlength="200" @change="saveUserSettings" :disabled="!editable || loading || exporting" /></label>
       </div>
       <label class="gto-search">Поиск техники<input v-model="query" type="search" placeholder="Группа, тип, модель или номер" /></label>
       <p>Механик: {{ mechanic || 'ФИО не указано в профиле' }}</p>
 
+      <p v-if="exporting" class="gto-hint" role="status">Формирование отчёта…</p>
       <p v-if="saving" class="gto-hint" role="status">Сохранение настроек…</p>
       <p v-if="draftMessage" class="gto-hint" role="status">{{ draftMessage }}</p>
       <p v-if="loaded && !canEdit" class="gto-hint">Составлять прогноз могут механики, старшие механики и администраторы.</p>
@@ -200,19 +328,19 @@ onBeforeUnmount(()=>{saveDraft();controller?.abort()})
             <fieldset v-for="engine in row.engines" :key="engine.number" class="gto-engine">
               <legend>ДВС № {{ engine.number }}</legend>
               <div class="gto-fields">
-                <label>М/ч при замене ДВС<input v-model="engine.hoursAtReplacement" type="number" min="0" step="0.1" :disabled="!canManageHours || loading || exporting" @change="saveEngine(row,engine)" /></label>
+                <label>М/ч при замене ДВС<input v-model="engine.hoursAtReplacement" type="number" min="0" step="0.1" :disabled="!canManageHours || !editable || loading || exporting" @change="saveEngine(row,engine)" /></label>
               </div>
             </fieldset>
           </div>
           <p v-if="row.legacyHours != null" class="gto-hint">Прежнее показание: {{ row.legacyHours }} м/ч — номер ДВС не указан. Укажите показания отдельно для ДВС № 1 и № 2.</p>
           <div v-if="forecastNoteBlocks(row).length"><strong>Неисправность/примечание</strong><div class="gto-current-notes"><p v-for="(block,index) in forecastNoteBlocks(row)" :key="index" :class="{ 'gto-repair-note': block.divider, 'gto-note-bold': block.bold, 'gto-note-italic': block.italic }"><template v-if="block.spans"><span v-for="(span,spanIndex) in block.spans" :key="spanIndex" :class="{ 'gto-note-italic': span.italic }">{{ span.text }}</span></template><template v-else>{{ block.text }}</template></p></div></div>
-            <label class="gto-field-wide">Примечание механика<textarea v-model="row.note" rows="2" maxlength="2000" placeholder="Что планируется сделать или что мешает выходу" :disabled="!canEdit || loading || exporting" /></label>
+            <label class="gto-field-wide">Примечание механика<textarea v-model="row.note" rows="2" maxlength="2000" placeholder="Что планируется сделать или что мешает выходу" :disabled="!editable || loading || exporting" /></label>
           <div class="gto-fields">
-            <label>Состояние к смене<select aria-label="Состояние к смене" v-model="row.forecast" :disabled="!canEdit || loading || exporting"><option v-for="option in forecastOptions" :key="option.value" :value="option.value">{{ option.label }}</option></select></label>
-            <label v-if="row.forecast !== 'healthy' && row.openDefectIds.length">Плановый выход из ремонта<input @change="saveVehicleSettings(row)" v-model="row.plannedRelease" maxlength="2000" placeholder="Дата, смена или условие выхода" :disabled="!canEdit || loading || exporting" /></label>
-            <label>КТГ, %<input v-model="row.ktg" type="number" min="0" max="100" step="0.1" placeholder="Не указано" :disabled="!canEdit || loading || exporting" /></label>
-            <label>Вид ТО<input v-model="row.maintenance" maxlength="2000" placeholder="При необходимости" :disabled="!canEdit || loading || exporting" /></label>
-            <label>Кондиционирование и отопление<select @change="saveVehicleSettings(row)" aria-label="Кондиционирование и отопление" v-model="row.climate" :disabled="!canEdit || loading || exporting"><option v-for="(label,value) in climateLabels" :key="value" :value="value">{{ label }}</option></select></label>
+            <label>Состояние к смене<select aria-label="Состояние к смене" v-model="row.forecast" :disabled="!editable || loading || exporting"><option v-for="option in forecastOptions" :key="option.value" :value="option.value">{{ option.label }}</option></select></label>
+            <label v-if="row.forecast !== 'healthy' && row.openDefectIds.length">Плановый выход из ремонта<input @change="saveVehicleSettings(row)" v-model="row.plannedRelease" maxlength="2000" placeholder="Дата, смена или условие выхода" :disabled="!editable || loading || exporting" /></label>
+            <label>КТГ, %<input v-model="row.ktg" type="number" min="0" max="100" step="0.1" placeholder="Не указано" :disabled="!editable || loading || exporting" /></label>
+            <label>Вид ТО<input v-model="row.maintenance" maxlength="2000" placeholder="При необходимости" :disabled="!editable || loading || exporting" /></label>
+            <label>Кондиционирование и отопление<select @change="saveVehicleSettings(row)" aria-label="Кондиционирование и отопление" v-model="row.climate" :disabled="!editable || loading || exporting"><option v-for="(label,value) in climateLabels" :key="value" :value="value">{{ label }}</option></select></label>
 
           </div>
         </article>

@@ -29,32 +29,46 @@ export function buildForecastRows(journals) {
       if (!request.completedDate && !requests.has(request.id)) requests.set(request.id, request)
     }
     const partsStages = new Map()
-    const stages = [...(journal.works ?? [])].filter(work => work.defectId && work.status === 'awaiting_parts')
+    const stages = [...(journal.works ?? [])].filter(work => work.defectId)
       .sort((a, b) => new Date(b.completedAt || b.createdAt || 0) - new Date(a.completedAt || a.createdAt || 0)
         || new Date(b.createdAt || 0) - new Date(a.createdAt || 0))
     for (const stage of stages) if (!partsStages.has(stage.defectId)) partsStages.set(stage.defectId, stage)
     const noteBlocks = defects.flatMap(defect => {
-      const text = defect.symptoms || defect.failureReason
-      return text ? [{ text, kind: 'defect', bold: true, divider: false }] : []
+      const stage = partsStages.get(defect.id)
+      const waiting = (stage?.status ?? defect.status) === 'awaiting_parts'
+      const text = waiting ? `ОЗЧ Требуется: ${String(stage?.description ?? '').trim() || 'Описание не указано'}` : defect.symptoms || defect.failureReason
+      return text ? [{ text, defectId: defect.id, kind: 'defect', bold: true, divider: false }] : []
     })
     for (const request of requests.values()) {
       const number = String(request.requestNumber ?? '').trim()
       const /** Нормализует текст заявки для исключения повторяющихся фрагментов примечания. */ normalize = value => String(value ?? '').trim().replace(/\s+/g, ' ').toLocaleLowerCase('ru')
-      const heading = [number, request.requestDate && `от ${String(request.requestDate).split('-').reverse().join('.')}`].filter(Boolean).join(' ')
-      const seen = new Set(number ? [normalize(number)] : [])
-      const body = [request.description, request.requiredParts].map(value => String(value ?? '').trim()).filter(value => {
+      const description = String(request.description ?? '').trim()
+      // Older forms copied the first 100 characters of the body into requestNumber.
+      const body = [number && !normalize(description).startsWith(normalize(number)) ? number : '', description || number].filter(Boolean).join(' ')
+      const seen = new Set([normalize(body)])
+      const stage = partsStages.get(request.defectId)
+      const requirement = stage ? stage.description : (journal.defects ?? []).find(defect => defect.id === request.defectId)?.symptoms
+      const required = [request.requiredParts, requirement].map(value => String(value ?? '').trim()).filter(value => {
         const key = normalize(value)
         if (!key || seen.has(key)) return false
         seen.add(key)
         return true
-      }).join(' ')
-      const text = [heading, body].filter(Boolean).join(' ')
-      // Procurement downtime comes from the repair stage awaiting parts, not the original defect.
-      const reason = partsStages.get(request.defectId)?.description
-      const spans = []
-      if (text) spans.push({ text })
-      if (reason) spans.push({ text: `${text ? ' - ' : ''}${String(reason).replace(/\s+/g, ' ').trim()}`, kind: 'defect', italic: true })
-      if (spans.length) noteBlocks.push({ text: spans.map(span => span.text).join(''), spans })
+      }).join('; ')
+      const details = []
+      if (body) details.push({ text: body })
+      if (required && !defects.some(defect => defect.id === request.defectId && (stage?.status ?? defect.status) === 'awaiting_parts')) details.push({ text: `Требуется: ${required}`, kind: 'required', italic: true })
+      if (!details.length) continue
+      let block = request.defectId ? noteBlocks.find(item => item.defectId === request.defectId) : null
+      if (!block) {
+        block = { defectId: request.defectId, spans: [] }
+        noteBlocks.push(block)
+      } else if (!block.spans) {
+        block.spans = [{ text: block.text, kind: 'defect', bold: true }, { text: ' — ', kind: 'defect' }]
+        delete block.kind
+        delete block.bold
+      } else block.spans.push({ text: ' ' })
+      block.spans.push({ text: '(' }, ...details.flatMap((detail, index) => index ? [{ text: '; ' }, detail] : [detail]), { text: ')' })
+      block.text = block.spans.map(span => span.text).join('')
     }
     const dates = defects.filter(defect => (latest.get(defect.id)?.operationalState ?? defect.operationalState) === 'stopped')
       .map(defect => defect.downtimeStartedAt).filter(Boolean).sort()
@@ -78,7 +92,7 @@ export function buildForecastRows(journals) {
       openDefectIds: defects.map(defect => defect.id),
       noteBlocks,
       currentNotes: noteBlocks.map(block => block.text).join('\n'),
-      forecast: isInRepair || journal.vehicle.operationalState === 'operating_with_defect' ? 'faulty' : 'healthy', ktg: '', maintenance: '', note: '', plannedRelease: '', climate: 'unknown',
+      forecast: isInRepair ? 'faulty' : 'healthy', ktg: '', maintenance: '', note: '', plannedRelease: '', climate: 'unknown',
     }
   })
 }
@@ -94,29 +108,34 @@ export function forecastGroups(rows) {
     (aRows[0].vehicle.groupReportSortOrder ?? 0) - (bRows[0].vehicle.groupReportSortOrder ?? 0) || a.localeCompare(b, 'ru')).map(([name, items]) => ({
     name, rows: items.sort((a, b) => String(a.vehicle.typeName ?? '').localeCompare(String(b.vehicle.typeName ?? ''), 'ru')
       || String(a.vehicle.garageNumber ?? a.vehicle.stateNumber).localeCompare(String(b.vehicle.garageNumber ?? b.vehicle.stateNumber), 'ru', { numeric: true })),
-    ready: items.filter(row => forecastOptions.find(option => option.value === row.forecast)?.ready).length,
+    ready: items.filter(row => !isReportFaulty(row)).length,
   }))
 }
 /** Возвращает подпись текущей исправности техники. */
 export function currentStateLabel(state) {
-  return state === 'healthy' ? 'Исправен' : 'Неисправен'
+  return state === 'stopped' ? 'Неисправен' : 'Исправен'
+}
+/** Определяет исправность по остановке машины; для старых снимков без состояния использует сохранённое значение. */
+export function isReportFaulty(row) {
+  const state = row.currentState ?? row.vehicle?.operationalState
+  return state == null ? row.forecast === 'faulty' : state === 'stopped'
 }
 export const climateLabels = { unknown: 'Не указано', healthy: 'Исправна', faulty: 'Неисправна', absent: 'Отсутствует' }
 
 /** Подготавливает блоки примечаний для строки прогноза. */
 export function forecastNoteBlocks(row) {
-  const blocks = row.noteBlocks ?? [{ text: row.currentNotes ?? '', kind: 'defect' }]
-  if (row.forecast !== 'healthy') return blocks
-  return blocks.filter(block => block.kind !== 'defect').flatMap(block => {
-    if (!block.spans) return [block]
-    const spans = block.spans.filter(span => span.kind !== 'defect')
-    return spans.length ? [{ ...block, spans, text: spans.map(span => span.text).join('') }] : []
-  })
+  return row.noteBlocks ?? [{ text: row.currentNotes ?? '', kind: 'defect' }]
+}
+
+/** Показывает остановленную технику и технику с открытыми заявками независимо от исправности. */
+export function hasReportRequests(row) {
+  return row.isInRepair || row.openDefectIds?.length > 0 || forecastNoteBlocks(row).some(block => block.text?.trim())
 }
 
 /** Преобразует строку прогноза в данные для документа. */
 export function forecastDocumentRow(row) {
-  return row.forecast === 'healthy' ? { ...row, downtimeStartedAt: '', plannedRelease: '' } : row
+  const forecast = isReportFaulty(row) ? 'faulty' : 'healthy'
+  return forecast === 'healthy' ? { ...row, forecast, downtimeStartedAt: '', plannedRelease: '' } : { ...row, forecast }
 }
 
 /** Подготавливает примечания и выделения для PDF прогноза. */
@@ -124,10 +143,12 @@ export function forecastPdfNoteBlocks(row) {
   const blocks = forecastNoteBlocks(row).map(block => ({ ...block, spans: block.spans ? [...block.spans] : [{ text: block.text, bold: block.bold, italic: block.italic }] }))
   const note = String(row.note ?? '').trim()
   if (!note) return blocks
-  const defect = blocks.find(block => block.kind === 'defect' && block.text?.trim())
+  const defect = blocks.find(block => (block.kind === 'defect' && block.text?.trim()) || block.spans?.some(span => span.kind === 'defect' && span.bold))
   if (defect) {
-    defect.spans.push({ text: ` (${note})` })
-    defect.text += ` (${note})`
+    const index = defect.spans.findIndex(span => span.kind === 'defect' && span.bold)
+    if (index >= 0) defect.spans.splice(index + 1, 0, { text: ` (${note})` })
+    else defect.spans.push({ text: ` (${note})` })
+    defect.text = defect.spans.map(span => span.text).join('')
   } else blocks.unshift({ text: `(${note})`, spans: [{ text: `(${note})` }] })
   return blocks
 }

@@ -58,6 +58,21 @@ const successMessage = ref('')
 const journal = ref(null)
 // Плоский список неисправностей, отображаемых во вкладке «Ремонт».
 const repairDefects = ref([])
+const repairDialog = ref(null)
+const selectedRepairId = ref('')
+const selectedRepairs = computed(() => repairDefects.value.filter(defect => defect.id === selectedRepairId.value))
+async function openRepair(defect) {
+  selectedRepairId.value = defect.id
+  await nextTick()
+  repairDialog.value?.showModal()
+}
+function closeRepair() {
+  repairDialog.value?.close()
+  selectedRepairId.value = ''
+}
+watch(selectedRepairs, repairs => {
+  if (selectedRepairId.value && !repairs.length) closeRepair()
+})
 const repairDrafts = ref({})
 const repairFileInputs = new Map()
 const expandNewRepairForm = window.matchMedia('(min-width: 761px)').matches
@@ -190,6 +205,7 @@ onMounted(async () => {
 })
 watch(() => props.section, loadRepairSection)
 onBeforeUnmount(() => {
+  closeRepair()
   partsActionDialog.value?.close()
   clearPreviews()
   closeMediaViewer()
@@ -224,6 +240,7 @@ function workMediaForWorks(works, type) {
  * Сначала загружается техника, затем её журналы и неисправности.
  */
 async function loadRepairSection() {
+  closeRepair()
   partsActionDialog.value?.close()
   if (['repairHistory', 'report', 'gtoForecast', 'maintenanceExecution', 'hours'].includes(props.section)) {
     return
@@ -241,19 +258,16 @@ async function loadRepairSection() {
   }
 }
 
-/** Загружает заявки на запчасти выбранной неисправности. */
+/** Загружает заявки всего парка одним пакетным запросом. */
 async function loadPartsRequests() {
   isLoading.value = true
   errorMessage.value = ''
   try {
     const requests = []
-    for (const vehicle of vehicles.value) {
-      const response = await fetch(
-        `/api/vehicles/${vehicle.id}/journal`,
-        { headers: authHeaders() },
-      )
-      if (!response.ok) continue
-      const result = await response.json()
+    const response = await fetch('/api/vehicles/repair-journal', { headers: authHeaders() })
+    if (!response.ok) throw new Error('Не удалось загрузить заявки на закупку ЗЧ. Попробуйте открыть раздел повторно.')
+    for (const result of await response.json()) {
+      const vehicle = result.vehicle
       const works = [...(result.works ?? [])].sort(
         (left, right) => new Date(right.completedAt || right.createdAt) - new Date(left.completedAt || left.createdAt)
           || new Date(right.createdAt ?? 0) - new Date(left.createdAt ?? 0),
@@ -265,9 +279,13 @@ async function loadPartsRequests() {
         stages.push(work)
         worksByDefect.set(work.defectId, stages)
       }
-      for (const stages of worksByDefect.values()) {
-        const work = stages[0]
-        const history = [...new Map(stages.flatMap(stage => stage.partsRequests ?? [])
+      for (const item of result.partsRequests ?? []) {
+        if (!worksByDefect.has(item.defectId)) worksByDefect.set(item.defectId, [])
+      }
+      for (const [defectId, stages] of worksByDefect) {
+        const defect = (result.defects ?? []).find(item => item.id === defectId)
+        const work = stages[0] ?? { id: defectId, defectId, description: defect?.symptoms ?? '', status: defect?.status ?? 'awaiting_parts' }
+        const history = [...new Map([...stages.flatMap(stage => stage.partsRequests ?? []), ...(result.partsRequests ?? []).filter(item => item.defectId === defectId)]
           .map(item => [item.id, item])).values()]
           .sort((left, right) => String(right.requestDate).localeCompare(String(left.requestDate)))
         if (history.length || stages.some(stage => stage.status === 'awaiting_parts')) {
@@ -1309,7 +1327,7 @@ function formatDateTime(value) {
         <div v-else-if="partsRequests.length" class="parts-request-table-wrap">
           <table class="parts-request-table">
             <colgroup><col class="parts-request-col-vehicle" /><col class="parts-request-col-cause" /><col class="parts-request-col-orders" /></colgroup>
-            <thead><tr><th scope="col">Техника</th><th scope="col">Причина простоя</th><th scope="col">Заявки</th></tr></thead>
+            <thead><tr><th scope="col">Техника</th><th scope="col">Требуется</th><th scope="col">Заявки</th></tr></thead>
             <tbody>
               <tr v-for="request in partsRequests" :key="request.id" class="parts-request-card">
                 <td class="parts-request-cell-vehicle" data-label="Техника">
@@ -1321,8 +1339,8 @@ function formatDateTime(value) {
                   </dl>
                   <span class="parts-request-card__status" :class="`parts-request-card__status--${repairStatus(request.status)}`">{{ operationalStateLabel(request.vehicleOperationalState) }}</span>
                 </td>
-                <td class="parts-request-cell-cause" data-label="Причина простоя">
-                  <p class="parts-request-cause-text"><strong class="visually-hidden">Причина простоя: </strong>{{ request.description || 'Описание выполненных работ не указано.' }}</p>
+                <td class="parts-request-cell-cause" data-label="Требуется">
+                  <p class="parts-request-cause-text"><strong class="visually-hidden">Требуется: </strong>{{ request.description || 'Не указано, что требуется.' }}</p>
                   <div v-if="request.photos?.length || request.videos?.length" class="parts-request-media">
                     <button v-if="request.photos?.length" class="secondary-button" type="button" @click="openRepairMedia(workMediaForWorks([request], 'image'), 'image')">Фото · {{ request.photos.length }}</button>
                     <button v-if="request.videos?.length" class="secondary-button" type="button" @click="openRepairMedia(workMediaForWorks([request], 'video'), 'video')">Видео · {{ request.videos.length }}</button>
@@ -1360,7 +1378,7 @@ function formatDateTime(value) {
             </tbody>
           </table>
         </div>
-        <p v-else class="vehicle-empty">Заявок на закупку ЗЧ нет.</p>
+        <p v-else-if="!errorMessage" class="vehicle-empty">Заявок на закупку ЗЧ нет.</p>
         <p v-if="successMessage" class="vehicle-success" role="status">{{ successMessage }}</p>
         <dialog ref="partsActionDialog" class="parts-action-dialog" aria-labelledby="parts-action-title" @cancel="event => { if (isSaving) event.preventDefault(); else closePartsAction() }">
           <form class="parts-request-form" @submit.prevent="submitPartsAction">
@@ -1400,9 +1418,24 @@ function formatDateTime(value) {
         </div>
 
         <p v-if="isLoading" class="table-message">Загрузка неисправностей...</p>
-        <div v-else class="repair-defect-cards">
+        <ul v-else-if="repairDefects.length" class="repair-request-list" aria-label="Заявки на ремонт">
+          <li v-for="defect in repairDefects" :key="defect.id">
+            <button type="button" class="repair-request-row" aria-haspopup="dialog" @click="openRepair(defect)">
+              <strong>{{ defect.vehicleName || 'Техника' }} · Гар. №{{ defect.vehicleGarageNumber ?? '—' }}</strong>
+              <span>— {{ defect.symptoms || defect.failureReason || 'Описание не указано.' }}</span>
+            </button>
+          </li>
+        </ul>
+        <p v-else class="vehicle-empty">Неисправностей нет.</p>
+        <dialog ref="repairDialog" class="repair-details-dialog" aria-label="Детали ремонта" @cancel="event => { if (isSaving) event.preventDefault(); else closeRepair() }">
+          <div class="repair-dialog-toolbar">
+            <strong>Заявка на ремонт</strong>
+            <button type="button" class="secondary-button" :disabled="isSaving" @click="closeRepair()">Закрыть</button>
+          </div>
+          <p v-if="errorMessage" role="alert">{{ errorMessage }}</p>
+          <p v-if="successMessage" role="status">{{ successMessage }}</p>
           <article
-            v-for="defect in repairDefects"
+            v-for="defect in selectedRepairs"
             :key="defect.id"
             class="repair-card repair-timeline-card"
           >
@@ -1486,10 +1519,7 @@ function formatDateTime(value) {
               </form>
             </details>
           </article>
-          <p v-if="!repairDefects.length" class="vehicle-empty">
-            Неисправностей нет.
-          </p>
-        </div>
+        </dialog>
       </section>
     </section>
 
@@ -1514,6 +1544,21 @@ function formatDateTime(value) {
 </template>
 
 <style scoped>
+.repair-request-list { list-style: none; margin: 0; padding: 0; }
+.repair-request-list li + li { border-top: 1px solid var(--border); }
+.repair-request-row { display: flex; align-items: baseline; gap: 8px; width: 100%; min-height: 56px; padding: 16px; border: 0; background: transparent; color: inherit; text-align: left; font: inherit; cursor: pointer; overflow-wrap: anywhere; }
+.repair-request-row strong { flex-shrink: 0; }
+.repair-request-row:hover { background: var(--bg-surface); }
+.repair-request-row:focus-visible { outline: 2px solid currentColor; outline-offset: -2px; }
+.repair-details-dialog { box-sizing: border-box; width: min(1000px, calc(100vw - 24px)); max-height: calc(100dvh - 32px); padding: 20px; border: 1px solid var(--border); border-radius: 16px; background: var(--bg-surface, white); color: inherit; overflow: auto; }
+.repair-details-dialog::backdrop { background: rgb(0 0 0 / 50%); }
+.repair-dialog-toolbar { display: flex; justify-content: space-between; align-items: center; gap: 16px; margin-bottom: 16px; }
+@media (max-width: 760px) {
+  .repair-request-row { flex-direction: column; gap: 4px; }
+  .repair-request-row strong { flex-shrink: 1; }
+  .repair-details-dialog { padding: 12px; }
+}
+
 .gto-forecast-intro { padding: 24px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg-surface); }
 .gto-forecast-intro h2 { margin-top: 0; font-size: 20px; }
 .gto-forecast-intro p { line-height: 1.6; }

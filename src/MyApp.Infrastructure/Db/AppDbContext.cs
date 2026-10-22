@@ -6,6 +6,7 @@ using MyApp.Infrastructure.Db.Entities;
 namespace MyApp.Infrastructure.Db {
     /// <summary>Контекст Entity Framework Core для таблиц и представлений приложения.</summary>
     public class AppDbContext : DbContext {
+        public DbSet<GtoReport> GtoReports => Set<GtoReport>();
         public DbSet<VehicleEngineSettings> VehicleEngineSettings => Set<VehicleEngineSettings>();
         public DbSet<GtoUserSettings> GtoUserSettings => Set<GtoUserSettings>();
         public DbSet<GtoVehicleSettings> GtoVehicleSettings => Set<GtoVehicleSettings>();
@@ -144,6 +145,15 @@ namespace MyApp.Infrastructure.Db {
                 entity.Property(x => x.UserId).HasColumnName("user_id");
                 entity.Property(x => x.Organisation).HasColumnName("organisation").HasMaxLength(200);
                 entity.Property(x => x.Site).HasColumnName("site").HasMaxLength(200);
+            });
+            modelBuilder.Entity<GtoReport>(entity => {
+                entity.ToTable("gto_reports"); entity.HasKey(x => new { x.ReportDate, x.Shift });
+                entity.Property(x => x.ReportDate).HasColumnName("report_date");
+                entity.Property(x => x.Shift).HasColumnName("shift");
+                entity.Property(x => x.Revision).HasColumnName("revision");
+                entity.Property(x => x.Snapshot).HasColumnName("snapshot").HasColumnType("jsonb");
+                entity.Property(x => x.UpdatedBy).HasColumnName("updated_by");
+                entity.Property(x => x.UpdatedAt).HasColumnName("updated_at");
             });
             modelBuilder.Entity<GtoVehicleSettings>(entity => {
                 entity.ToTable("gto_vehicle_settings"); entity.HasKey(x => x.VehicleId);

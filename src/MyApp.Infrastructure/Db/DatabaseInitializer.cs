@@ -441,6 +441,15 @@ public sealed class DatabaseInitializer(AppDbContext db) : IDatabaseInitializer
                 user_id uuid PRIMARY KEY REFERENCES app_users(id) ON DELETE CASCADE,
                 organisation varchar(200) NOT NULL DEFAULT '', site varchar(200) NOT NULL DEFAULT ''
             );
+            CREATE TABLE IF NOT EXISTS gto_reports (
+                report_date date NOT NULL,
+                shift integer NOT NULL CHECK (shift IN (1, 2)),
+                revision integer NOT NULL CHECK (revision > 0),
+                snapshot jsonb NOT NULL,
+                updated_by uuid NOT NULL REFERENCES app_users(id) ON DELETE RESTRICT,
+                updated_at timestamptz NOT NULL DEFAULT NOW(),
+                PRIMARY KEY (report_date, shift)
+            );
             CREATE TABLE IF NOT EXISTS gto_vehicle_settings (
                 vehicle_id uuid PRIMARY KEY REFERENCES number_car(id) ON DELETE CASCADE,
                 climate varchar(20) NOT NULL DEFAULT 'unknown'

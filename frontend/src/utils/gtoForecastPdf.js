@@ -6,7 +6,7 @@ import { formatReportDate, vehicleTitle } from './shiftReport'
 import { fixedHoursText, hoursReportHeader } from './gtoForecast'
 
 /** Создаёт PDF прогноза ГТО с группами техники, показаниями и примечаниями. */
-export async function createGtoForecastPdf({ date, shift, mechanic, organisation, site, groups }) {
+export async function createGtoForecastPdf({ date, shift, mechanic, organisation, site, groups }, onLayout) {
   const [{ PDFDocument, rgb, StandardFonts }, { default: fontkit }, fontResponse, boldResponse, italicResponse] = await Promise.all([
     import('pdf-lib'), import('@pdf-lib/fontkit'), fetch(notoSansUrl), fetch(boldFontUrl), fetch(italicFontUrl),
   ])
@@ -211,6 +211,7 @@ export async function createGtoForecastPdf({ date, shift, mechanic, organisation
     sum + Math.max(1, ...cellLines(rowCells(row, 1)).map(lines => lines.length)) * rowHeight + rowPadding, 0), 0) + summaryHeight + bottom
   // Prefer a single A4 page; a tall table can use portrait orientation with the same column proportions.
   const portrait = contentHeight > 595.28 && contentHeight <= 1190.55
+  onLayout?.({ widths, headers, portrait, groups: groups.map(group => ({ ...group, cells: group.rows.map((row, index) => rowCells(row, index + 1)) })) })
   if (portrait) pageHeight = 1190.55
   newPage()
   for (const group of groups) {

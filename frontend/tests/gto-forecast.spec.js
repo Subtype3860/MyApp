@@ -1,5 +1,14 @@
 import { test, expect } from '@playwright/test'
-import { nextForecastSelection, buildForecastRows, forecastGroups, forecastNoteBlocks, forecastDocumentRow, forecastPdfNoteBlocks, responsibleShortName, engineHoursText, fixedHoursText } from '../src/utils/gtoForecast.js'
+import { nextForecastSelection, buildForecastRows, forecastGroups, forecastNoteBlocks, forecastDocumentRow, forecastPdfNoteBlocks, responsibleShortName, engineHoursText, fixedHoursText, hasReportRequests, currentStateLabel } from '../src/utils/gtoForecast.js'
+
+
+function mockReport(route) {
+ const request=route.request(), url=new URL(request.url())
+ if(request.method()==='PUT')return route.fulfill({json:{revision:request.postDataJSON().revision+1,updatedAt:new Date().toISOString()}})
+ if(url.pathname==='/api/gto-reports')return route.fulfill({json:[]})
+ if(url.pathname.endsWith('/defaults'))return route.fulfill({json:{rows:[]}})
+ return route.fulfill({status:404,json:{}})
+}
 
 test('report engine hours occupy thirteen fixed positions without truncation', () => {
  const row = {engines:[{hours:20207},{hours:14752}]}
@@ -28,6 +37,7 @@ for (const width of [390,1440]) {
   const writes=[]
   await page.route('**/api/**',route=>{
    const request=route.request(),path=new URL(request.url()).pathname
+   if(path.startsWith('/api/gto-reports'))return mockReport(route)
    if(request.method()!=='GET')writes.push(path)
    if(path==='/api/vehicles/repair-journal')return route.fulfill({json:journals})
    if(path==='/api/vehicles')return route.fulfill({json:journals.map(row=>row.vehicle)})
@@ -44,7 +54,7 @@ for (const width of [390,1440]) {
   await page.getByLabel('Меню Выход ГТО',{exact:true}).click()
   await expect(page.getByRole('button',{name:'Скачать PDF',exact:true})).toBeEnabled()
   await page.keyboard.press('Escape')
-  await page.getByLabel('Дата прогноза',{exact:true}).fill('2026-10-12')
+  await page.getByLabel('Дата прогноза',{exact:true}).fill('2099-10-12')
   await page.getByLabel('Смена',{exact:true}).selectOption('2')
   const excavator=page.locator('.gto-row').filter({hasText:'№ 94'}),truck=page.locator('.gto-row').filter({hasText:'№ 901'})
   await excavator.getByLabel('Состояние к смене',{exact:true}).selectOption('healthy')
@@ -54,8 +64,16 @@ for (const width of [390,1440]) {
   await page.getByLabel('Поиск техники',{exact:true}).fill('94')
   await expect(page.locator('.gto-row')).toHaveCount(1)
   const download=page.waitForEvent('download');await page.getByLabel('Меню Выход ГТО',{exact:true}).click();await page.getByRole('button',{name:'Скачать PDF',exact:true}).click()
-  const file=await download;expect(file.suggestedFilename()).toBe('Выход ГТО 2026-10-12 (2 смена).pdf')
+  const file=await download;expect(file.suggestedFilename()).toBe('Выход ГТО 2099-10-12 (2 смена).pdf')
   await file.saveAs(`test-results/gto-forecast-${width}.pdf`)
+  for (const [label,extension] of [['Скачать Excel','xlsx'],['Скачать изображение','png']]) {
+    await page.getByLabel('Меню Выход ГТО',{exact:true}).click()
+    const downloaded=page.waitForEvent('download')
+    await page.getByRole('button',{name:label,exact:true}).click()
+    const exported=await downloaded
+    expect(exported.suggestedFilename()).toBe(`Выход ГТО 2099-10-12 (2 смена).${extension}`)
+    await exported.saveAs(`test-results/gto-export-${width}.${extension}`)
+  }
   expect(writes).toEqual([])
   const draft=await page.evaluate(()=>JSON.parse(localStorage.getItem('myapp.gtoDraft.mechanic')))
   expect(draft.rows.v1.forecast).toBe('healthy');expect(draft).not.toHaveProperty('date');expect(draft).not.toHaveProperty('shift')
@@ -66,6 +84,47 @@ for (const width of [390,1440]) {
   await page.screenshot({path:`test-results/gto-forecast-${width}.png`,fullPage:true})
  })
 }
+
+test('Excel preserves text and numeric values; long image exports contain valid PNG pages', async ({page}) => {
+ await page.goto('/')
+ const result=await page.evaluate(async()=>{
+  const {createGtoForecastExcel,createGtoForecastImage}=await import('/src/utils/gtoForecastExport.js')
+  const {unzipSync,strFromU8}=await import('/node_modules/fflate/esm/browser.js')
+  const rows=Array.from({length:35},(_,i)=>({vehicle:{id:String(i),modelName:`Машина ${i}`,garageNumber:i},forecast:'faulty',hours:0,ktg:0,maintenance:'=1+1',note:`Последняя отметка ${i}`,currentNotes:'Длинная неисправность '.repeat(60),climate:'unknown',plannedRelease:'<Поставка & ремонт>'}))
+  const report={date:'2026-10-12',shift:'2',mechanic:'Иванов',organisation:'Организация',site:'Участок',groups:[{name:'Группа',ready:0,rows}]}
+  const book=unzipSync(new Uint8Array(await (await createGtoForecastExcel(report)).arrayBuffer()))
+  const sheet=new DOMParser().parseFromString(strFromU8(book['xl/worksheets/sheet1.xml']),'application/xml')
+  const image=await createGtoForecastImage(report)
+  const pages=unzipSync(new Uint8Array(await image.blob.arrayBuffer()))
+  const dimensions=[]
+  for(const bytes of Object.values(pages)) {const bitmap=await createImageBitmap(new Blob([bytes],{type:'image/png'}));dimensions.push([bitmap.width,bitmap.height]);bitmap.close()}
+  const styles=new DOMParser().parseFromString(strFromU8(book['xl/styles.xml']),'application/xml')
+  return {xmlError:sheet.querySelector('parsererror')?.textContent, text:sheet.documentElement.textContent,formulas:sheet.querySelectorAll('f').length,zero:sheet.querySelector('c[r="F6"] v')?.textContent,extension:image.extension,dimensions,
+   merges:[...sheet.querySelectorAll('mergeCell')].map(cell=>cell.getAttribute('ref')), mergeCount:Number(sheet.querySelector('mergeCells').getAttribute('count')),
+   pageWidth:sheet.querySelector('pageSetup').getAttribute('fitToWidth'),paper:sheet.querySelector('pageSetup').getAttribute('paperSize'),
+   red:styles.querySelector('fonts font color[rgb="FFCC1414"]')!=null, bold:sheet.querySelector('c[r="E6"] rPr b')!=null,
+   percent:sheet.querySelector('c[r="F6"]').getAttribute('s'),responsible:sheet.querySelector('c[r="I1"]').textContent,
+   header:Object.fromEntries(['A1','A2','A3','H3','I3','J3','K3'].map(ref=>[ref,sheet.querySelector(`c[r="${ref}"]`).textContent])),
+   headerAlignment:styles.querySelectorAll('cellXfs > xf')[Number(sheet.querySelector('c[r="H3"]').getAttribute('s'))].querySelector('alignment').getAttribute('horizontal')}
+ })
+ expect(result.xmlError).toBeUndefined()
+ expect(result.formulas).toBe(0)
+ expect(result.zero).toBe('0')
+ expect(result.text).toContain('=1+1')
+ expect(result.text).toContain('<Поставка & ремонт>')
+ expect(result.text).toContain('Последняя отметка 34')
+ expect(result.merges).toContain('J1:K1')
+ expect(result.merges).toHaveLength(result.mergeCount)
+ expect(result.pageWidth).toBe('1');expect(result.paper).toBe('9')
+ expect(result.red).toBe(true);expect(result.bold).toBe(true);expect(result.percent).toBe('5')
+ expect(result.responsible).toBe('Ответственные лица:')
+ expect(result.header).toEqual({A1:'',A2:'Организация',A3:'Участок «Участок»',H3:'Состояние оборудования на',I3:'12.10.2026',J3:'2',K3:''})
+ expect(result.merges).not.toContain('H3:I3')
+ expect(result.headerAlignment).toBe('right')
+ expect(result.extension).toBe('zip')
+ expect(result.dimensions.length).toBeGreaterThan(1)
+ for(const [width,height] of result.dimensions){expect([width,height].sort((a,b)=>a-b)).toEqual([2480,3508])}
+})
 
 test('PDF spans pages without losing long rows', async ({ page }) => {
   await page.goto('/')
@@ -84,18 +143,18 @@ test('open parts requests appear once, including requests without work records',
  const open={id:'p1',requestNumber:'ЗЗП-123',requestDate:'2026-10-11',description:'Насос',requiredParts:'Уплотнение',completedDate:null}
  const closed={id:'p2',requestNumber:'ЗАКРЫТА',completedDate:'2026-10-11'}
  const [row]=buildForecastRows([{vehicle:{id:'v1',operationalState:'stopped'},defects:[],partsRequests:[open,closed],works:[{partsRequests:[open,closed]}]}])
- expect(row.currentNotes).toContain('ЗЗП-123');expect(row.currentNotes).toContain('11.10.2026')
+ expect(row.currentNotes).toContain('ЗЗП-123');expect(row.currentNotes).not.toContain('11.10.2026')
  expect(row.currentNotes).toContain('Насос');expect(row.currentNotes).toContain('Уплотнение')
  expect(row.currentNotes).not.toContain('ЗАКРЫТА')
  expect(row.currentNotes.match(/ЗЗП-123/g)).toHaveLength(1)
  expect(row.isInRepair).toBe(true)
 })
 
-test('procurement body precedes its repair reason, which is bold and separated', () => {
+test('procurement details follow their repair request in parentheses', () => {
  const [row]=buildForecastRows([{vehicle:{id:'v1',operationalState:'stopped'},defects:[{id:'d1',symptoms:'Течь гидроцилиндра'},{id:'d2',symptoms:'Отказ двигателя'}],partsRequests:[{id:'p1',defectId:'d1',description:'Заказать уплотнение'}],works:[{defectId:'d1',status:'awaiting_parts',description:'Течь гидроцилиндра'}]}])
- expect(row.noteBlocks[0].text).toBe('Течь гидроцилиндра')
- expect(row.noteBlocks[2].text).toBe('Заказать уплотнение - Течь гидроцилиндра')
- expect(row.noteBlocks[2].spans[1].italic).toBe(true)
+ expect(row.noteBlocks[0].text).toBe('ОЗЧ Требуется: Течь гидроцилиндра — (Заказать уплотнение)')
+ expect(row.noteBlocks[1].text).toBe('Отказ двигателя')
+ expect(row.noteBlocks[0].text).toContain('ОЗЧ Требуется:')
  expect(row.noteBlocks.every(block=>!block.divider)).toBe(true)
 })
 
@@ -111,37 +170,58 @@ test('forecast groups use group_car names across different vehicle types', () =>
  expect(auxiliary.ready).toBe(1)
 })
 
-test('identical request number and body are displayed once with the date', () => {
+test('identical request number and body are displayed once without the date', () => {
  const [row]=buildForecastRows([{vehicle:{id:'v1',operationalState:'stopped'},partsRequests:[{id:'p1',requestNumber:'проба пера',description:' проба пера ',requiredParts:'ПРОБА ПЕРА',requestDate:'2026-10-10'}]}])
- expect(row.currentNotes).toBe('проба пера от 10.10.2026')
+ expect(row.currentNotes).toBe('(проба пера)')
 })
 
-test('procurement downtime uses latest awaiting-parts repair description, not initial defect', () => {
+test('procurement exports body and requirement without the date even for a healthy forecast', () => {
+ const description='ЗЗП-42\nТопливный насос — 1 шт.\nКомплект уплотнений — 2 шт.'
+ const [row]=buildForecastRows([{vehicle:{id:'v1',operationalState:'healthy'},partsRequests:[{id:'p1',defectId:'d1',requestNumber:description.slice(0,20),description,requestDate:'2026-10-22'}],works:[{defectId:'d1',description:'Заменить топливный насос',status:'awaiting_parts'}]}])
+ const blocks=forecastPdfNoteBlocks(row)
+ expect(blocks.map(block=>block.text).join('\n')).toBe(`(${description}; Требуется: Заменить топливный насос)`)
+ expect(blocks[0].spans.find(span=>span.kind==='required')).toMatchObject({kind:'required',italic:true})
+})
+
+test('multiple procurement requests stay with their repair and mechanic note', () => {
+ const [row]=buildForecastRows([{vehicle:{id:'v1',operationalState:'stopped'},defects:[{id:'d1',symptoms:'Течь гидроцилиндра'},{id:'d2',symptoms:'Отказ двигателя'}],works:[{defectId:'d1',description:'уплотнения'}],partsRequests:[
+  {id:'p1',defectId:'d1',description:'ЗЗП-42',requestDate:'2026-10-22'},
+  {id:'p2',defectId:'d1',description:'ЗЗП-43',requestDate:'2026-10-23'},
+ ]}])
+ expect(row.currentNotes).toBe('Течь гидроцилиндра — (ЗЗП-42; Требуется: уплотнения) (ЗЗП-43; Требуется: уплотнения)\nОтказ двигателя')
+ row.note='Проверить утром'
+ expect(forecastPdfNoteBlocks(row)[0].text).toContain('Течь гидроцилиндра (Проверить утром) — (ЗЗП-42;')
+ expect(row.currentNotes).not.toContain('Проверить утром')
+ row.forecast='healthy'
+ expect(forecastNoteBlocks(row)[0].text).toBe('Течь гидроцилиндра — (ЗЗП-42; Требуется: уплотнения) (ЗЗП-43; Требуется: уплотнения)')
+})
+
+test('procurement requirement uses the latest work shown in the procurement section', () => {
  const [row]=buildForecastRows([{vehicle:{id:'v1',operationalState:'stopped'},defects:[{id:'d1',symptoms:'Первичная заявка: не заводится'}],partsRequests:[{id:'p1',defectId:'d1',description:'Купить насос'}],works:[
   {defectId:'d1',status:'awaiting_parts',description:'Старая причина',completedAt:'2026-10-09T10:00:00Z'},
   {defectId:'d1',status:'awaiting_parts',description:'Нет топливного насоса',completedAt:'2026-10-10T10:00:00Z'},
   {defectId:'d1',status:'in_progress',description:'Позднейший осмотр',createdAt:'2026-10-11T10:00:00Z'},
   {defectId:'d2',status:'awaiting_parts',description:'Другая машина'},
  ]}])
- expect(row.currentNotes).toBe('Первичная заявка: не заводится\nКупить насос - Нет топливного насоса')
+ expect(row.currentNotes).toBe('Первичная заявка: не заводится — (Купить насос; Требуется: Позднейший осмотр)')
 })
-test('missing awaiting-parts stage does not substitute initial repair request', () => {
+test('procurement without works uses the same defect fallback as the procurement section', () => {
  const [row]=buildForecastRows([{vehicle:{id:'v1',operationalState:'stopped'},defects:[{id:'d1',symptoms:'Первичная заявка'}],partsRequests:[{id:'p1',defectId:'d1',description:'Купить насос'}]}])
- expect(row.currentNotes).toBe('Первичная заявка\nКупить насос')
+ expect(row.currentNotes).toBe('Первичная заявка — (Купить насос; Требуется: Первичная заявка)')
 })
 
 test('completed repair request is not placed before procurement requests', () => {
  const [row]=buildForecastRows([{vehicle:{id:'v1',operationalState:'stopped'},defects:[{id:'d1',symptoms:'Завершённая неисправность',status:'repaired'}],partsRequests:[{id:'p1',defectId:'d1',description:'Закупочная заявка'}]}])
- expect(row.currentNotes).toBe('Закупочная заявка')
+ expect(row.currentNotes).toBe('(Закупочная заявка; Требуется: Завершённая неисправность)')
 })
 
-test('mechanic healthy forecast hides defects but keeps open procurement text', () => {
+test('healthy forecast preserves repair and procurement requests', () => {
  const [row]=buildForecastRows([{vehicle:{id:'v1',operationalState:'stopped'},defects:[{id:'d1',symptoms:'Первичная неисправность'}],partsRequests:[{id:'p1',defectId:'d1',description:'Купить насос'}],works:[{defectId:'d1',status:'awaiting_parts',description:'Нет насоса'}]}])
- expect(forecastNoteBlocks(row).map(block=>block.text).join('\n')).toBe('Первичная неисправность\nКупить насос - Нет насоса')
+ expect(forecastNoteBlocks(row).map(block=>block.text).join('\n')).toBe('ОЗЧ Требуется: Нет насоса — (Купить насос)')
  row.forecast='healthy'
- expect(forecastNoteBlocks(row).map(block=>block.text).join('\n')).toBe('Купить насос')
+ expect(forecastNoteBlocks(row).map(block=>block.text).join('\n')).toBe('ОЗЧ Требуется: Нет насоса — (Купить насос)')
  row.forecast='faulty'
- expect(forecastNoteBlocks(row)).toHaveLength(2)
+ expect(forecastNoteBlocks(row)).toHaveLength(1)
 })
 
 test('ordinary 39-vehicle report fits one A4 page with an intact summary', async ({page}) => {
@@ -190,6 +270,7 @@ test('persistent preferences and vehicle data, unrestricted search and healthy m
  const writes=[]
  await page.route('**/api/**',route=>{
   const req=route.request(),path=new URL(req.url()).pathname
+  if(path.startsWith('/api/gto-reports'))return mockReport(route)
   if(req.method()==='PUT') {
    const body=req.postDataJSON();writes.push({path,body})
    if(path.endsWith('/user'))preferences={...preferences,...body}
@@ -219,7 +300,7 @@ test('persistent preferences and vehicle data, unrestricted search and healthy m
  await expect.poll(()=>writes.length).toBe(3)
  await page.getByLabel('Состояние к смене',{exact:true}).selectOption('healthy')
  await expect(page.getByLabel('Плановый выход из ремонта',{exact:true})).toHaveCount(0)
- await expect(page.locator('.gto-current-notes')).toHaveCount(0)
+ await expect(page.locator('.gto-current-notes')).toHaveCount(1)
  await page.getByLabel('Состояние к смене',{exact:true}).selectOption('faulty')
  await expect(page.getByLabel('Плановый выход из ремонта',{exact:true})).toHaveValue('16.10.2026')
  await page.getByLabel('Поиск техники',{exact:true}).fill('901')
@@ -301,6 +382,7 @@ test('two engine input values persist independently and appear as slash pairs in
  const values=new Map([[1,{engineNumber:1,engineHours:875,readingDate:'2026-10-12'}],[2,{engineNumber:2,engineHours:852,readingDate:'2026-10-12'}]]),replacements=new Map(),writes=[]
  await page.route('**/api/**',route=>{
   const req=route.request(),path=new URL(req.url()).pathname
+  if(path.startsWith('/api/gto-reports'))return mockReport(route)
   if(req.method()==='PUT' && path.includes('/engines/')) {
    const number=Number(path.split('/').at(-1)),body=req.postDataJSON()
    writes.push({number,...body});if(body.engineHours!=null)values.set(number,{engineNumber:number,engineHours:body.engineHours,readingDate:body.readingDate});replacements.set(number,{vehicleId:'v1',engineNumber:number,hoursAtReplacement:body.hoursAtReplacement})
@@ -336,3 +418,35 @@ test('two engine input values persist independently and appear as slash pairs in
  expect(text).toMatch(/875\s*\/\s*852/);expect(text).toMatch(/18225\s*\/\s*17900/)
  expect(writes.every(item=>[1,2].includes(item.number) && item.engineHours===null)).toBe(true)
 })
+
+for (const state of ['stopped', 'healthy', 'operating', 'operating_with_defect']) {
+ test('repair and procurement stay visible for ' + state + ', only stopped is faulty', () => {
+  const rows = buildForecastRows([
+   {vehicle:{id:'repair',operationalState:state},defects:[{id:'d1',symptoms:'Проверить насос'}]},
+   {vehicle:{id:'parts',operationalState:state},partsRequests:[{id:'p1',description:'Купить фильтр'}]},
+  ])
+  for (const row of rows) {
+   expect(hasReportRequests(row)).toBeTruthy()
+   expect(row.forecast).toBe(state === 'stopped' ? 'faulty' : 'healthy')
+   row.forecast = state === 'stopped' ? 'healthy' : 'faulty'
+   expect(forecastDocumentRow(row).forecast).toBe(state === 'stopped' ? 'faulty' : 'healthy')
+   expect(forecastPdfNoteBlocks(row).map(block=>block.text).join(' ')).toContain(row.vehicle.id === 'repair' ? 'Проверить насос' : 'Купить фильтр')
+  }
+  expect(currentStateLabel(state)).toBe(state === 'stopped' ? 'Неисправен' : 'Исправен')
+  expect(forecastGroups(rows)[0].ready).toBe(state === 'stopped' ? 0 : 2)
+ })
+}
+
+for (const status of ['awaiting_parts', 'in_progress']) {
+ test('OZCh follows latest repair status ' + status + ' even without procurement', () => {
+  const journal = { vehicle: { id: 'v1' }, defects: [{ id: 'd1', symptoms: 'Течь гидроцилиндра', status: 'awaiting_parts' }], works: [
+   { defectId: 'd1', status: 'awaiting_parts', description: 'Старые детали', createdAt: '2026-10-20T10:00:00Z' },
+   { defectId: 'd1', status, description: 'уплотнения', createdAt: '2026-10-22T10:00:00Z' },
+  ] }
+  const [withoutRequest] = buildForecastRows([journal])
+  expect(withoutRequest.currentNotes).toBe(status === 'awaiting_parts' ? 'ОЗЧ Требуется: уплотнения' : 'Течь гидроцилиндра')
+  journal.partsRequests = [{ id: 'p1', defectId: 'd1', description: 'ЗЗП-42' }]
+  const [withRequest] = buildForecastRows([journal])
+  expect(withRequest.currentNotes).toBe(status === 'awaiting_parts' ? 'ОЗЧ Требуется: уплотнения — (ЗЗП-42)' : 'Течь гидроцилиндра — (ЗЗП-42; Требуется: уплотнения)')
+ })
+}

@@ -1,5 +1,40 @@
 import { test, expect } from '@playwright/test'
 
+test('procurement loads fleet in one request, includes orders without works and reports API errors', async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem('myapp.authToken', 'test')
+    localStorage.setItem('myapp.userRole', 'Administrator')
+  })
+  const vehicles = Array.from({ length: 40 }, (_, index) => ({ id: `v${index}`, modelName: 'Самосвал', garageNumber: index }))
+  let batchCount = 0, individualCount = 0, fail = false
+  await page.route('**/api/**', route => {
+    const path = new URL(route.request().url()).pathname
+    if (path === '/api/vehicles') return route.fulfill({ json: vehicles })
+    if (/\/api\/vehicles\/[^/]+\/journal$/.test(path)) { individualCount++; return route.fulfill({ status: 500 }) }
+    if (path === '/api/vehicles/repair-journal') {
+      batchCount++
+      if (fail) return route.fulfill({ status: 500 })
+      return route.fulfill({ json: [{ vehicle: vehicles[39], defects: [{ id: 'd1', symptoms: 'Требуется насос' }], works: [],
+        partsRequests: [{ id: 'p1', defectId: 'd1', requestDate: '2026-10-10', description: 'Закупка насоса' }] }] })
+    }
+    return route.fulfill({ json: path === '/api/profile' ? {} : [] })
+  })
+  async function open() {
+    await page.goto('/')
+    await page.getByRole('button', { name: 'Транспорт', exact: true }).click()
+    await page.getByRole('button', { name: 'Заявка на закупку ЗЧ', exact: true }).click()
+  }
+  await open()
+  await expect(page.locator('.parts-request-card')).toHaveCount(1)
+  await expect(page.locator('.parts-request-card')).toContainText('Закупка насоса')
+  expect(batchCount).toBe(1); expect(individualCount).toBe(0)
+  fail = true
+  await open()
+  await expect(page.locator('.table-message--error')).toHaveText('Не удалось загрузить заявки на закупку ЗЧ. Попробуйте открыть раздел повторно.')
+  await expect(page.locator('.table-message--error')).toBeVisible()
+  await expect(page.getByText('Заявок на закупку ЗЧ нет.', { exact: true })).toHaveCount(0)
+})
+
 /** Подготавливает страницу и ответы API для сценариев браузерного теста. */
 async function setup(page, status, multiple = false) {
   await page.addInitScript(() => {
@@ -27,11 +62,11 @@ async function setup(page, status, multiple = false) {
       return route.fulfill({ status: 204 })
     }
     if (path === '/api/vehicles') return route.fulfill({ json: [{ id: 'v1', garageNumber: 901, modelName: 'Самосвал' }] })
-    if (path === '/api/vehicles/v1/journal') return route.fulfill({ json: { works: [
+    if (path === '/api/vehicles/repair-journal') return route.fulfill({ json: [{ vehicle: { id: 'v1', garageNumber: 901, modelName: 'Самосвал' }, works: [
       { id: 'old', defectId: 'd1', status: 'awaiting_parts', createdAt: '2026-10-08T10:00:00Z', partsRequests: history },
       { id: 'latest', defectId: 'd1', status, description: 'Последний выполненный ремонт', completedAt: '2026-10-10T10:00:00Z', partsRequests: [] },
       ...(multiple ? [{ id: 'second', defectId: 'd2', status: 'awaiting_parts', description: 'Второй ремонт', completedAt: '2026-10-09T10:00:00Z', partsRequests: secondHistory }] : []),
-    ] } })
+    ] }] })
     if (path === '/api/profile') return route.fulfill({ json: { hasAvatar: false } })
     return route.fulfill({ json: [] })
   })
