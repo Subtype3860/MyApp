@@ -1,7 +1,7 @@
 import notoSansUrl from '../assets/NotoSans.ttf?url'
 import boldFontUrl from '../assets/LiberationSans-Bold.ttf?url'
 import italicFontUrl from '../assets/LiberationSans-Italic.ttf?url'
-import { climateLabels, forecastLabel, forecastPdfNoteBlocks, forecastDocumentRow, responsibleShortName, engineHoursText } from './gtoForecast'
+import { climateLabels, forecastLabel, forecastPdfNoteBlocks, forecastDocumentRow, responsibleShortName } from './gtoForecast'
 import { formatReportDate, vehicleTitle } from './shiftReport'
 import { fixedHoursText, hoursReportHeader } from './gtoForecast'
 
@@ -27,6 +27,8 @@ export async function createGtoForecastPdf({ date, shift, mechanic, organisation
   const hoursWidth = hoursFont.widthOfTextAtSize('00000 / 00000', 7) + 8
   widths[7] += widths[2] - hoursWidth
   widths[2] = hoursWidth
+  widths[7] += widths[3] - hoursWidth
+  widths[3] = hoursWidth
   // Fit the ten-character status labels using the actual regular/bold font metrics.
   const statusWidth = Math.max(...['Неисправно', 'Неисправен'].flatMap(text =>
     [font, boldFont].map(face => face.widthOfTextAtSize(text, 7)))) + 8.1
@@ -38,7 +40,7 @@ export async function createGtoForecastPdf({ date, shift, mechanic, organisation
   let pageHasRows = false
   let pageHeight = 595.28
   const bottom = 30
-  const /** Нормализует пробельные символы перед размещением текста в PDF. */ clean = text => String(text ?? '').replace(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g, '')
+  const /** Нормализует пробельные символы перед размещением текста в PDF. */ clean = text => String(text ?? '').replace(/\r\n?/g, '\n').replace(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g, '')
   /** Разбивает текст на строки, помещающиеся в заданную ширину PDF-ячейки. */
   function wrap(text, width, size = 7, textFont = font) {
     const lines = []
@@ -76,7 +78,8 @@ export async function createGtoForecastPdf({ date, shift, mechanic, organisation
     const /** Добавляет накопленную строку в результат переноса текста и очищает буфер. */ flush = () => { lines.push({ runs }); runs = []; used = 0 }
     for (const span of spans) {
       const face = span.italic ? italicFont : span.bold ? boldFont : font
-      for (const token of clean(span.text).split(/(\s+)/).filter(Boolean)) {
+      for (const token of clean(span.text).split(/(\n|[^\S\n]+)/).filter(Boolean)) {
+        if (token === '\n') { flush(); continue }
         if (used && used + face.widthOfTextAtSize(token, 7) > width) flush()
         for (const char of token) {
           if (!used && /\s/.test(char)) continue
@@ -101,7 +104,7 @@ export async function createGtoForecastPdf({ date, shift, mechanic, organisation
       const blocks = Array.isArray(cell) ? cell : [{ text: cell ?? '' }]
       const result = blocks.flatMap(block => {
         const item = typeof block === 'object' ? block : { text: block }
-        if (item.fixedHours) return [{ text: item.text, fixedHours: true, bold: true }]
+        if (item.fixedHours) return [{ text: item.text, fixedHours: true, bold: true, red: item.red }]
         if (item.spans) return wrapSpans(item.spans, widths[i] - 8)
         const wrapped = wrap(item.text, widths[i] - 8, 7, item.italic ? italicFont : item.bold ? boldFont : font)
         return wrapped.map((text, index) => ({ text, bold: item.bold, italic: item.italic, red: item.red, divider: item.divider && index === wrapped.length - 1 }))
@@ -196,7 +199,7 @@ export async function createGtoForecastPdf({ date, shift, mechanic, organisation
     return [
         index, vehicleTitle(row.vehicle),
         [{ text: fixedHoursText(row), fixedHours: true }],
-        [{ text: engineHoursText(row, true), red: true }],
+        [{ text: fixedHoursText(row, true), fixedHours: true, red: true }],
         [{ text: forecastLabel(row.forecast), bold: row.forecast === 'faulty', red: row.forecast === 'faulty' }],
         row.ktg != null && row.ktg !== '' ? `${row.ktg}%` : '',
         [{ text: row.maintenance ?? '', bold: true, red: true }],

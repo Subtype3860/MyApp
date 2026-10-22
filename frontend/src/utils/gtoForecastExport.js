@@ -70,7 +70,7 @@ export async function createGtoForecastExcel(report) {
       if (plain(value).length > 32767) throw new Error('Текст ячейки превышает ограничение Excel (32767 символов).')
       let style = row.styles?.[column] ?? row.style ?? (row.heading ? 1 : 11)
       if (Array.isArray(value) && !row.heading) {
-        if (value[0]?.fixedHours) style = 4
+        if (value[0]?.fixedHours) style = value[0]?.red ? 13 : 4
         else if (value[0]?.red) style = value[0]?.bold ? 3 : 2
       }
       if (index > 3 && row.cells && column === 5 && value !== '') { value = Number(String(value).replace('%','')) / 100; style = 5 }
@@ -81,9 +81,9 @@ export async function createGtoForecastExcel(report) {
     }).join('') + '</row>'
   }).join('')
   const font = (extra = '', color = 'FF1F2B3B', size = 7, name = 'Arial') => '<font><sz val="' + size + '"/><name val="' + name + '"/><color rgb="' + color + '"/>' + extra + '</font>'
-  const fonts = [font(), font('<b/>'), font('', 'FFCC1414'), font('<b/>', 'FFCC1414'), font('<b/>', 'FF1F2B3B', 7, 'Courier New'), font('', 'FF145E6B', 8), font('', 'FF667380'), font('', 'FF145E6B', 12)]
+  const fonts = [font(), font('<b/>'), font('', 'FFCC1414'), font('<b/>', 'FFCC1414'), font('<b/>', 'FF1F2B3B', 7, 'Courier New'), font('', 'FF145E6B', 8), font('', 'FF667380'), font('', 'FF145E6B', 12), font('<b/>', 'FFCC1414', 7, 'Courier New')]
   const xf = (fontId, fillId, borderId, numFmtId = 0, horizontal = null) => '<xf fontId="' + fontId + '" fillId="' + fillId + '" borderId="' + borderId + '" numFmtId="' + numFmtId + '" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyNumberFormat="1" applyAlignment="1"><alignment vertical="center" wrapText="1"' + (horizontal ? ' horizontal="' + horizontal + '"' : '') + '/></xf>'
-  const styles = [xf(0,0,0), xf(1,2,1,0,'center'), xf(2,0,1), xf(3,0,1), xf(4,0,1), xf(0,0,1,164), xf(0,0,0), xf(1,0,0), xf(5,0,0), xf(6,0,0), xf(7,0,0), xf(0,0,1), xf(1,0,0,0,'right')]
+  const styles = [xf(0,0,0), xf(1,2,1,0,'center'), xf(2,0,1), xf(3,0,1), xf(4,0,1), xf(0,0,1,164), xf(0,0,0), xf(1,0,0), xf(5,0,0), xf(6,0,0), xf(7,0,0), xf(0,0,1), xf(1,0,0,0,'right'), xf(8,0,1)]
   const styleXml = '<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><numFmts count="1"><numFmt numFmtId="164" formatCode="0.##%"/></numFmts><fonts count="' + fonts.length + '">' + fonts.join('') + '</fonts><fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FFEBF2F5"/><bgColor indexed="64"/></patternFill></fill></fills><borders count="2"><border/><border>' + ['left','right','top','bottom'].map(side => '<' + side + ' style="thin"><color rgb="FFC7D1D9"/></' + side + '>').join('') + '</border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="' + styles.length + '">' + styles.join('') + '</cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>'
   const files = {
     '[Content_Types].xml': '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>',

@@ -450,3 +450,51 @@ for (const status of ['awaiting_parts', 'in_progress']) {
   expect(withRequest.currentNotes).toBe(status === 'awaiting_parts' ? 'ОЗЧ Требуется: уплотнения — (ЗЗП-42)' : 'Течь гидроцилиндра — (ЗЗП-42; Требуется: уплотнения)')
  })
 }
+
+test('replacement hours match fixed-width readings and remain red in PDF and Excel', async ({page}) => {
+ const row={vehicle:{id:'v1',garageNumber:901},engines:[{hours:875,hoursAtReplacement:120},{hours:852,hoursAtReplacement:17900}],forecast:'faulty',ktg:'',maintenance:'',note:'',climate:'unknown'}
+ expect(fixedHoursText(row,true)).toBe('  120 / 17900')
+ expect(fixedHoursText({engines:[{hoursAtReplacement:0}]} ,true)).toBe('    0')
+ expect(fixedHoursText({engines:[{hoursAtReplacement:null},{hoursAtReplacement:12}]},true)).toBe('      /    12')
+ expect(()=>fixedHoursText({engines:[{hoursAtReplacement:123456}]},true)).toThrow('М/ч при замене ДВС')
+ await page.goto('/')
+ const result=await page.evaluate(async row=>{
+  const {createGtoForecastPdf}=await import('/src/utils/gtoForecastPdf.js')
+  const {createGtoForecastExcel}=await import('/src/utils/gtoForecastExport.js')
+  const {unzipSync,strFromU8}=await import('/node_modules/fflate/esm/browser.js')
+  const report={date:'2026-10-22',shift:'1',mechanic:'',organisation:'',site:'',groups:[{name:'Техника',ready:0,rows:[row]}]}
+  let layout
+  await createGtoForecastPdf(report,value=>{layout=value})
+  const book=unzipSync(new Uint8Array(await (await createGtoForecastExcel(report)).arrayBuffer()))
+  const sheet=new DOMParser().parseFromString(strFromU8(book['xl/worksheets/sheet1.xml']),'application/xml')
+  const styles=new DOMParser().parseFromString(strFromU8(book['xl/styles.xml']),'application/xml')
+  const cell=sheet.querySelector('c[r="D6"]')
+  const style=styles.querySelectorAll('cellXfs > xf')[Number(cell.getAttribute('s'))]
+  const font=styles.querySelectorAll('fonts > font')[Number(style.getAttribute('fontId'))]
+  return {widths:layout.widths.slice(2,4),pdf:layout.groups[0].cells[0][3][0],text:cell.textContent,font:font.querySelector('name').getAttribute('val'),color:font.querySelector('color').getAttribute('rgb'),runColor:cell.querySelector('rPr color').getAttribute('rgb')}
+ },row)
+ expect(result.widths[0]).toBe(result.widths[1])
+ expect(result.pdf).toEqual({text:'  120 / 17900',fixedHours:true,red:true})
+ expect(result.text).toBe('  120 / 17900')
+ expect(result.font).toBe('Courier New')
+ expect(result.color).toBe('FFCC1414')
+ expect(result.runColor).toBe('FFCC1414')
+})
+
+for (const newline of ['\n','\r\n','\r']) {
+ test('PDF counts explicit note line breaks ' + JSON.stringify(newline), async ({page}) => {
+  await page.goto('/')
+  const lines=await page.evaluate(async newline=>{
+   const {createGtoForecastPdf}=await import('/src/utils/gtoForecastPdf.js')
+   const {getDocument,GlobalWorkerOptions}=await import('/node_modules/pdfjs-dist/build/pdf.mjs')
+   GlobalWorkerOptions.workerSrc='/node_modules/pdfjs-dist/build/pdf.worker.mjs'
+   const rows=['На генераторах'+newline+'частоты ТМС.','Следующая заявка'].map((text,i)=>({vehicle:{id:String(i)},forecast:'faulty',ktg:70,climate:'unknown',noteBlocks:[{text,bold:true}]}))
+   const blob=await createGtoForecastPdf({date:'2026-10-22',shift:'1',mechanic:'',organisation:'',site:'',groups:[{name:'Техника',ready:0,rows}]})
+   const task=getDocument({data:new Uint8Array(await blob.arrayBuffer())});const pdf=await task.promise
+   try {const content=await (await pdf.getPage(1)).getTextContent();return content.items.filter(item=>['На генераторах','частоты ТМС.','Следующая заявка'].includes(item.str)).map(item=>({text:item.str,y:item.transform[5]}))}finally{await task.destroy()}
+  },newline)
+  expect(lines.map(line=>line.text)).toEqual(['На генераторах','частоты ТМС.','Следующая заявка'])
+  expect(lines[0].y-lines[1].y).toBeCloseTo(8,1)
+  expect(lines[1].y-lines[2].y).toBeGreaterThanOrEqual(8)
+ })
+}

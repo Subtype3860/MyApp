@@ -167,12 +167,12 @@ export function engineHoursText(row, replacement = false) {
 }
 
 /** Форматирует зафиксированные показания моточасов для отчёта. */
-export function fixedHoursText(row) {
-  const values = row.engines ? row.engines.map(engine => engine.hours) : [row.hours]
+export function fixedHoursText(row, replacement = false) {
+  const values = row.engines ? row.engines.map(engine => replacement ? engine.hoursAtReplacement : engine.hours) : [replacement ? null : row.hours]
   if (values.every(value => value == null || value === '')) return ''
   const slots = values.map(value => {
     const text = value == null ? '' : String(value)
-    if (text.length > 5) throw new Error(`Наработка ${text} у техники № ${row.vehicle?.garageNumber ?? ''} не помещается в поле из 5 символов. Показание не обрезано.`)
+    if (text.length > 5) throw new Error(`${replacement ? 'М/ч при замене ДВС' : 'Наработка'} ${text} у техники № ${row.vehicle?.garageNumber ?? ''} не помещается в поле из 5 символов. Показание не обрезано.`)
     return text.padStart(5, ' ')
   })
   return slots.join(' / ')

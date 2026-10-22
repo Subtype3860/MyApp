@@ -328,7 +328,7 @@ onBeforeUnmount(()=>{clearTimeout(saveTimer);void persistReport();controller?.ab
             <fieldset v-for="engine in row.engines" :key="engine.number" class="gto-engine">
               <legend>ДВС № {{ engine.number }}</legend>
               <div class="gto-fields">
-                <label>М/ч при замене ДВС<input v-model="engine.hoursAtReplacement" type="number" min="0" step="0.1" :disabled="!canManageHours || !editable || loading || exporting" @change="saveEngine(row,engine)" /></label>
+                <label>М/ч при замене ДВС<input class="gto-replacement-hours" v-model="engine.hoursAtReplacement" type="number" min="0" step="0.1" :disabled="!canManageHours || !editable || loading || exporting" @change="saveEngine(row,engine)" /></label>
               </div>
             </fieldset>
           </div>
@@ -350,6 +350,7 @@ onBeforeUnmount(()=>{clearTimeout(saveTimer);void persistReport();controller?.ab
 </template>
 
 <style scoped>
+.gto-replacement-hours { color: #cc1414; font-family: monospace; font-weight: bold; }
 .gto-engines { display:grid; gap:12px; margin:12px 0; }
 .gto-engine { min-width:0; border:1px solid var(--border); border-radius:8px; padding:12px; }
 .gto-engine legend { font-size:13px; }
