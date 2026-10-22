@@ -1,4 +1,5 @@
 <script setup>
+import FleetActionMenu from './FleetActionMenu.vue'
 import { computed, ref } from 'vue'
 
 const props = defineProps({
@@ -291,12 +292,14 @@ loadTemplates()
         </select>
       </label>
       <div v-if="selectedEquipment" class="maintenance-inline-actions">
-        <button class="table-action-button" type="button" @click="renameEntity('equipment', selectedEquipment)">
+        <FleetActionMenu label="Действия с шаблоном техники">
+<button class="table-action-button" type="button" @click="renameEntity('equipment', selectedEquipment)">
           Переименовать
         </button>
         <button class="table-action-button table-action-button--danger" type="button" @click="deleteEntity('equipment', selectedEquipment)">
           Удалить
         </button>
+</FleetActionMenu>
       </div>
     </div>
 
@@ -321,8 +324,10 @@ loadTemplates()
       <div class="settings-section-header">
         <h3>{{ selectedInterval.name }}</h3>
         <div class="maintenance-inline-actions">
-          <button class="table-action-button" type="button" @click="renameEntity('intervals', selectedInterval)">Переименовать</button>
+          <FleetActionMenu label="Действия с пунктом ТО">
+<button class="table-action-button" type="button" @click="renameEntity('intervals', selectedInterval)">Переименовать</button>
           <button class="table-action-button table-action-button--danger" type="button" @click="deleteEntity('intervals', selectedInterval)">Удалить ТО</button>
+</FleetActionMenu>
         </div>
       </div>
 

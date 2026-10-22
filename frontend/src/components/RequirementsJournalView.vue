@@ -1,4 +1,5 @@
 <script setup>
+import FleetActionMenu from './FleetActionMenu.vue'
 import { computed, onMounted, ref } from 'vue'
 import { createPdfDocument, renderPdfDocument } from '../utils/pdfPreview'
 import UserAvatar from './UserAvatar.vue'
@@ -327,7 +328,7 @@ onMounted(loadRequirements)
                 </div>
               </td>
               <td data-label="Действия">
-                <div class="requirements-row-actions">
+                <FleetActionMenu :label="`Действия с требованием от ${formatDateTime(requirement.createdAt)}`">
                   <button
                     class="secondary-button"
                     type="button"
@@ -348,7 +349,7 @@ onMounted(loadRequirements)
                   >
                     {{ deletingId === requirement.id ? 'Удаление...' : 'Удалить' }}
                   </button>
-                </div>
+                </FleetActionMenu>
               </td>
             </tr>
             <tr v-if="filteredRequirements.length === 0">

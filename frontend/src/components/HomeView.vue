@@ -1,4 +1,5 @@
 <script setup>
+import { expandPermissions } from "../utils/permissions"
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import UserAvatar from './UserAvatar.vue'
 import FleetVehicleEditor from './FleetVehicleEditor.vue'
@@ -11,7 +12,7 @@ const props = defineProps({
 })
 const emit = defineEmits(['navigate', 'navigate-vehicle'])
 const /** Проверяет наличие разрешения на отображение раздела. */ canView = (permission) =>
-  props.isAdmin || props.permissions.includes(permission)
+  props.isAdmin || expandPermissions(props.permissions).includes(permission)
 const fleetOptions = ref({ canManage: false, groups: [], types: [], models: [] })
 const fleetEditorOpen = ref(false), editingVehicle = ref(null), mutationBusy = ref(false), fleetMessage = ref(''), fleetError = ref('')
 /** Загружает справочники парка и права управления техникой. */
@@ -116,7 +117,7 @@ const shortcuts = computed(() =>
       icon: '↗',
     },
     {
-      permission: 'vehicles.works',
+      permission: 'vehicles.repair',
       parent: 'menu.vehicles',
       title: 'Ремонт',
       text: 'Работы, история и состояние ремонта техники.',

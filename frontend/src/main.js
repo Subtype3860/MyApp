@@ -1,5 +1,7 @@
 import { createApp } from 'vue'
 import './style.css'
+import './styles/themes.css'
+import { initializeTheme } from './utils/theme'
 import './styles/digital.css'
 import App from './App.vue'
 
@@ -32,4 +34,5 @@ window.fetch = async (...args) => {
   return response
 }
 
+initializeTheme()
 createApp(App).mount('#app')

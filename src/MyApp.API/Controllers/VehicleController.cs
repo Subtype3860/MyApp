@@ -614,9 +614,8 @@ public class VehicleController : ControllerBase
         return this.ToActionResult(result, _ => NoContent());
     }
 
-    /// <summary>Удаляет запись журнала техники (закупка, неисправность, моточасы или работа).</summary>
+    /// <summary>Редактирует описание заявки или работы с проверкой прав пользователя.</summary>
     [HttpPut("history/{category}/{id:guid}")]
-    [Authorize(Roles = "administrator")]
     public async Task<IActionResult> UpdateHistoryEntry(string category, Guid id,
         [FromBody] VehicleHistoryEditRequest request, [FromServices] IVehicleService service,
         CancellationToken cancellationToken)

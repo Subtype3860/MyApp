@@ -6,6 +6,9 @@ public static class Permissions
     public const string HomeView = "menu.home";
     public const string TablesView = "menu.tables";
     public const string VehiclesView = "menu.vehicles";
+    public const string ReportsView = "menu.reports";
+    public const string ShiftReport = "reports.shift";
+    public const string GtoReport = "reports.gto";
     public const string AuxiliaryWorksView = "menu.auxiliary_works";
     public const string AuxiliaryWorksRead = "auxiliary-works.read";
     public const string RequirementsView = "menu.requirements";
@@ -23,10 +26,16 @@ public static class Permissions
         new(VehiclesView, "Транспорт",
         [
             new("vehicles.repair_request", "Заявка на ремонт"),
-            new("vehicles.works", "Ремонт"),
+            new("vehicles.repair", "Ремонт"),
+            new("vehicles.repair_history", "История ремонта"),
+            new("vehicles.maintenance_execution", "Проведение ТО"),
             new("vehicles.parts_request", "Заявка на закупку ЗЧ"),
-            new("vehicles.hours", "Моточасы"),
-            new("vehicles.report", "Отчёты")
+            new("vehicles.hours", "Моточасы")
+        ]),
+        new(ReportsView, "Отчёты",
+        [
+            new(ShiftReport, "Отчёт за смену"),
+            new(GtoReport, "Выход ГТО")
         ]),
         new(AuxiliaryWorksView, "Вспомогательные работы"),
         new(RequirementsView, "Выписанные требования"),
@@ -39,7 +48,9 @@ public static class Permissions
 
     /// <summary>Проверяет наличие разрешения в каталоге поддерживаемых прав.</summary>
     public static bool IsKnown(string permission) =>
-        All.Contains(permission, StringComparer.OrdinalIgnoreCase);
+        All.Contains(permission, StringComparer.OrdinalIgnoreCase) ||
+        permission.Equals("vehicles.works", StringComparison.OrdinalIgnoreCase) ||
+        permission.Equals("vehicles.report", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>Нормализует разрешения и добавляет необходимые родительские пункты навигации.</summary>
     public static IReadOnlyList<string> Expand(IEnumerable<string>? permissions)
@@ -58,6 +69,13 @@ public static class Permissions
                     : permission),
             StringComparer.OrdinalIgnoreCase);
 
+        // Прежние объединённые права раскрываются один раз в независимые пункты.
+        // После сохранения используются только новые ключи, поэтому снятые права не возвращаются.
+        if (selected.Remove("vehicles.works"))
+            selected.UnionWith(["vehicles.repair", "vehicles.repair_history", "vehicles.maintenance_execution"]);
+        if (selected.Remove("vehicles.report"))
+            selected.UnionWith([ShiftReport, GtoReport]);
+
         foreach (var item in Catalog)
         {
             if (item.Children.Any(child => selected.Contains(child.Key)))
@@ -66,6 +84,9 @@ public static class Permissions
             }
         }
 
+        // API данных техники общий для ремонта и отчётов.
+        if (selected.Contains(ShiftReport) || selected.Contains(GtoReport))
+            selected.Add(VehiclesView);
         return selected.Where(IsKnown).ToArray();
     }
 }

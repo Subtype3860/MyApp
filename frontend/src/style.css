@@ -8,6 +8,8 @@
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
 
+  color-scheme: light;
+  --sidebar-bg: #171b2c;
   /* Светлая тема */
   --bg-main: #f6f6f6;
   --bg-surface: rgba(255, 255, 255, 0.7);
@@ -25,18 +27,6 @@
   --sidebar-collapsed-width: 88px;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg-main: #1e1e1e;
-    --bg-surface: rgba(44, 44, 46, 0.7);
-    --text-main: #f5f5f7;
-    --text-secondary: #8e8e93;
-    --accent: #0a84ff;
-    --accent-dark: #0071e3;
-    --border: rgba(255, 255, 255, 0.1);
-    --glass-shadow: 0 4px 30px rgba(0, 0, 0, 0.3);
-  }
-}
 
 * {
   box-sizing: border-box;
@@ -202,7 +192,7 @@ button {
   flex-direction: column;
   overflow: visible;
   color: #d8dded;
-  background: #171b2c;
+  background: var(--sidebar-bg);
   transition: width 0.25s ease;
 }
 
@@ -902,7 +892,9 @@ button {
 .user-permissions {
   display: grid;
   grid-column: 1 / -1;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
+  min-width: 0;
+  align-items: start;
   gap: 10px 16px;
   margin: 0;
   padding: 14px;
@@ -910,6 +902,29 @@ button {
   border-radius: 10px;
 }
 
+.permission-group {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-surface);
+}
+.user-permissions .permission-option--menu {
+  padding-bottom: 8px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--border);
+}
+.user-permissions .permission-option {
+  min-height: 40px;
+}
+.user-permissions .permission-option input {
+  flex: 0 0 16px;
+  padding: 0;
+  accent-color: var(--accent);
+}
 .user-permissions legend {
   padding: 0 6px;
   font-size: 13px;

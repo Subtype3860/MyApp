@@ -1,4 +1,5 @@
 <script setup>
+import FleetActionMenu from './FleetActionMenu.vue'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import RepairMediaViewer from './RepairMediaViewer.vue'
 import { cardMedia, cardState, defaultReportSelection, formatReportDate, selectShiftWorks, vehicleTitle, workPerformersLabel, selectAuxiliaryWorks, groupReportWorks, reportCardTitle } from '../utils/shiftReport'
@@ -112,8 +113,10 @@ onBeforeUnmount(() => {
     <div class="shift-report__toolbar">
       <label>Дата отчёта<input v-model="date" type="date" :disabled="exporting" /></label>
       <label>Смена<select v-model="shift" :disabled="exporting"><option value="1">1 смена</option><option value="2">2 смена</option></select></label>
-      <button type="button" class="secondary-button" :disabled="loading || exporting" @click="load">Обновить</button>
+      <FleetActionMenu label="Меню отчёта за смену">
+<button type="button" class="secondary-button" :disabled="loading || exporting" @click="load">Обновить</button>
       <button type="button" class="primary-button" :disabled="loading || exporting || !dataLoaded || !workCount || !!missingLocations.length || !date" @click="download">{{ exporting ? 'Формирование…' : 'Скачать PDF' }}</button>
+</FleetActionMenu>
     </div>
     <p class="shift-report__hint">Ремонт и вспомогательные работы за выбранную дату и смену. Фото и видео открываются в приложении по ссылкам из PDF.</p>
     <p v-if="error" role="alert" class="shift-report__error">{{ error }}</p>

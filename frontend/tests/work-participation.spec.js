@@ -43,8 +43,8 @@ async function setup(page, position, width = 1440) {
   if (width < 761) await page.getByRole('button', { name: 'Открыть меню' }).click()
   await page.getByRole('button', { name: 'Транспорт', exact: true }).click()
   await page.getByRole('button', { name: 'История ремонта', exact: true }).click()
-  await page.getByLabel('Госномер или внутренний номер').fill('901')
-  await page.locator('.repair-request__details > summary').click()
+  await page.locator('.repair-history__row').first().click()
+  if (!(await page.locator('.repair-request__details').getAttribute('open') === '')) await page.locator('.repair-request__details > summary').click()
   return { mutations, participants }
 }
 
@@ -56,6 +56,7 @@ for (const width of [390, 1440]) {
     await expect(page.getByRole('button', { name: 'Я участвовал в работе' })).toHaveCount(0)
     await expect(page.getByRole('button', { name: 'Подтвердить участие: Петров Пётр Петрович' })).toHaveCount(0)
     expect(mutations).toEqual([{ path: '/api/vehicles/works/w1/participants', body: null }])
+    await page.getByRole('button',{name:'Закрыть',exact:true}).click()
     if (width < 761) await page.getByRole('button', { name: 'Открыть меню' }).click()
     await page.getByRole('button', { name: 'Отчёты', exact: true }).click()
     await page.getByRole('button', { name: 'Отчёт за смену', exact: true }).click()
@@ -70,6 +71,7 @@ test('mechanic confirms a colleague and the confirmed performer appears in repor
   await page.getByRole('button', { name: 'Подтвердить участие: Петров Пётр Петрович' }).click()
   await expect(page.locator('.work-participants__status--approved')).toHaveCount(2)
   expect(mutations[0]).toEqual({ path: '/api/vehicles/works/w1/participants/pending/review', body: { approved: true } })
+  await page.getByRole('button',{name:'Закрыть',exact:true}).click()
   await page.getByRole('button', { name: 'Отчёты', exact: true }).click()
   await page.getByRole('button', { name: 'Отчёт за смену', exact: true }).click()
   await expect(page.locator('.shift-report__performers')).toContainText('Электрослесарь · Петров Пётр Петрович')

@@ -65,6 +65,7 @@ for (const width of [390, 1440]) {
     await expect(page.locator('.shift-report__performers').first()).toContainText('Слесарь · Иванов Иван Иванович')
     await expect(page.locator('.shift-report__paper')).not.toContainText('Петров Пётр Петрович')
     const downloadEvent = page.waitForEvent('download')
+  if(await page.getByLabel('Меню отчёта за смену',{exact:true}).getAttribute('aria-expanded') !== 'true') await page.getByLabel('Меню отчёта за смену',{exact:true}).click()
     await page.getByRole('button', { name: 'Скачать PDF', exact: true }).click()
     const download = await downloadEvent
     expect(download.suggestedFilename()).toBe('Отчёт за смену 2026-10-11 (2).pdf')
@@ -83,9 +84,11 @@ test('old works require an explicit location before PDF export', async ({ page }
   await page.route('**/api/vehicles/repair-journal*', route => route.fulfill({ json: [{ ...journals[0], works: [{ ...journals[0].works[0], location: '' }] }] }))
   await page.goto('/?reportWork=w1&reportDate=2026-10-11&reportShift=2')
   await page.getByRole('button', { name: 'Закрыть', exact: true }).click()
+  if(await page.getByLabel('Меню отчёта за смену',{exact:true}).getAttribute('aria-expanded') !== 'true') await page.getByLabel('Меню отчёта за смену',{exact:true}).click()
   await expect(page.getByRole('button', { name: 'Скачать PDF' })).toBeDisabled()
   await page.locator('.shift-report__missing select').selectOption('РММ')
   await expect(page.locator('.shift-report__location h3')).toHaveText('РММ')
+  if(await page.getByLabel('Меню отчёта за смену',{exact:true}).getAttribute('aria-expanded') !== 'true') await page.getByLabel('Меню отчёта за смену',{exact:true}).click()
   await expect(page.getByRole('button', { name: 'Скачать PDF' })).toBeEnabled()
 })
 

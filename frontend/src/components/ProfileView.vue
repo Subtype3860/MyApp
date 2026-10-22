@@ -1,5 +1,6 @@
 <script setup>
 import { onBeforeUnmount, ref } from 'vue'
+import { themeOptions, selectedTheme, selectTheme } from '../utils/theme'
 
 const props = defineProps({
   navigationCollapsed: { type: Boolean, required: true },
@@ -197,6 +198,14 @@ loadProfile()
           </div>
         </div>
 
+        <section class="profile-section theme-settings" aria-labelledby="theme-settings-title">
+          <h3 id="theme-settings-title">Оформление</h3>
+          <label for="profile-theme">Тема интерфейса</label>
+          <select id="profile-theme" :value="selectedTheme" @change="selectTheme($event.target.value)">
+            <option v-for="theme in themeOptions" :key="theme.id" :value="theme.id">{{ theme.label }}</option>
+          </select>
+          <p class="profile-hint">Применяется сразу и сохраняется в этом браузере.</p>
+        </section>
         <div class="profile-section">
           <h3>Аватар</h3>
           <input

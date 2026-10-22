@@ -1,4 +1,5 @@
 <script setup>
+import { inject } from 'vue'
 import WorkItem from './WorkItem.vue'
 import RepairActionsMenu from './RepairActionsMenu.vue'
 
@@ -8,6 +9,7 @@ defineProps({
   request: { type: Object, required: true },
 })
 
+const canEditRequest = inject('canEditHistoryRequest', () => false)
 const emit = defineEmits(['view-media', 'manage-entry'])
 </script>
 
@@ -20,6 +22,7 @@ const emit = defineEmits(['view-media', 'manage-entry'])
         <h4>Заявка на ремонт</h4>
         <span class="repair-request__status" :class="`repair-request__status--${request.status || 'queue'}`">{{ request.statusLabel || 'Зарегистрирована' }}</span>
         </div>
+        <button v-if="!isAdministrator && canEditRequest(request)" type="button" class="repair-request__edit" :disabled="busy" @click="emit('manage-entry', 'edit', 'defects', request)">Редактировать заявку</button>
         <RepairActionsMenu v-if="isAdministrator" label="Действия с заявкой" edit-label="Редактировать заявку" delete-label="Удалить заявку" :busy="busy"
           @edit="emit('manage-entry', 'edit', 'defects', request)" @delete="emit('manage-entry', 'delete', 'defects', request)" />
       </div>
@@ -69,6 +72,7 @@ const emit = defineEmits(['view-media', 'manage-entry'])
 </template>
 
 <style scoped>
+.repair-request__edit { padding: 8px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-surface); color: var(--text-main); cursor: pointer; }
 .repair-request {
   display: grid;
   gap: 0.4rem;

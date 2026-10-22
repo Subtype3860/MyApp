@@ -1,4 +1,5 @@
 <script setup>
+import FleetActionMenu from './FleetActionMenu.vue'
 import { computed,onMounted,onBeforeUnmount,ref } from 'vue'
 import { buildForecastRows, forecastGroups } from '../utils/gtoForecast'
 import { localDate,vehicleTitle } from '../utils/shiftReport'
@@ -32,8 +33,10 @@ onMounted(()=>Promise.all([load(),loadAccess()]));onBeforeUnmount(()=>controller
   <div class="hours-toolbar">
    <label>Дата показаний<input v-model="date" type="date" :disabled="!!busy || importing" /></label>
    <label class="hours-search">Поиск техники<input v-model="query" type="search" placeholder="Модель или номер" /></label>
-   <button class="secondary-button" :disabled="loading || !!busy || importing" @click="load">Обновить</button>
+   <FleetActionMenu label="Меню моточасов">
+<button class="secondary-button" :disabled="loading || !!busy || importing" @click="load">Обновить</button>
    <button v-if="canManage" class="primary-button" :disabled="!!busy || importing" @click="openImport">Импорт Excel / CSV</button>
+</FleetActionMenu>
   </div>
   <p v-if="error" role="alert" class="form-message--error">{{ error }}</p><p v-if="message" role="status">{{ message }}</p>
   <p v-if="loading" role="status">Загрузка…</p>

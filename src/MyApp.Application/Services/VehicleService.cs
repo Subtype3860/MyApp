@@ -508,7 +508,9 @@ public sealed class VehicleService(
     public async Task<bool> UpdateHistoryEntryAsync(string category, Guid id, string description, Guid userId, CancellationToken cancellationToken)
     {
         var user = await userRepository.FindByIdAsync(userId, cancellationToken);
-        if (user is null || !IsAdministrator(user) || string.IsNullOrWhiteSpace(description)) return false;
+        if (user is null || string.IsNullOrWhiteSpace(description) || category is not ("defects" or "works")) return false;
+        if (!IsAdministrator(user) && !(category == "defects" &&
+            (UserAccess.IsMechanic(user) || await repository.IsDefectCreatorAsync(id, userId, cancellationToken)))) return false;
         return await repository.UpdateHistoryEntryAsync(category, id, description.Trim(), cancellationToken);
     }
 

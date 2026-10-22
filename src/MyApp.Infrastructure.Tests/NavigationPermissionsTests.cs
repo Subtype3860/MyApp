@@ -62,4 +62,29 @@ public sealed class NavigationPermissionsTests
         Xunit.Assert.DoesNotContain(Permissions.VehiclesView, expanded);
         Xunit.Assert.Single(expanded);
     }
+
+    [Xunit.Fact]
+    public void Legacy_combined_permissions_expand_and_can_then_be_removed_independently()
+    {
+        var expanded = Permissions.Expand(["vehicles.works", "vehicles.report"]);
+        foreach (var key in new[] { "vehicles.repair", "vehicles.repair_history", "vehicles.maintenance_execution", Permissions.ShiftReport, Permissions.GtoReport })
+            Xunit.Assert.Contains(key, expanded);
+        Xunit.Assert.DoesNotContain("vehicles.works", expanded);
+        Xunit.Assert.DoesNotContain("vehicles.report", expanded);
+        var saved = Permissions.Expand(expanded.Where(key => key != "vehicles.repair_history" && key != Permissions.GtoReport));
+        Xunit.Assert.DoesNotContain("vehicles.repair_history", saved);
+        Xunit.Assert.DoesNotContain(Permissions.GtoReport, saved);
+        Xunit.Assert.Contains("vehicles.repair", saved);
+        Xunit.Assert.Contains(Permissions.ShiftReport, saved);
+    }
+
+    [Xunit.Fact]
+    public void Gto_permission_adds_required_menus_without_other_report_permissions()
+    {
+        var expanded = Permissions.Expand([Permissions.GtoReport]);
+        Xunit.Assert.Contains(Permissions.ReportsView, expanded);
+        Xunit.Assert.Contains(Permissions.VehiclesView, expanded);
+        Xunit.Assert.DoesNotContain(Permissions.ShiftReport, expanded);
+        Xunit.Assert.DoesNotContain("vehicles.repair", expanded);
+    }
 }

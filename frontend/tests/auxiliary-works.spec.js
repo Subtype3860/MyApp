@@ -98,6 +98,7 @@ for (const width of [390, 1440]) {
     await expect(page.locator('.shift-report__paper')).toContainText('Вспомогательные работы')
     await expect(page.locator('.shift-report__paper')).toContainText('Уборка территории')
     await expect(page.locator('.shift-report__state')).toHaveCount(0)
+  if(await page.getByLabel('Меню отчёта за смену',{exact:true}).getAttribute('aria-expanded') !== 'true') await page.getByLabel('Меню отчёта за смену',{exact:true}).click()
     await expect(page.getByRole('button', { name: 'Скачать PDF' })).toBeEnabled()
   })
 }
@@ -108,6 +109,7 @@ test('auxiliary-only report generates a PDF and its photo link opens the auxilia
   await expect(page.locator('.shift-report__paper')).toContainText('Разнорабочий · Петров Пётр Петрович')
   await expect(page.locator('.shift-report__photos img')).toBeVisible()
   const downloadEvent = page.waitForEvent('download')
+  if(await page.getByLabel('Меню отчёта за смену',{exact:true}).getAttribute('aria-expanded') !== 'true') await page.getByLabel('Меню отчёта за смену',{exact:true}).click()
   await page.getByRole('button', { name: 'Скачать PDF' }).click()
   const download = await downloadEvent
   await download.saveAs('test-results/auxiliary-report.pdf')
@@ -186,6 +188,7 @@ test('overnight auxiliary works use the same shift boundaries', () => {
   await expect(page.locator('.shift-report__paper')).toContainText('Замена гидроцилиндра.')
   await expect(page.locator('.shift-report__paper')).toContainText('Уборка территории')
   const downloaded = page.waitForEvent('download')
+  if(await page.getByLabel('Меню отчёта за смену',{exact:true}).getAttribute('aria-expanded') !== 'true') await page.getByLabel('Меню отчёта за смену',{exact:true}).click()
   await page.getByRole('button', { name: 'Скачать PDF' }).click()
   await (await downloaded).saveAs('test-results/combined-shift-report.pdf')
 })
@@ -194,6 +197,7 @@ test('overnight auxiliary works use the same shift boundaries', () => {
   await setup(page, { initial: [{ ...sample, title: 'Подготовка территории '.repeat(7), location: 'РММ', description: 'Площадка очищена, материалы отсортированы и перенесены. '.repeat(65), photos: [], videos: [] }] })
   await page.goto('/?reportWork=unused&reportDate=2026-10-11&reportShift=1')
   const downloaded = page.waitForEvent('download')
+  if(await page.getByLabel('Меню отчёта за смену',{exact:true}).getAttribute('aria-expanded') !== 'true') await page.getByLabel('Меню отчёта за смену',{exact:true}).click()
   await page.getByRole('button', { name: 'Скачать PDF' }).click()
   const file = await downloaded
   const document = await PDFDocument.load(await readFile(await file.path()))

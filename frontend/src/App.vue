@@ -3,6 +3,7 @@ import { nextTick, onBeforeUnmount, ref } from 'vue'
 import BrandIdentity from './components/BrandIdentity.vue'
 import AuthLogin from './components/AuthLogin.vue'
 import HomeView from './components/HomeView.vue'
+import HelpView from './components/HelpView.vue'
 import MaintenanceView from './components/MaintenanceView.vue'
 import NavigationSidebar from './components/NavigationSidebar.vue'
 import ProfileView from './components/ProfileView.vue'
@@ -311,6 +312,7 @@ function updateSelectedComponentRows(rows) {
         :selected-section="currentSettings"
         :token="token"
       />
+      <HelpView v-else-if="currentPage === 'help'" :navigation-collapsed="isNavigationCollapsed" />
       <ProfileView
         v-else-if="currentPage === 'profile'"
         :navigation-collapsed="isNavigationCollapsed"

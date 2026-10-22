@@ -516,6 +516,7 @@ function mapRepairHistory(journal) {
       status,
       statusLabel: repairStatusLabel(status),
       id: defect.id,
+      createdById: defect.createdById,
       date: requestDate,
       dateLabel: formatDateTime(requestDate),
       description: defect.symptoms || defect.failureReason,
@@ -1208,6 +1209,8 @@ function formatDateTime(value) {
         v-if="props.section === 'repairHistory'"
         :token="token"
         :load-history="loadRepairHistory"
+        :current-user-id="participationProfile?.id || session.sub || ''"
+        :is-mechanic="['механик', 'старший механик'].includes(String(participationProfile?.position || '').trim().toLocaleLowerCase('ru-RU'))"
         :is-administrator="isAdministrator"
       />
 

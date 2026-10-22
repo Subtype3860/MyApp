@@ -62,7 +62,7 @@ for(const width of [390,1440]) test(`daily preview precedes JSON commit ${width}
  })
  await page.goto('/');if(width<761)await page.getByRole('button',{name:'Открыть меню',exact:true}).click()
  await page.getByRole('button',{name:'Транспорт',exact:true}).click();await page.getByRole('button',{name:'Моточасы',exact:true}).click()
- await page.getByRole('button',{name:'Импорт Excel / CSV'}).click()
+ await page.getByLabel('Меню моточасов',{exact:true}).click();await page.getByRole('button',{name:'Импорт Excel / CSV'}).click()
  await page.getByLabel('Ежедневный Excel').setInputFiles({name:'hours.xlsx',mimeType:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',buffer:workbook()})
  await page.getByRole('button',{name:'Проверить файл',exact:true}).click()
  await expect(page.getByRole('button',{name:'Сохранить 4 показаний'})).toBeVisible()

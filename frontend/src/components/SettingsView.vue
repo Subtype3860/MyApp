@@ -503,7 +503,8 @@ watch(
         </label>
         <fieldset class="user-permissions">
           <legend>Что пользователь может просматривать</legend>
-          <template v-for="menu in permissionCatalog" :key="menu.key">
+          <small>Главная страница и собственный профиль доступны всем. Настройки доступны только администратору.</small>
+          <div v-for="menu in permissionCatalog" :key="menu.key" class="permission-group" role="group" :aria-label="menu.label">
             <label class="permission-option permission-option--menu">
               <input
                 v-model="editUserForm.permissions"
@@ -526,7 +527,7 @@ watch(
               />
               <span>{{ item.label }}</span>
             </label>
-          </template>
+          </div>
           <small v-if="editUserForm.role === 'administrator'">
             Администратор получает доступ ко всем разделам.
           </small>
