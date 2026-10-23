@@ -51,6 +51,7 @@ const columnLabels = {
   unit: 'Ед. изм.',
 }
 
+/** Определяет служебные столбцы базы, которые не нужно показывать пользователю. */
 function isHiddenDatabaseColumn(column) {
   return hiddenDatabaseColumns.has(column.trim().toLowerCase())
 }
@@ -65,6 +66,7 @@ const columns = computed(() => {
   return [...names]
 })
 
+/** Приводит значение ячейки к отображаемому тексту. */
 function formatCell(value) {
   if (value === null || value === undefined || value === '') {
     return '—'
@@ -73,6 +75,7 @@ function formatCell(value) {
   return typeof value === 'object' ? JSON.stringify(value) : String(value)
 }
 
+/** Получает значение нужного столбца строки. */
 function getRowValue(row, aliases) {
   const normalizedAliases = new Set(aliases.map((alias) => alias.toLowerCase()))
   const key = Object.keys(row).find((column) =>
@@ -81,6 +84,7 @@ function getRowValue(row, aliases) {
   return key ? row[key] : ''
 }
 
+/** Форматирует дату в местном календаре без сдвига через UTC. */
 function formatLocalDate(date) {
   const year = date.getFullYear()
   const month = String(date.getMonth() + 1).padStart(2, '0')
@@ -88,6 +92,7 @@ function formatLocalDate(date) {
   return `${year}-${month}-${day}`
 }
 
+/** Удаляет материал из списка выбранных позиций требования. */
 function removeRow(index) {
   emit(
     'update:rows',
@@ -95,6 +100,7 @@ function removeRow(index) {
   )
 }
 
+/** Проверяет выбранные позиции и запрашивает формирование документа требования. */
 async function generateDocument() {
   documentError.value = ''
   if (!vehicleNumber.value.trim()) {
@@ -190,6 +196,7 @@ async function generateDocument() {
         : null
       throw new Error(
         validationMessage ??
+          problem?.message ??
           problem?.detail ??
           problem?.title ??
           'Не удалось сформировать PDF.',
@@ -209,7 +216,8 @@ async function generateDocument() {
     if (!commitResponse.ok) {
       const problem = await commitResponse.json().catch(() => null)
       throw new Error(
-        problem?.detail ??
+        problem?.message ??
+          problem?.detail ??
           problem?.title ??
           'PDF создан, но не удалось списать компоненты.',
       )

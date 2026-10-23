@@ -1,16 +1,19 @@
 using Microsoft.EntityFrameworkCore;
 using MyApp.Application.Abstractions;
 using MyApp.Application.Security;
-using MyApp.Domain.Entities;
+using MyApp.Application.Models;
 using MyApp.Infrastructure.Db.Entities;
 
 namespace MyApp.Infrastructure.Db;
 
+/// <summary>Создание и обновление необходимой структуры и исходных данных базы.</summary>
 public sealed class DatabaseInitializer(AppDbContext db) : IDatabaseInitializer
 {
+    /// <summary>Инициализирует структуру и исходные данные хранилища.</summary>
     public async Task InitializeAsync(
         CancellationToken cancellationToken = default)
     {
+        await CsvDatabaseMigration.InitializeAsync(db, cancellationToken);
         await db.Database.ExecuteSqlRawAsync(
             """
             CREATE TABLE IF NOT EXISTS professions (
@@ -114,6 +117,9 @@ public sealed class DatabaseInitializer(AppDbContext db) : IDatabaseInitializer
             cancellationToken);
         await db.Database.ExecuteSqlRawAsync(
             """
+            ALTER TABLE app_users
+            ADD COLUMN IF NOT EXISTS session_stamp uuid NOT NULL DEFAULT gen_random_uuid();
+
             ALTER TABLE app_users
             ADD COLUMN IF NOT EXISTS permissions text
                 NOT NULL DEFAULT 'menu.tables,menu.vehicles,menu.requirements,menu.maintenance'
@@ -391,6 +397,71 @@ public sealed class DatabaseInitializer(AppDbContext db) : IDatabaseInitializer
             END
             $$;
 
+            DO $$
+            BEGIN
+                IF NOT EXISTS (
+                    SELECT 1 FROM information_schema.columns
+                    WHERE table_schema = 'public' AND table_name = 'type_car' AND column_name = 'icon_path'
+                ) THEN
+                    ALTER TABLE public.type_car ADD COLUMN icon_path varchar(255);
+                    UPDATE public.type_car
+                    SET icon_path = CASE LOWER(BTRIM(full_name))
+                        WHEN 'экскаватор' THEN '/icons/vehicles/excavator.svg'
+                        WHEN 'экскаваторы' THEN '/icons/vehicles/excavator.svg'
+                        WHEN 'карьерный самосвал' THEN '/icons/vehicles/dump-truck.svg'
+                        WHEN 'самосвал' THEN '/icons/vehicles/dump-truck.svg'
+                        WHEN 'самосвалы' THEN '/icons/vehicles/dump-truck.svg'
+                        WHEN 'автосамосвал' THEN '/icons/vehicles/dump-truck.svg'
+                        WHEN 'автосамосвалы' THEN '/icons/vehicles/dump-truck.svg'
+                        WHEN 'бульдозер' THEN '/icons/vehicles/bulldozer.svg'
+                        WHEN 'бульдозеры' THEN '/icons/vehicles/bulldozer.svg'
+                        WHEN 'грейдер' THEN '/icons/vehicles/grader.svg'
+                        WHEN 'грейдеры' THEN '/icons/vehicles/grader.svg'
+                        WHEN 'автогрейдер' THEN '/icons/vehicles/grader.svg'
+                        WHEN 'автогрейдеры' THEN '/icons/vehicles/grader.svg'
+                        WHEN 'вахтовый автобус' THEN '/icons/vehicles/shift-bus.svg'
+                        WHEN 'вахтовые автобусы' THEN '/icons/vehicles/shift-bus.svg'
+                        WHEN 'легковой автомобиль' THEN '/icons/vehicles/passenger-car.svg'
+                        WHEN 'легковые автомобили' THEN '/icons/vehicles/passenger-car.svg'
+                        WHEN 'погрузчик' THEN '/icons/vehicles/loader.svg'
+                        WHEN 'погрузчики' THEN '/icons/vehicles/loader.svg'
+                        WHEN 'фронтальный погрузчик' THEN '/icons/vehicles/loader.svg'
+                        WHEN 'фронтальные погрузчики' THEN '/icons/vehicles/loader.svg'
+                        WHEN 'гр.автомобиль' THEN '/icons/vehicles/cargo-truck.svg'
+                        WHEN 'грузовой автомобиль' THEN '/icons/vehicles/cargo-truck.svg'
+                        WHEN 'грузовые автомобили' THEN '/icons/vehicles/cargo-truck.svg'
+                        ELSE NULL
+                    END;
+                END IF;
+            END $$;
+
+            ALTER TABLE group_car ADD COLUMN IF NOT EXISTS report_sort_order integer NOT NULL DEFAULT 0;
+
+            CREATE TABLE IF NOT EXISTS gto_user_settings (
+                user_id uuid PRIMARY KEY REFERENCES app_users(id) ON DELETE CASCADE,
+                organisation varchar(200) NOT NULL DEFAULT '', site varchar(200) NOT NULL DEFAULT ''
+            );
+            CREATE TABLE IF NOT EXISTS gto_reports (
+                report_date date NOT NULL,
+                shift integer NOT NULL CHECK (shift IN (1, 2)),
+                revision integer NOT NULL CHECK (revision > 0),
+                snapshot jsonb NOT NULL,
+                updated_by uuid NOT NULL REFERENCES app_users(id) ON DELETE RESTRICT,
+                updated_at timestamptz NOT NULL DEFAULT NOW(),
+                PRIMARY KEY (report_date, shift)
+            );
+            CREATE TABLE IF NOT EXISTS gto_vehicle_settings (
+                vehicle_id uuid PRIMARY KEY REFERENCES number_car(id) ON DELETE CASCADE,
+                climate varchar(20) NOT NULL DEFAULT 'unknown'
+                    CHECK (climate IN ('unknown','healthy','faulty','absent'))
+            );
+            CREATE TABLE IF NOT EXISTS gto_defect_settings (
+                defect_id uuid PRIMARY KEY REFERENCES vehicle_defects(id) ON DELETE CASCADE,
+                planned_release varchar(2000) NOT NULL DEFAULT ''
+            );
+
+            ALTER TABLE number_car ADD COLUMN IF NOT EXISTS is_archived boolean NOT NULL DEFAULT false;
+
             CREATE TABLE IF NOT EXISTS vehicle_hour_readings (
                 id uuid PRIMARY KEY,
                 vehicle_id uuid NOT NULL REFERENCES number_car(id) ON DELETE CASCADE,
@@ -399,6 +470,15 @@ public sealed class DatabaseInitializer(AppDbContext db) : IDatabaseInitializer
                 note text NOT NULL DEFAULT '',
                 created_by uuid NOT NULL REFERENCES app_users(id) ON DELETE RESTRICT,
                 created_at timestamptz NOT NULL DEFAULT NOW()
+            );
+
+            ALTER TABLE vehicle_hour_readings ADD COLUMN IF NOT EXISTS engine_number integer NOT NULL DEFAULT 0;
+            ALTER TABLE vehicle_hour_readings ADD COLUMN IF NOT EXISTS reading_time time without time zone;
+            CREATE TABLE IF NOT EXISTS vehicle_engine_settings (
+                vehicle_id uuid NOT NULL REFERENCES number_car(id) ON DELETE CASCADE,
+                engine_number integer NOT NULL CHECK (engine_number IN (1,2)),
+                hours_at_replacement numeric CHECK (hours_at_replacement >= 0),
+                PRIMARY KEY (vehicle_id,engine_number)
             );
 
             CREATE TABLE IF NOT EXISTS vehicle_works (
@@ -429,6 +509,25 @@ public sealed class DatabaseInitializer(AppDbContext db) : IDatabaseInitializer
                 created_by uuid NOT NULL REFERENCES app_users(id) ON DELETE RESTRICT,
                 created_at timestamptz NOT NULL DEFAULT NOW()
             );
+
+            ALTER TABLE vehicle_parts_requests ADD COLUMN IF NOT EXISTS completed_date date;
+            ALTER TABLE vehicle_defects ALTER COLUMN downtime_started_at DROP NOT NULL;
+            ALTER TABLE vehicle_defects ALTER COLUMN downtime_started_at DROP DEFAULT;
+            ALTER TABLE vehicle_defects ADD COLUMN IF NOT EXISTS operational_state text NOT NULL DEFAULT 'stopped';
+            ALTER TABLE vehicle_works ALTER COLUMN vehicle_id DROP NOT NULL;
+            ALTER TABLE vehicle_works ADD COLUMN IF NOT EXISTS work_kind text NOT NULL DEFAULT 'repair';
+            ALTER TABLE vehicle_works ADD COLUMN IF NOT EXISTS title text NOT NULL DEFAULT '';
+            DO $$ BEGIN
+                IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'ck_vehicle_works_kind' AND conrelid = 'vehicle_works'::regclass) THEN
+                    ALTER TABLE vehicle_works ADD CONSTRAINT ck_vehicle_works_kind CHECK (
+                        (work_kind = 'repair' AND vehicle_id IS NOT NULL) OR
+                        (work_kind = 'auxiliary' AND vehicle_id IS NULL AND defect_id IS NULL)
+                    );
+                END IF;
+            END $$;
+            ALTER TABLE vehicle_works ADD COLUMN IF NOT EXISTS location text NOT NULL DEFAULT '';
+            ALTER TABLE vehicle_works ADD COLUMN IF NOT EXISTS operational_state text;
+            ALTER TABLE vehicle_works ADD COLUMN IF NOT EXISTS downtime_started_at timestamptz;
 
             CREATE UNIQUE INDEX IF NOT EXISTS ux_vehicle_parts_requests_legacy
                 ON vehicle_parts_requests (defect_id, request_number, request_date, description);
@@ -584,6 +683,24 @@ public sealed class DatabaseInitializer(AppDbContext db) : IDatabaseInitializer
                 created_at timestamptz NOT NULL DEFAULT NOW()
             );
 
+            CREATE TABLE IF NOT EXISTS vehicle_work_participants (
+                id uuid PRIMARY KEY,
+                work_id uuid NOT NULL REFERENCES vehicle_works(id) ON DELETE CASCADE,
+                user_id uuid NOT NULL REFERENCES app_users(id),
+                status text NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected')),
+                requested_at timestamptz NOT NULL DEFAULT NOW(),
+                reviewed_by uuid REFERENCES app_users(id),
+                reviewed_at timestamptz,
+                UNIQUE (work_id, user_id)
+            );
+
+            -- Preserve previously recorded performers. New works create a pending row atomically.
+            INSERT INTO vehicle_work_participants (id, work_id, user_id, status, requested_at)
+            SELECT gen_random_uuid(), work.id, COALESCE(work.performed_by, work.created_by), 'approved', work.created_at
+            FROM vehicle_works AS work
+            JOIN app_users AS performer ON performer.id = COALESCE(work.performed_by, work.created_by)
+            ON CONFLICT (work_id, user_id) DO NOTHING;
+
             CREATE INDEX IF NOT EXISTS ix_vehicle_purchases_vehicle_date
                 ON vehicle_purchase_requests (vehicle_id, request_date DESC);
             CREATE INDEX IF NOT EXISTS ix_vehicle_defects_vehicle_created
@@ -614,6 +731,7 @@ public sealed class DatabaseInitializer(AppDbContext db) : IDatabaseInitializer
             );
             """,
             cancellationToken);
+        await MaintenancePlanSchema.EnsureAsync(db, cancellationToken);
         if (!await db.MediaStorageSettings.AnyAsync(
                 settings => settings.Id == 1,
                 cancellationToken))
@@ -667,6 +785,7 @@ public sealed class DatabaseInitializer(AppDbContext db) : IDatabaseInitializer
         await db.SaveChangesAsync(cancellationToken);
     }
 
+    /// <summary>Создаёт недостающие исходные данные шаблонов ТО.</summary>
     private async Task EnsureMaintenanceDefaultsAsync(
         CancellationToken cancellationToken)
     {

@@ -1,20 +1,7 @@
 /* Concept 03. Screen scope preserves the existing document print stylesheet. */
 @media screen {
   :root {
-    color-scheme: dark;
-    --bg-main: #091827;
-    --bg-surface: #102337;
-    --text-main: #f0f5fc;
-    --text-secondary: #a7bcd3;
-    --text-muted: #a7bcd3;
-    --accent: #49e1d2;
-    --accent-dark: #7bece1;
-    --border: #274057;
-    --system-green: #4ddd9a;
-    --system-orange: #ffc55b;
-    --system-red: #ff8e9b;
     --glass-blur: none;
-    --glass-shadow: 0 8px 30px #020b141c;
     --sidebar-width: 268px;
     --sidebar-collapsed-width: 84px;
   }
@@ -64,7 +51,7 @@
   .sidebar {
     padding: 25px 16px 18px;
     color: var(--text-secondary);
-    background: #0b1d2e;
+    background: var(--bg-surface);
     border-right: 1px solid var(--border);
     overflow-y: auto;
     overflow-x: hidden;
@@ -93,7 +80,7 @@
   }
   .nav-link--active,
   .nav-link:hover {
-    background: #16374a;
+    background: var(--theme-hover);
     color: var(--accent);
   }
   .nav-link--active {
@@ -113,7 +100,7 @@
   }
   .nav-submenu-link:hover,
   .nav-submenu-link--active {
-    background: #16374a;
+    background: var(--theme-hover);
     color: var(--accent);
   }
   .desktop-menu-toggle {
@@ -181,15 +168,15 @@
   .user-avatar {
     border: 1px solid var(--border);
     color: var(--accent);
-    background: #17394b;
+    background: var(--theme-hover);
     flex-shrink: 0;
     box-shadow: none;
   }
   .profile-avatar {
-    color: #062a30;
+    color: #fff;
   }
   .primary-button {
-    color: #052c32;
+    color: #fff;
     background: var(--accent);
     border-radius: 9px;
   }
@@ -199,7 +186,7 @@
   .secondary-button {
     min-height: 44px;
     border-color: var(--border);
-    background: #102b3d;
+    background: var(--bg-surface);
     color: var(--text-main);
   }
   .secondary-button:hover:not(:disabled) {
@@ -216,11 +203,11 @@
     border-radius: 8px;
   }
   .data-table-scroll th {
-    background: #172f46;
-    color: #bdd0e3;
+    background: var(--theme-hover);
+    color: var(--text-secondary);
   }
   .data-table-scroll tbody tr:hover {
-    background: #163147;
+    background: var(--theme-hover);
   }
   .data-table-header,
   .settings-section-header,
@@ -231,13 +218,13 @@
     position: relative;
     isolation: isolate;
     overflow: hidden;
-    min-height: 300px;
+    min-height: 200px;
     padding: clamp(24px, 3vw, 42px);
     border: 1px solid var(--border);
     border-radius: 16px;
     background:
       radial-gradient(ellipse at 95% 90%, #1a5c663d, transparent 65%),
-      linear-gradient(115deg, #102338, #0b1c2b);
+      linear-gradient(115deg, var(--bg-surface), var(--bg-main));
   }
   .dashboard-hero::after {
     position: absolute;
@@ -260,7 +247,7 @@
   }
   .dashboard-hero h2 {
     margin: 14px 0 16px;
-    font-size: clamp(36px, 4.2vw, 62px);
+    font-size: clamp(30px, 3.2vw, 44px);
     line-height: 1.05;
     letter-spacing: -0.045em;
   }
@@ -314,7 +301,7 @@
     min-width: 0;
     border: 1px solid var(--border);
     border-radius: 12px;
-    background: linear-gradient(120deg, #122a3e, #0e2133);
+    background: linear-gradient(120deg, var(--bg-surface), var(--bg-surface));
   }
   .dashboard-metric__icon {
     display: grid;
@@ -331,7 +318,7 @@
     color: var(--system-green);
   }
   .dashboard-metric:nth-child(3) .dashboard-metric__icon {
-    color: #9ec6f5;
+    color: var(--accent);
   }
   .dashboard-metric:nth-child(4) .dashboard-metric__icon {
     color: var(--system-orange);
@@ -359,7 +346,7 @@
     padding: 22px;
     border: 1px solid var(--border);
     border-radius: 12px;
-    background: #0e2133;
+    background: var(--bg-surface);
   }
   .dashboard-panel__header {
     display: flex;
@@ -386,7 +373,7 @@
     padding: 0 12px;
     border: 1px solid var(--border);
     border-radius: 9px;
-    background: #10283c;
+    background: var(--theme-hover);
   }
   .fleet-search:focus-within {
     border-color: var(--accent);
@@ -428,7 +415,7 @@
     width: 42px;
     height: 42px;
     border-radius: 10px;
-    color: #f3c96d;
+    color: var(--system-orange);
     background: #e2b6530c;
   }
   .fleet-icon svg {
@@ -587,7 +574,7 @@
     font-size: 28px;
   }
   .auth-form input {
-    background: #0b1d2e;
+    background: var(--bg-surface);
   }
   .auth-form input:focus {
     box-shadow: 0 0 0 3px #49e1d21a;
@@ -615,7 +602,7 @@
     gap: 12px;
     min-height: 68px;
     padding: 10px 16px;
-    background: #0b1d2ef5;
+    background: var(--bg-surface);
     border-bottom: 1px solid var(--border);
   }
   .mobile-topbar .icon-button,
@@ -695,10 +682,10 @@
   }
   .dashboard-hero {
     padding: 26px 22px;
-    min-height: 340px;
+    min-height: 210px;
   }
   .dashboard-hero h2 {
-    font-size: clamp(36px, 8vw, 52px);
+    font-size: clamp(28px, 7vw, 38px);
   }
   .dashboard-hero__content > p:not(.eyebrow) {
     font-size: 13px;
@@ -752,7 +739,7 @@
     padding: 16px 12px;
     border: 1px solid var(--border);
     border-radius: 10px;
-    background: #10273a;
+    background: var(--bg-surface);
   }
   .fleet-row dl {
     grid-column: 1 / -1;

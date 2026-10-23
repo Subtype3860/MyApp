@@ -1,5 +1,6 @@
 using System;
-namespace MyApp.Domain.Entities {
+namespace MyApp.Application.Models {
+    /// <summary>Учётная запись пользователя, его роль, профессия и данные сессии.</summary>
     public class User {
         public Guid Id { get; set; }
         public required string FirstName { get; set; }
@@ -12,6 +13,7 @@ namespace MyApp.Domain.Entities {
         public Profession Profession { get; set; } = null!;
         public required string Role { get; set; }
         public string Permissions { get; set; } = string.Empty;
+        public Guid SessionStamp { get; set; } = Guid.NewGuid();
         public DateTime CreatedAt { get; set; }
         public byte[]? AvatarContent { get; set; }
         public string? AvatarContentType { get; set; }

@@ -1,5 +1,5 @@
 <script setup>
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import BrandIdentity from './BrandIdentity.vue'
 
 const props = defineProps({
@@ -13,9 +13,12 @@ const emit = defineEmits(['authenticated'])
 
 const userNameOrEmail = ref('')
 const password = ref('')
+const loginHasCyrillic = computed(() => /\p{Script=Cyrillic}/u.test(userNameOrEmail.value))
+const passwordHasCyrillic = computed(() => /\p{Script=Cyrillic}/u.test(password.value))
 const errorMessage = ref('')
 const isSubmitting = ref(false)
 
+/** Отправляет учётные данные и сообщает родителю об успешном входе. */
 async function submitLogin() {
   errorMessage.value = ''
   isSubmitting.value = true
@@ -82,9 +85,14 @@ async function submitLogin() {
           name="login"
           type="text"
           autocomplete="username"
+          :aria-describedby="loginHasCyrillic ? 'login-layout-warning' : undefined"
           placeholder="name@example.com"
           required
         />
+
+        <p v-if="loginHasCyrillic" id="login-layout-warning" class="layout-warning" role="status">
+          В логине введены русские буквы. Проверьте раскладку и при необходимости переключитесь на английскую.
+        </p>
 
         <label for="password">Пароль</label>
         <input
@@ -93,9 +101,14 @@ async function submitLogin() {
           name="password"
           type="password"
           autocomplete="current-password"
+          :aria-describedby="passwordHasCyrillic ? 'password-layout-warning' : undefined"
           placeholder="Введите пароль"
           required
         />
+
+        <p v-if="passwordHasCyrillic" id="password-layout-warning" class="layout-warning" role="status">
+          В пароле введены русские буквы. Проверьте раскладку и при необходимости переключитесь на английскую.
+        </p>
 
         <p v-if="errorMessage" class="form-error" role="alert">
           {{ errorMessage }}
@@ -111,3 +124,15 @@ async function submitLogin() {
     </section>
   </main>
 </template>
+
+<style scoped>
+.layout-warning {
+  margin: 0;
+  padding: 0.65rem 0.8rem;
+  border-radius: 0.5rem;
+  background: #fff4df;
+  color: #855000;
+  font-size: 0.9rem;
+  line-height: 1.4;
+}
+</style>

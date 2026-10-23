@@ -5,12 +5,14 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace MyApp.API.Controllers;
 
+/// <summary>HTTP-эндпоинты администрирования медиаархива.</summary>
 [ApiController]
 [Route("api/admin/media-storage")]
 [Authorize(Roles = "administrator")]
 public sealed class AdminMediaStorageController(
     IMediaStorageAdministrationRepository repository) : ControllerBase
 {
+    /// <summary>Возвращает текущий срок хранения временных медиафайлов.</summary>
     [HttpGet]
     public async Task<IActionResult> Get(CancellationToken cancellationToken)
     {
@@ -18,6 +20,7 @@ public sealed class AdminMediaStorageController(
         return Ok(new { retentionDays });
     }
 
+    /// <summary>Проверяет и сохраняет новый срок хранения временных медиафайлов.</summary>
     [HttpPut]
     public async Task<IActionResult> Update(
         [FromBody] UpdateMediaStorageSettingsRequest request,
@@ -29,5 +32,6 @@ public sealed class AdminMediaStorageController(
     }
 }
 
+/// <summary>Запрос изменения срока хранения временных медиафайлов.</summary>
 public sealed record UpdateMediaStorageSettingsRequest(
     [property: Range(1, 180)] int RetentionDays);

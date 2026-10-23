@@ -11,8 +11,10 @@ using Npgsql;
 
 namespace MyApp.Infrastructure;
 
+/// <summary>Регистрация реализаций доступа к данным, файлам и безопасности.</summary>
 public static class InfrastructureRegistration
 {
+    /// <summary>Подключает PostgreSQL, репозитории, хранилище медиа и службы безопасности.</summary>
     public static IServiceCollection AddInfrastructure(
         this IServiceCollection services,
         string connectionString,
@@ -38,10 +40,12 @@ public static class InfrastructureRegistration
         services.AddScoped<IVehicleRepository, VehicleRepository>();
         services.AddScoped<IPasswordHasher, Pbkdf2PasswordHasher>();
         services.AddScoped<ITokenProvider, JwtTokenProvider>();
+        services.AddScoped<IUserSessionStore, UserSessionStore>();
         services.AddScoped<IDatabaseInitializer, DatabaseInitializer>();
         return services;
     }
 
+    /// <summary>Создаёт область зависимостей и запускает инициализацию базы данных.</summary>
     public static async Task InitializeDatabaseAsync(
         this IServiceProvider services,
         CancellationToken cancellationToken = default)

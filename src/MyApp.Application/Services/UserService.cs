@@ -2,16 +2,18 @@ using System.Text;
 using MyApp.Application.Abstractions;
 using MyApp.Application.Common;
 using MyApp.Application.DTO;
-using MyApp.Domain.Entities;
+using MyApp.Application.Models;
 using MyApp.Application.Security;
 
 namespace MyApp.Application.Services;
 
+/// <summary>Прикладные операции пользователей.</summary>
 public sealed class UserService(
     IUserRepository userRepository,
     IProfessionRepository professionRepository,
     IPasswordHasher passwordHasher) : IUserService
 {
+    /// <summary>Возвращает список пользователей.</summary>
     public async Task<IReadOnlyList<UserListItem>> GetAllAsync(
         CancellationToken cancellationToken)
     {
@@ -29,6 +31,7 @@ public sealed class UserService(
             user.CreatedAt)).ToArray();
     }
 
+    /// <summary>Создаёт пользователя.</summary>
     public async Task<ServiceResult<CreateUserResponse>> CreateAsync(
         CreateUserRequest request,
         CancellationToken cancellationToken)
@@ -87,6 +90,7 @@ public sealed class UserService(
             new CreateUserResponse(user.Id, temporaryPassword));
     }
 
+    /// <summary>Обновляет данные пользователя.</summary>
     public async Task<ServiceResult<UpdateUserResponse>> UpdateAsync(
         Guid id,
         UpdateUserRequest request,
@@ -133,6 +137,11 @@ public sealed class UserService(
                 });
         }
 
+        var oldRole = user.Role;
+        var oldPermissions = user.Permissions;
+        var oldPosition = user.PositionId;
+        var oldUserName = user.UserName;
+
         user.FirstName = request.FirstName.Trim();
         user.MiddleName = request.MiddleName.Trim();
         user.LastName = request.LastName.Trim();
@@ -151,11 +160,16 @@ public sealed class UserService(
             user.PasswordHash = passwordHasher.Hash(request.Password);
         }
 
+        if (oldRole != user.Role || oldPermissions != user.Permissions || oldPosition != user.PositionId ||
+            oldUserName != user.UserName || !string.IsNullOrWhiteSpace(request.Password))
+            user.SessionStamp = Guid.NewGuid();
+
         await userRepository.SaveChangesAsync(cancellationToken);
         return ServiceResult<UpdateUserResponse>.Success(
             new UpdateUserResponse(user.Id));
     }
 
+    /// <summary>Возвращает профиль указанного пользователя.</summary>
     public async Task<ServiceResult<UserProfileResponse>> GetProfileAsync(
         Guid id,
         CancellationToken cancellationToken)
@@ -166,6 +180,7 @@ public sealed class UserService(
             : ServiceResult<UserProfileResponse>.Success(ToProfile(user));
     }
 
+    /// <summary>Обновляет личные данные пользователя с проверкой запроса.</summary>
     public async Task<ServiceResult<UserProfileResponse>> UpdateProfileAsync(
         Guid id,
         UpdateProfileRequest request,
@@ -217,12 +232,15 @@ public sealed class UserService(
             user.PasswordHash = passwordHasher.Hash(request.NewPassword);
         }
 
+        if (user.UserName != userName || !string.IsNullOrEmpty(request.NewPassword))
+            user.SessionStamp = Guid.NewGuid();
         user.UserName = userName;
         user.Email = $"{userName.ToLowerInvariant()}@local";
         await userRepository.SaveChangesAsync(cancellationToken);
         return ServiceResult<UserProfileResponse>.Success(ToProfile(user));
     }
 
+    /// <summary>Возвращает изображение аватара пользователя.</summary>
     public async Task<ServiceResult<UserAvatarResponse>> GetAvatarAsync(
         Guid id,
         CancellationToken cancellationToken)
@@ -237,6 +255,7 @@ public sealed class UserService(
                     user.AvatarContentType));
     }
 
+    /// <summary>Проверяет и сохраняет новое изображение аватара пользователя.</summary>
     public async Task<ServiceResult<UserProfileResponse>> UpdateAvatarAsync(
         Guid id,
         byte[] content,
@@ -254,6 +273,7 @@ public sealed class UserService(
         return ServiceResult<UserProfileResponse>.Success(ToProfile(user));
     }
 
+    /// <summary>Удаляет аватар пользователя.</summary>
     public async Task<ServiceResult<UserProfileResponse>> DeleteAvatarAsync(
         Guid id,
         CancellationToken cancellationToken)
@@ -269,6 +289,7 @@ public sealed class UserService(
         return ServiceResult<UserProfileResponse>.Success(ToProfile(user));
     }
 
+    /// <summary>Преобразует модель пользователя в данные профиля для клиента.</summary>
     private static UserProfileResponse ToProfile(User user) =>
         new(
             user.Id,
@@ -279,6 +300,7 @@ public sealed class UserService(
             user.Profession.Name,
             user.AvatarContent is not null);
 
+    /// <summary>Проверяет поля запроса создания пользователя.</summary>
     private static Dictionary<string, string[]> ValidateCreateRequest(
         CreateUserRequest request)
     {
@@ -306,6 +328,7 @@ public sealed class UserService(
         return errors;
     }
 
+    /// <summary>Проверяет поля запроса изменения пользователя.</summary>
     private static Dictionary<string, string[]> ValidateUpdateRequest(
         UpdateUserRequest request)
     {
@@ -350,6 +373,7 @@ public sealed class UserService(
         return errors;
     }
 
+    /// <summary>Возвращает все разрешения администратору либо нормализованный набор прав пользователя.</summary>
     private static IReadOnlyList<string> GetPermissions(User user) =>
         user.Role.Equals("administrator", StringComparison.OrdinalIgnoreCase)
             ? Permissions.All
@@ -357,11 +381,13 @@ public sealed class UserService(
                 ',',
                 StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
 
+    /// <summary>Приводит выбранные разрешения к поддерживаемому набору прав доступа.</summary>
     private static IReadOnlyList<string> NormalizePermissions(IEnumerable<string>? permissions) =>
         Permissions.Expand(permissions)
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();
 
+    /// <summary>Добавляет ошибку, если обязательное поле не заполнено.</summary>
     private static void AddRequiredError(
         IDictionary<string, string[]> errors,
         string field,
@@ -374,9 +400,11 @@ public sealed class UserService(
         }
     }
 
+    /// <summary>Формирует временный пароль для новой учётной записи.</summary>
     private static string BuildTemporaryPassword(DateTime createdAt) =>
         $"{createdAt:ddMMyyyy}{createdAt.Minute:00}";
 
+    /// <summary>Формирует логин из данных сотрудника.</summary>
     private static string BuildUserName(
         string firstName,
         string middleName,
@@ -388,6 +416,7 @@ public sealed class UserService(
                 .Select(part => Transliterate(part.Trim().Take(2))));
     }
 
+    /// <summary>Преобразует кириллические символы имени в латиницу для логина.</summary>
     private static string Transliterate(IEnumerable<char> characters)
     {
         return characters

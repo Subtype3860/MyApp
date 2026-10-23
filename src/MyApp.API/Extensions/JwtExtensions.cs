@@ -3,11 +3,15 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.IdentityModel.Tokens;
 using System.Text;
+using MyApp.Application.Abstractions;
+using MyApp.Application.Security;
 
 namespace MyApp.API.Extensions
 {
+    /// <summary>Настройка аутентификации по JWT и проверки отозванных сессий.</summary>
     public static class JwtExtensions
     {
+        /// <summary>Настраивает проверку JWT и актуальности пользовательской сессии.</summary>
         public static IServiceCollection AddJwtAuthentication(this IServiceCollection services, IConfiguration config)
         {
             var jwt = config.GetRequiredSection("Jwt");
@@ -29,6 +33,15 @@ namespace MyApp.API.Extensions
             services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
                 .AddJwtBearer(o =>
                 {
+                    o.Events = new JwtBearerEvents
+                    {
+                        OnTokenValidated = async context =>
+                        {
+                            var store = context.HttpContext.RequestServices.GetRequiredService<IUserSessionStore>();
+                            if (!await SessionIdentity.IsCurrentAsync(context.Principal, store, context.HttpContext.RequestAborted))
+                                context.Fail("Сессия отозвана. Требуется повторный вход.");
+                        }
+                    };
                     o.TokenValidationParameters = new TokenValidationParameters
                     {
                         ValidateIssuer = true,

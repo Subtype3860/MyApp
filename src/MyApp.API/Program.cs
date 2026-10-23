@@ -53,6 +53,9 @@ builder.Services.AddHostedService<StagedMediaTransferService>();
 builder.Services.AddJwtAuthentication(builder.Configuration);
 builder.Services.AddAuthorization(options =>
 {
+    options.AddPolicy(Permissions.AuxiliaryWorksView, policy => policy.RequireClaim("permission", Permissions.AuxiliaryWorksView));
+    options.AddPolicy(Permissions.AuxiliaryWorksRead, policy => policy.RequireAuthenticatedUser().RequireAssertion(context =>
+        context.User.HasClaim("permission", Permissions.AuxiliaryWorksView) || (context.User.HasClaim("permission", "vehicles.report") || context.User.HasClaim("permission", Permissions.ShiftReport))));
     options.AddPolicy(Permissions.TablesView, policy =>
         policy.RequireClaim("permission", Permissions.TablesView));
     options.AddPolicy(Permissions.VehiclesView, policy =>

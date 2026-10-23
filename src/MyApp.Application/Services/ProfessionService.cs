@@ -1,13 +1,15 @@
 using MyApp.Application.Abstractions;
 using MyApp.Application.Common;
 using MyApp.Application.DTO;
-using MyApp.Domain.Entities;
+using MyApp.Application.Models;
 
 namespace MyApp.Application.Services;
 
+/// <summary>Прикладные операции справочника профессий.</summary>
 public sealed class ProfessionService(
     IProfessionRepository professionRepository) : IProfessionService
 {
+    /// <summary>Возвращает список профессий.</summary>
     public async Task<IReadOnlyList<ProfessionResponse>> GetAllAsync(
         CancellationToken cancellationToken)
     {
@@ -18,6 +20,7 @@ public sealed class ProfessionService(
             .ToArray();
     }
 
+    /// <summary>Создаёт профессию.</summary>
     public async Task<ServiceResult<ProfessionResponse>> CreateAsync(
         ProfessionRequest request,
         CancellationToken cancellationToken)
@@ -40,6 +43,7 @@ public sealed class ProfessionService(
             new ProfessionResponse(profession.Id, profession.Name));
     }
 
+    /// <summary>Обновляет данные профессии.</summary>
     public async Task<ServiceResult<ProfessionResponse>> UpdateAsync(
         Guid id,
         ProfessionRequest request,
@@ -66,6 +70,7 @@ public sealed class ProfessionService(
             new ProfessionResponse(profession.Id, profession.Name));
     }
 
+    /// <summary>Удаляет профессию.</summary>
     public async Task<ServiceResult<Guid>> DeleteAsync(
         Guid id,
         CancellationToken cancellationToken)
@@ -89,6 +94,7 @@ public sealed class ProfessionService(
         return ServiceResult<Guid>.Success(id);
     }
 
+    /// <summary>Проверяет обязательность названия профессии и ограничение длины в 40 символов.</summary>
     private static Dictionary<string, string[]> Validate(
         ProfessionRequest request)
     {
