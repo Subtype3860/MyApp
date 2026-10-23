@@ -1,52 +1,54 @@
 # Latest production deployment
 
 Site: https://boora.ru/
-Release: `20261013-011851`
-Application source: `9df62b36a7a9287fe77e4d3a66f672616b42e8b8`, branch `refactor/integration-auth-shell`.
+Release: `20261021-f24fb8e`
+Deployment date: 2026-10-21 (Asia/Sakhalin).
+Application source: `f24fb8e977970269f6f9234fb17eca762997d2ba`, branch `refactor/integration-auth-shell`.
+Previous release: [20261013-011851](release-20261013-011851.md).
 
-The deployment uses a self-contained .NET 10 linux-x64 API and Vite static assets.
-Live paths remain `/opt/myapp/api` and `/opt/myapp/www`.
-The existing `appsettings*.json`, `/etc/myapp/myapp.env`, template path and media paths were preserved.
-Local development configuration and local media-staging files were excluded from the release.
-Production staging files were copied after stopping the old service.
+The release uses a self-contained .NET 10 linux-x64 API and Vite static assets.
+Live paths remain `/opt/myapp/api` and `/opt/myapp/www`; the systemd service is `myapp`.
+Existing `appsettings*.json`, `/etc/myapp/myapp.env`, media paths and template configuration were preserved.
+Local development configuration and secrets were excluded from the release archive.
 
 ## Changes
 
-CSV / XLSX imports accept arbitrary filenames and an explicit source; XLSX supports sheet selection. Preview validates the complete file before confirmation. Stock files replace the selected source's balances, zeroing absent positions atomically. Workers are added or updated without removing absent workers. Stock positions and workers have UUID primary keys; worker full names are computed from name components. Source metadata is stored in `app_import_sources`, import statistics in `app_import_history`, and completed migrations in `app_schema_migrations`.
+- Merge Domain models into Application, leaving three application projects.
+- Add Russian documentation comments to backend declarations and frontend named functions.
+- Add daily Excel engine-hours preview and commit, with per-engine chronology checks and warning confirmation.
+- Show model and garage number in repair history; reduce vertical spacing in cards, requests and work entries.
+- Start the Reports submenu collapsed and update browser navigation scenarios.
+- Preserve fixed-width engine-hours output in the GTO report.
 
-JWT validation now checks the user's session stamp. Sessions issued by the previous release require a new login. Password changes and explicit logout revoke sessions on the server.
-
-Existing documents and material groups still store names; migrating these references to UUID foreign keys is separate work.
-
-## Recovery artifacts on the server
-
-- Release candidate: `/var/lib/myapp-releases/20261013-011851`.
-- Per-file checksums: `API-FILES.sha256`, `WWW-FILES.sha256`, `METADATA.sha256`.
-- Complete archives: `api.tar.gz`, `www.tar.gz`, `SHA256SUMS`, `release.json`.
-- Backup directory: `/var/backups/myapp/release-20261013-011851` (root access only).
-- Database snapshot used for rehearsal: `job.dump`.
-- Database snapshot taken with the service stopped, immediately before switching: `pre-cutover.dump`.
-- Previous API: `/opt/myapp/api.previous-20261013-011851`.
-- Previous frontend: `/opt/myapp/www.previous-20261013-011851`.
-- Application/configuration archive: `application.tar.gz`.
-- Isolated verification log: `isolation.log` in the backup directory.
-
-Release files were transferred into separate directories using rsync with checksum comparison and copy-dest. Every deployed file matched the local build manifest. Complete release archives were then created and checksummed on the server.
-
-The cutover script automatically restored prior binaries if activation checks failed.
-For any later rollback, first assess database compatibility and new writes: restoring a pre-cutover dump would discard subsequent changes. Do not restore the dump automatically.
+Database initialization adds the nullable `reading_time` column to `vehicle_hour_readings`.
+Existing and manually entered readings may retain an unknown time.
 
 ## Verification
 
-- 103 unit tests and 38 PostgreSQL integration tests passed locally against an isolated disposable test database.
-- 89 browser scenarios verified; two outdated scenarios were adjusted for the fleet action menu and required work location, then their 13-test groups passed.
-- GitHub Actions for the application commit completed successfully.
-- Release file checksums and PostgreSQL dump catalogs verified.
-- Fresh database snapshot restored into an isolated PostgreSQL container with no external network.
-- New API initialization passed against the restored database.
-- Authenticated isolated vehicle list, repair journal, stock/worker table APIs and stock/worker exports returned 200.
-- Production service is active; public HTTPS frontend returned 200 and its script matches the build.
-- Public login page rendered in Chromium with zero JavaScript errors.
-- Production login route returned 400 for an empty request (expected validation).
-- Protected production repair route returned 401 without credentials (expected).
-- Production user credentials were not used for the smoke checks.
+- GitHub Actions for the application commit completed successfully, including backend build, unit tests, PostgreSQL integration tests and frontend build.
+- 114 backend unit tests passed locally.
+- 44 browser scenarios passed locally across imports, reports, repair history, participation and auxiliary work (including the corrected Windows fixture path).
+- Two PDF text-extraction scenarios could not complete locally because `pdftotext` was unavailable; one workbook-fixture scenario was skipped because its optional source file was absent.
+- Release archive and every deployed API/frontend file matched SHA-256 checksums.
+- Database dump catalog verified; dump restored into an isolated PostgreSQL container without external networking.
+- Candidate API initialized successfully against that copy; authenticated profile, vehicle list and repair-journal requests returned HTTP 200.
+- The isolated database contains the expected `reading_time` column.
+- After activation, systemd service is active; public frontend returns 200, protected repair API returns 401 without credentials, and empty login request returns 400.
+- Public HTML matches the release's index file.
+
+## Recovery artifacts on the server
+
+- Candidate and manifests: `/var/lib/myapp-releases/20261021-f24fb8e`.
+- Uploaded archive: `/var/tmp/myapp-release-f24fb8e.tar.gz`.
+- Archive SHA-256: `376a095021923e9f222099ffffcedbfb2d1b97294e61b92955b3348d11627649`.
+- Protected backups: `/var/backups/myapp/release-20261021-f24fb8e`.
+- Database snapshots: `job.dump` for rehearsal and `pre-cutover.dump` taken with the API stopped.
+- Application/configuration backup: `application.tar.gz`; service configuration: `myapp.service.txt`.
+- Isolated verification log: `isolation.log` in the backup directory.
+- Previous API: `/opt/myapp/api.previous-20261021-f24fb8e`.
+- Previous frontend: `/opt/myapp/www.previous-20261021-f24fb8e`.
+
+The activation script automatically restores previous binaries and assets if its checks fail.
+It does not restore the database automatically. Assess new writes and compatibility before any database rollback;
+restoring a pre-cutover dump would discard subsequent changes.
+Temporary backup credentials were removed after successful activation.

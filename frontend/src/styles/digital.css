@@ -218,7 +218,7 @@
     position: relative;
     isolation: isolate;
     overflow: hidden;
-    min-height: 300px;
+    min-height: 200px;
     padding: clamp(24px, 3vw, 42px);
     border: 1px solid var(--border);
     border-radius: 16px;
@@ -247,7 +247,7 @@
   }
   .dashboard-hero h2 {
     margin: 14px 0 16px;
-    font-size: clamp(36px, 4.2vw, 62px);
+    font-size: clamp(30px, 3.2vw, 44px);
     line-height: 1.05;
     letter-spacing: -0.045em;
   }
@@ -682,10 +682,10 @@
   }
   .dashboard-hero {
     padding: 26px 22px;
-    min-height: 340px;
+    min-height: 210px;
   }
   .dashboard-hero h2 {
-    font-size: clamp(36px, 8vw, 52px);
+    font-size: clamp(28px, 7vw, 38px);
   }
   .dashboard-hero__content > p:not(.eyebrow) {
     font-size: 13px;

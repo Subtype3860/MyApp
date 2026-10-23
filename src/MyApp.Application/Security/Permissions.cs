@@ -30,16 +30,16 @@ public static class Permissions
             new("vehicles.repair_history", "История ремонта"),
             new("vehicles.maintenance_execution", "Проведение ТО"),
             new("vehicles.parts_request", "Заявка на закупку ЗЧ"),
-            new("vehicles.hours", "Моточасы")
+            new("vehicles.hours", "Моточасы"),
+            new(MaintenanceView, "Техническое обслуживание"),
+            new(AuxiliaryWorksView, "Вспомогательные работы")
         ]),
         new(ReportsView, "Отчёты",
         [
             new(ShiftReport, "Отчёт за смену"),
-            new(GtoReport, "Выход ГТО")
-        ]),
-        new(AuxiliaryWorksView, "Вспомогательные работы"),
-        new(RequirementsView, "Выписанные требования"),
-        new(MaintenanceView, "Техническое обслуживание")
+            new(GtoReport, "Выход ГТО"),
+            new(RequirementsView, "Выписанные требования")
+        ])
     ];
 
     public static readonly IReadOnlyList<string> All =
@@ -78,7 +78,8 @@ public static class Permissions
 
         foreach (var item in Catalog)
         {
-            if (item.Children.Any(child => selected.Contains(child.Key)))
+            if (item.Children.Any(child => selected.Contains(child.Key) &&
+                (item.Key != VehiclesView || (child.Key != AuxiliaryWorksView && child.Key != MaintenanceView))))
             {
                 selected.Add(item.Key);
             }

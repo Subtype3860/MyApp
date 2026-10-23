@@ -55,8 +55,8 @@ for (const width of [320, 390, 768, 1440]) {
     ).toBeVisible()
     await expectNoOverflow(page)
     await expect(
-      page.locator('.dashboard-metric').first().locator('strong'),
-    ).toHaveText('12')
+      page.getByRole('heading', { name: 'Ближайшее ТО', exact: true }),
+    ).toBeVisible()
     if (width > 760) {
       await expect.poll(() => page.locator('.sidebar').evaluate(el => Math.round(el.getBoundingClientRect().width))).toBe(268)
     }
@@ -162,8 +162,8 @@ test('API error is recoverable and does not display fake zero metrics', async ({
   await page.goto('/')
   await expect(page.getByRole('alert')).toContainText('Не удалось загрузить')
   await expect(
-    page.locator('.dashboard-metric').first().locator('strong'),
-  ).toHaveText('—')
+    page.locator('.dashboard-metric'),
+  ).toHaveCount(0)
   await page.route('**/api/vehicles', (route) =>
     route.fulfill({ json: vehicles }),
   )

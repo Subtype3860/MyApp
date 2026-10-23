@@ -731,6 +731,7 @@ public sealed class DatabaseInitializer(AppDbContext db) : IDatabaseInitializer
             );
             """,
             cancellationToken);
+        await MaintenancePlanSchema.EnsureAsync(db, cancellationToken);
         if (!await db.MediaStorageSettings.AnyAsync(
                 settings => settings.Id == 1,
                 cancellationToken))

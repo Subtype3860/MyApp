@@ -115,7 +115,7 @@ watch(() => [props.token, props.profileVersion], loadProfile, {
 watch(
   () => props.activePage,
   (page) => {
-    if (page !== 'vehicles') isVehiclesExpanded.value = false
+    if (!['vehicles', 'maintenance', 'auxiliary-works'].includes(page)) isVehiclesExpanded.value = false
     if (page !== 'tables' && page !== 'selected-components') {
       isTablesExpanded.value = false
     }
@@ -307,9 +307,9 @@ function toggleSettings() {
         </button>
       </div>
       <button
-        v-if="canView('menu.vehicles')"
+        v-if="(canView('menu.vehicles') || canView('menu.maintenance') || canView('menu.auxiliary_works'))"
         class="nav-link"
-        :class="{ 'nav-link--active': activePage === 'vehicles' }"
+        :class="{ 'nav-link--active': ['vehicles', 'maintenance', 'auxiliary-works'].includes(activePage) }"
         type="button"
         :aria-expanded="isVehiclesExpanded"
         aria-controls="transport-submenu"
@@ -324,7 +324,7 @@ function toggleSettings() {
         <span class="sidebar-label submenu-chevron" :class="{ 'submenu-chevron--expanded': isVehiclesExpanded }" aria-hidden="true">›</span>
       </button>
       <div
-        v-if="canView('menu.vehicles') && isVehiclesExpanded"
+        v-if="(canView('menu.vehicles') || canView('menu.maintenance') || canView('menu.auxiliary_works')) && isVehiclesExpanded"
         id="transport-submenu"
         class="nav-submenu"
       >
@@ -395,8 +395,16 @@ function toggleSettings() {
           :class="{ 'nav-submenu-link--active': activePage === 'vehicles' && activeVehicleSection === 'maintenanceExecution' }"
           type="button" :aria-current="activePage === 'vehicles' && activeVehicleSection === 'maintenanceExecution' ? 'page' : undefined"
           @click="$emit('navigate-vehicle', 'maintenanceExecution')">Проведение ТО</button>
+        <button v-if="canView('menu.maintenance')" class="nav-submenu-link"
+          :class="{ 'nav-submenu-link--active': activePage === 'maintenance' }" type="button"
+          :aria-current="activePage === 'maintenance' ? 'page' : undefined"
+          @click="$emit('navigate', 'maintenance')">Техническое обслуживание</button>
+        <button v-if="canView('menu.auxiliary_works')" class="nav-submenu-link"
+          :class="{ 'nav-submenu-link--active': activePage === 'auxiliary-works' }" type="button"
+          :aria-current="activePage === 'auxiliary-works' ? 'page' : undefined"
+          @click="$emit('navigate', 'auxiliary-works')">Вспомогательные работы</button>
       </div>
-      <button v-if="canView('menu.reports')" class="nav-link" :class="{ 'nav-link--active': activePage === 'reports' }"
+      <button v-if="canView('menu.reports')" class="nav-link" :class="{ 'nav-link--active': ['reports', 'requirements'].includes(activePage) }"
         type="button" :aria-expanded="isReportsExpanded" aria-controls="reports-submenu" @click="toggleReports">
         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="size-6" aria-hidden="true" style="stroke-width: 1.5; fill: none">
           <path stroke-linecap="round" stroke-linejoin="round" d="M21 12a2.25 2.25 0 0 0-2.25-2.25H15a3 3 0 1 1-6 0H5.25A2.25 2.25 0 0 0 3 12m18 0v6a2.25 2.25 0 0 1-2.25 2.25H5.25A2.25 2.25 0 0 1 3 18v-6m18 0V9M3 12V9m18 0a2.25 2.25 0 0 0-2.25-2.25H5.25A2.25 2.25 0 0 0 3 9m18 0V6a2.25 2.25 0 0 0-2.25-2.25H5.25A2.25 2.25 0 0 0 3 6v3" />
@@ -408,41 +416,11 @@ function toggleSettings() {
           type="button" :aria-current="activePage === 'reports' && activeVehicleSection === 'report' ? 'page' : undefined" @click="$emit('navigate-vehicle', 'report')">Отчёт за смену</button>
         <button v-if="canView('reports.gto')" class="nav-submenu-link" :class="{ 'nav-submenu-link--active': activePage === 'reports' && activeVehicleSection === 'gtoForecast' }"
           type="button" :aria-current="activePage === 'reports' && activeVehicleSection === 'gtoForecast' ? 'page' : undefined" @click="$emit('navigate-vehicle', 'gtoForecast')">Выход ГТО</button>
+        <button v-if="canView('menu.requirements')" class="nav-submenu-link"
+          :class="{ 'nav-submenu-link--active': activePage === 'requirements' }" type="button"
+          :aria-current="activePage === 'requirements' ? 'page' : undefined"
+          @click="$emit('navigate', 'requirements')">Выписанные требования</button>
       </div>
-      <button v-if="canView('menu.auxiliary_works')" class="nav-link"
-        :class="{ 'nav-link--active': activePage === 'auxiliary-works' }" type="button"
-        :aria-current="activePage === 'auxiliary-works' ? 'page' : undefined" @click="$emit('navigate', 'auxiliary-works')">
-        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="size-6" aria-hidden="true" style="stroke-width: 1.5; fill: none">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M11.42 15.17 17.25 21A2.652 2.652 0 0 0 21 17.25l-5.877-5.877M11.42 15.17l2.496-3.03c.317-.384.74-.626 1.208-.766M11.42 15.17l-4.655 5.653a2.548 2.548 0 1 1-3.586-3.586l6.837-5.63m5.108-.233c.55-.164 1.163-.188 1.743-.14a4.5 4.5 0 0 0 4.486-6.336l-3.276 3.277a3.004 3.004 0 0 1-2.25-2.25l3.276-3.276a4.5 4.5 0 0 0-6.336 4.486c.091 1.076-.071 2.264-.904 2.95l-.102.085m-1.745 1.437L5.909 7.5H4.5L2.25 3.75l1.5-1.5L7.5 4.5v1.409l4.26 4.26m-1.745 1.437 1.745-1.437m6.615 8.206L15.75 15.75M4.867 19.125h.008v.008h-.008v-.008Z" />
-        </svg><span class="sidebar-label">Вспомогательные работы</span>
-      </button>
-
-      <button
-        v-if="canView('menu.requirements')"
-        class="nav-link"
-        :class="{ 'nav-link--active': activePage === 'requirements' }"
-        type="button"
-        :aria-current="activePage === 'requirements' ? 'page' : undefined"
-        @click="$emit('navigate', 'requirements')"
-      >
-        <svg viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M6 3h9l3 3v15H6V3Zm9 0v4h4M9 11h6M9 15h6" />
-        </svg>
-        <span class="sidebar-label">Выписанные требования</span>
-      </button>
-      <button
-        v-if="canView('menu.maintenance')"
-        class="nav-link"
-        :class="{ 'nav-link--active': activePage === 'maintenance' }"
-        type="button"
-        :aria-current="activePage === 'maintenance' ? 'page' : undefined"
-        @click="$emit('navigate', 'maintenance')"
-      >
-        <svg viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M4 5h16v14H4V5Zm4 4h8M8 13h5M8 16h3" />
-        </svg>
-        <span class="sidebar-label">Техническое обслуживание</span>
-      </button>
       <button
         v-if="isAdmin"
         class="nav-link"

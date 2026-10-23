@@ -4,6 +4,7 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import UserAvatar from './UserAvatar.vue'
 import FleetVehicleEditor from './FleetVehicleEditor.vue'
 import FleetActionMenu from './FleetActionMenu.vue'
+import MaintenanceDashboard from './MaintenanceDashboard.vue'
 const props = defineProps({
   navigationCollapsed: { type: Boolean, required: true },
   token: { type: String, required: true },
@@ -80,32 +81,6 @@ const pageCount = computed(() =>
 const visibleVehicles = computed(() =>
   filtered.value.slice((page.value - 1) * pageSize, page.value * pageSize),
 )
-const metrics = computed(() => [
-  {
-    label: 'Вся техника',
-    value: vehicles.value.length,
-    note: 'единиц в реестре',
-    icon: '▤',
-  },
-  {
-    label: 'Модели',
-    value: new Set(vehicles.value.map((v) => v.modelName).filter(Boolean)).size,
-    note: 'моделей техники',
-    icon: '◇',
-  },
-  {
-    label: 'Типы техники',
-    value: new Set(vehicles.value.map((v) => v.typeName).filter(Boolean)).size,
-    note: 'типов в реестре',
-    icon: '▦',
-  },
-  {
-    label: 'Группы',
-    value: new Set(vehicles.value.map((v) => v.groupName).filter(Boolean)).size,
-    note: 'групп техники',
-    icon: '◎',
-  },
-])
 const shortcuts = computed(() =>
   [
     {
@@ -203,24 +178,6 @@ function openShortcut(item) {
           Единое рабочее пространство механика.<br />Техника, обслуживание и
           ремонт — в одном месте.
         </p>
-        <div class="dashboard-hero__actions">
-          <a
-            v-if="canView('menu.vehicles')"
-            class="primary-button"
-            href="#fleet"
-            >Парк техники <span aria-hidden="true">↓</span></a
-          >
-          <button
-            v-if="
-              canView('menu.vehicles') && canView('vehicles.repair_request')
-            "
-            class="secondary-button"
-            type="button"
-            @click="emit('navigate-vehicle', 'repairRequest')"
-          >
-            Создать заявку <span aria-hidden="true">↗</span>
-          </button>
-        </div>
       </div>
       <svg
         class="dashboard-blueprint"
@@ -244,28 +201,7 @@ function openShortcut(item) {
     </section>
 
     <template v-if="canView('menu.vehicles')">
-      <section
-        class="dashboard-metrics"
-        aria-label="Сводка реестра техники"
-        :aria-busy="loading"
-      >
-        <article
-          v-for="metric in metrics"
-          :key="metric.label"
-          class="dashboard-metric"
-        >
-          <span class="dashboard-metric__icon" aria-hidden="true">{{
-            metric.icon
-          }}</span>
-          <div>
-            <span>{{ metric.label }}</span
-            ><strong>{{
-              loaded && !error && !loading ? metric.value : '—'
-            }}</strong
-            ><small>{{ metric.note }}</small>
-          </div>
-        </article>
-      </section>
+      <MaintenanceDashboard :token="token" :can-open="canView('vehicles.maintenance_execution')" @open="emit('navigate-vehicle', 'maintenanceExecution')" />
       <div class="dashboard-columns">
         <section
           id="fleet"
@@ -406,7 +342,7 @@ function openShortcut(item) {
             ><span aria-hidden="true">↗</span>
           </button>
           <p class="dashboard-note">
-            В сводке отображаются данные реестра. Рабочие статусы и план ТО
+            В списке отображаются данные реестра. Рабочие статусы и история ТО
             доступны в соответствующих разделах.
           </p>
         </section>

@@ -13,5 +13,6 @@ export function expandPermissions(permissions = []) {
     selected.add('menu.reports')
     selected.add('menu.vehicles')
   }
+  if (selected.has('menu.requirements')) selected.add('menu.reports')
   return [...selected]
 }

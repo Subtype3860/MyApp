@@ -1,4 +1,5 @@
 <script setup>
+import MaintenancePlans from "./MaintenancePlans.vue"
 import { computed, nextTick, onBeforeUnmount, onMounted, provide, ref, watch } from 'vue'
 import UserAvatar from './UserAvatar.vue'
 import RepairHistory from './RepairHistory.vue'
@@ -1199,11 +1200,7 @@ function formatDateTime(value) {
     <section class="vehicle-content">
       <VehicleHours v-if="props.section === 'hours'" :token="token" />
       <ShiftReport v-if="props.section === 'report'" :token="token" />
-      <section v-if="props.section === 'maintenanceExecution'" class="gto-forecast-intro">
-        <h2>Проведение технического обслуживания</h2>
-        <p>Раздел для регистрации выполненного ТО техники, исполнителей и вложений.</p>
-        <p class="gto-forecast-intro__pending">Форму проведения ТО ещё предстоит настроить.</p>
-      </section>
+      <MaintenancePlans v-if="props.section === 'maintenanceExecution'" :token="token" />
       <GtoForecast v-if="props.section === 'gtoForecast'" :token="token" />
       <RepairHistory
         v-if="props.section === 'repairHistory'"

@@ -6,6 +6,8 @@ using MyApp.Infrastructure.Db.Entities;
 namespace MyApp.Infrastructure.Db {
     /// <summary>Контекст Entity Framework Core для таблиц и представлений приложения.</summary>
     public class AppDbContext : DbContext {
+        public DbSet<VehicleMaintenancePlan> VehicleMaintenancePlans => Set<VehicleMaintenancePlan>();
+        public DbSet<VehicleMaintenanceEvent> VehicleMaintenanceEvents => Set<VehicleMaintenanceEvent>();
         public DbSet<GtoReport> GtoReports => Set<GtoReport>();
         public DbSet<VehicleEngineSettings> VehicleEngineSettings => Set<VehicleEngineSettings>();
         public DbSet<GtoUserSettings> GtoUserSettings => Set<GtoUserSettings>();
@@ -145,6 +147,29 @@ namespace MyApp.Infrastructure.Db {
                 entity.Property(x => x.UserId).HasColumnName("user_id");
                 entity.Property(x => x.Organisation).HasColumnName("organisation").HasMaxLength(200);
                 entity.Property(x => x.Site).HasColumnName("site").HasMaxLength(200);
+            });
+            modelBuilder.Entity<VehicleMaintenancePlan>(entity => {
+                entity.ToTable("vehicle_maintenance_plans"); entity.HasKey(x => x.VehicleId);
+                entity.Property(x => x.VehicleId).HasColumnName("vehicle_id");
+                entity.Property(x => x.Revision).HasColumnName("revision");
+                entity.Property(x => x.Snapshot).HasColumnName("snapshot").HasColumnType("jsonb");
+                entity.Property(x => x.UpdatedBy).HasColumnName("updated_by");
+                entity.Property(x => x.UpdatedAt).HasColumnName("updated_at");
+            });
+            modelBuilder.Entity<VehicleMaintenanceEvent>(entity => {
+                entity.ToTable("vehicle_maintenance_events"); entity.HasKey(x => x.Id);
+                entity.Property(x => x.Id).HasColumnName("id");
+                entity.Property(x => x.VehicleId).HasColumnName("vehicle_id");
+                entity.Property(x => x.Revision).HasColumnName("revision");
+                entity.Property(x => x.Kind).HasColumnName("kind");
+                entity.Property(x => x.Description).HasColumnName("description");
+                entity.Property(x => x.Date).HasColumnName("event_date");
+                entity.Property(x => x.Before).HasColumnName("before_snapshot").HasColumnType("jsonb");
+                entity.Property(x => x.After).HasColumnName("after_snapshot").HasColumnType("jsonb");
+                entity.Property(x => x.Readings).HasColumnName("readings").HasColumnType("jsonb");
+                entity.Property(x => x.CreatedBy).HasColumnName("created_by");
+                entity.Property(x => x.CreatedAt).HasColumnName("created_at");
+                entity.HasIndex(x => new { x.VehicleId, x.Revision }).IsUnique();
             });
             modelBuilder.Entity<GtoReport>(entity => {
                 entity.ToTable("gto_reports"); entity.HasKey(x => new { x.ReportDate, x.Shift });

@@ -24,7 +24,7 @@ async function setup(page) {
 for (const operating of [true, false]) {
   test(`repair request records continued operation: ${operating}`, async ({ page }) => {
     const calls = await setup(page)
-    await page.getByRole('button', { name: 'Создать заявку', exact: true }).click()
+    await page.locator('.dashboard-shortcut').filter({ hasText: 'Заявка на ремонт' }).click()
     await page.locator('.vehicle-search input').fill('901')
     await page.getByRole('button', { name: 'Найти транспорт', exact: true }).click()
     await page.getByLabel('Описание неисправности').fill('Некритичная неисправность')
@@ -40,13 +40,14 @@ for (const operating of [true, false]) {
     await expect.poll(() => calls.length).toBe(1)
     expect(calls[0].body.operationalState).toBe(operating ? 'operating' : 'stopped')
     if (operating) expect(calls[0].body.downtimeStartedAt).toBeNull()
-    else expect(calls[0].body.downtimeStartedAt).toContain('2026-10-01')
+    else expect(await page.evaluate(value => { const date=new Date(value); return [date.getFullYear(),date.getMonth()+1,date.getDate(),date.getHours()] }, calls[0].body.downtimeStartedAt)).toEqual([2026,10,1,10])
   })
 }
 
 test('waiting for parts can coexist with continued operation, and a later work can stop the machine', async ({ page }) => {
   const calls = await setup(page)
   await page.locator('.dashboard-shortcut').filter({ hasText: 'Работы, история' }).click()
+  await page.getByRole('button', { name: 'Самосвал · Гар. №901 — Некритичная неисправность' }).click()
   await expect(page.locator('.repair-state-badges')).toContainText('Работает с неисправностью')
   await expect(page.locator('.repair-state-badges')).toContainText('Заявка: Ожидает запчасти')
   await expect(page.locator('.repair-overview-meta')).not.toContainText('Простой с')
@@ -58,5 +59,5 @@ test('waiting for parts can coexist with continued operation, and a later work c
   await page.getByRole('button', { name: 'Сохранить этап', exact: true }).click()
   await expect.poll(() => calls.length).toBe(1)
   expect(calls[0].body).toMatchObject({ status: 'awaiting_parts', operationalState: 'stopped' })
-  expect(calls[0].body.downtimeStartedAt).toContain('2026-10-01')
+  expect(await page.evaluate(value => { const date=new Date(value); return [date.getFullYear(),date.getMonth()+1,date.getDate(),date.getHours()] }, calls[0].body.downtimeStartedAt)).toEqual([2026,10,1,10])
 })
