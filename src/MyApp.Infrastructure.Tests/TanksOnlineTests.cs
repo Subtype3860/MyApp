@@ -33,6 +33,21 @@ public sealed class TanksOnlineTests
     }
 
     [Fact]
+    public void Server_acknowledges_only_simulated_input_and_rejects_replayed_sequences()
+    {
+        var arena=new TanksArena();var identity=new TankIdentity(Guid.NewGuid(),Guid.NewGuid(),"synthetic",DateTimeOffset.UtcNow.AddHours(1));
+        var connection=arena.Join(identity,out _)!;
+        Assert.True(arena.SetInput(connection,new(1,0,null,null,false,7)));
+        Assert.False(arena.SetInput(connection,new(1,0,null,null,false,7)));
+        Assert.False(arena.SetInput(connection,new(1,0,null,null,false,6)));
+        Assert.False(arena.SetInput(connection,new(1,0,null,null,false,-1)));
+        arena.Tick();Assert.True(connection.Frames.Reader.TryRead(out var frame));
+        var player=Player(frame!,identity.UserId);Assert.Equal(7,player.GetProperty("ackSeq").GetInt64());Assert.Equal(1,player.GetProperty("spawnId").GetInt32());
+        arena.Leave(connection);connection=arena.Join(identity,out _)!;
+        Assert.True(arena.SetInput(connection,new(0,0,null,null,false,1)));
+    }
+
+    [Fact]
     public void Arena_enforces_capacity_unique_users_and_server_movement_limits()
     {
         var arena=new TanksArena(); var identity=new TankIdentity(Guid.NewGuid(),Guid.NewGuid(),"synthetic",DateTimeOffset.UtcNow.AddHours(1));

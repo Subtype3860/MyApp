@@ -3,10 +3,10 @@ using System.Threading.Channels;
 
 namespace MyApp.API.Games;
 
-public sealed record TankInput(double X, double Z, double? AimX, double? AimZ, bool Fire)
+public sealed record TankInput(double X, double Z, double? AimX, double? AimZ, bool Fire, long Seq = 0)
 {
     public static readonly TankInput Idle = new(0, 0, null, null, false);
-    public bool IsValid => double.IsFinite(X) && double.IsFinite(Z) && Math.Abs(X) <= 1 && Math.Abs(Z) <= 1 &&
+    public bool IsValid => Seq is >= 0 and <= 9007199254740991 && double.IsFinite(X) && double.IsFinite(Z) && Math.Abs(X) <= 1 && Math.Abs(Z) <= 1 &&
         (AimX is null && AimZ is null || AimX is double x && AimZ is double z && double.IsFinite(x) && double.IsFinite(z) && Math.Abs(x) <= 100 && Math.Abs(z) <= 100);
 }
 
@@ -16,6 +16,8 @@ public sealed class ArenaTank(Guid id, string name)
     public string Name { get; } = name;
     public double X, Z, Yaw, Turret, Hp = 100, Cooldown, RespawnAt, ProtectedUntil, LastInputAt, DisconnectedAt;
     public int Score, Kills, Collected;
+    public long LastSequence, AckSeq;
+    public int SpawnId;
     public bool Connected;
     public TankInput Input = TankInput.Idle;
     public Dictionary<string, double> Skills { get; } = [];
@@ -63,7 +65,7 @@ public sealed class TanksArena
             {
                 tank = new(identity.UserId, identity.Name); tanks.Add(identity.UserId, tank); Respawn(tank);
             }
-            tank.Connected = true; tank.Input = TankInput.Idle; tank.LastInputAt = time;
+            tank.Connected = true; tank.Input = TankInput.Idle; tank.LastInputAt = time; tank.LastSequence = 0; tank.AckSeq = 0;
             var connection = new ArenaConnection(identity); connections.Add(identity.UserId, connection); return connection;
         }
     }
@@ -83,7 +85,9 @@ public sealed class TanksArena
         lock(gate)
         {
             if (!connections.TryGetValue(connection.Identity.UserId, out var active) || !ReferenceEquals(active, connection)) return false;
-            var tank = tanks[connection.Identity.UserId]; tank.Input = input; tank.LastInputAt = time; return true;
+            var tank = tanks[connection.Identity.UserId];
+            if(input.Seq < tank.LastSequence || input.Seq > 0 && input.Seq == tank.LastSequence) return false;
+            tank.LastSequence = input.Seq; tank.Input = input; tank.LastInputAt = time; return true;
         }
     }
     public static bool Blocked(double x, double z, double radius = .85) => Math.Abs(x) > HalfSize-1-radius || Math.Abs(z) > HalfSize-1-radius ||
@@ -97,7 +101,7 @@ public sealed class TanksArena
     private void Respawn(ArenaTank tank)
     {
         for(var i=0;i<100;i++) { tank.X=(random.NextDouble()-.5)*(HalfSize-6)*2; tank.Z=(random.NextDouble()-.5)*(HalfSize-6)*2; if(!Blocked(tank.X,tank.Z,2) && !tanks.Values.Any(t=>t!=tank && t.Connected && t.Hp>0 && Distance(t.X-tank.X,t.Z-tank.Z)<8)) break; }
-        tank.Hp=100; tank.Skills.Clear(); tank.ProtectedUntil=time+3; tank.Cooldown=1; tank.Input=TankInput.Idle;
+        tank.Hp=100; tank.Skills.Clear(); tank.ProtectedUntil=time+3; tank.Cooldown=1; tank.Input=TankInput.Idle; tank.SpawnId++;
     }
     private void SpawnPickup()
     {
@@ -115,6 +119,7 @@ public sealed class TanksArena
                 if(tank.Hp<=0) { if(time>=tank.RespawnAt) Respawn(tank); else continue; }
                 foreach(var key in tank.Skills.Keys.ToArray()) { tank.Skills[key]-=dt; if(tank.Skills[key]<=0) tank.Skills.Remove(key); }
                 tank.Cooldown-=dt; var input=time-tank.LastInputAt<=.5?tank.Input:TankInput.Idle;
+                if(input.Seq>0) tank.AckSeq=input.Seq;
                 var length=Math.Max(1,Distance(input.X,input.Z)); var speed=tank.Skills.ContainsKey("speed")?10.5:6;
                 Move(tank,input.X/length*speed*dt,input.Z/length*speed*dt);
                 if(Math.Abs(input.X)+Math.Abs(input.Z)>.01) tank.Yaw=Math.Atan2(input.X,input.Z);
@@ -143,7 +148,7 @@ public sealed class TanksArena
             bullets.RemoveAll(b=>b.Life<=0);
             spawnDelay-=dt; if(spawnDelay<=0) { spawnDelay=2; if(pickups.Count<36) SpawnPickup(); }
             foreach(var id in tanks.Where(t=>!t.Value.Connected&&time-t.Value.DisconnectedAt>60).Select(t=>t.Key).ToArray()) tanks.Remove(id);
-            var snapshot=JsonSerializer.SerializeToUtf8Bytes(new { type="state",time,players=tanks.Values.Where(t=>t.Connected).Select(t=>new{t.Id,t.Name,t.X,t.Z,t.Yaw,t.Turret,t.Hp,t.Score,t.Kills,t.Collected,skills=t.Skills,respawnIn=Math.Max(0,t.RespawnAt-time),protectedSpawn=t.ProtectedUntil>time}),bullets=bullets.Select(b=>new{b.X,b.Z,b.Vx,b.Vz,owner=b.Owner}),pickups },json);
+            var snapshot=JsonSerializer.SerializeToUtf8Bytes(new { type="state",time,players=tanks.Values.Where(t=>t.Connected).Select(t=>new{t.Id,t.Name,t.X,t.Z,t.Yaw,t.Turret,t.Hp,t.Score,t.Kills,t.Collected,t.AckSeq,t.SpawnId,skills=t.Skills,respawnIn=Math.Max(0,t.RespawnAt-time),protectedSpawn=t.ProtectedUntil>time}),bullets=bullets.Select(b=>new{b.X,b.Z,b.Vx,b.Vz,owner=b.Owner}),pickups },json);
             foreach(var connection in connections.Values) connection.Frames.Writer.TryWrite(snapshot);
         }
     }

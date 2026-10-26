@@ -4,7 +4,7 @@ const $=id=>document.getElementById(id),canvas=$('arena');
 let renderer;
 try{renderer=createRenderer(canvas);}catch{$('unsupported').hidden=false;$('overlay').hidden=true;}
 if(renderer){
-let world=createWorld(),mode='intro',lastTime=0,best=0,keys=new Set(),mouse=null,firing=false,stick={x:0,z:0},stickPointer=null,firePointer=null,toastTimer=0,hudTimer=0,skillKey='',raf;
+let world=createWorld(),mode='intro',lastTime=0,best=0,keys=new Set(),mouse=null,firing=false,stick={x:0,z:0},stickPointer=null,firePointer=null,toastTimer=0,hudTimer=0,skillKey='',raf,nextIdleDraw=0;
 try{best=Math.max(0,Number(localStorage.getItem('bronya.best.v1'))||0);}catch{}
 $('best').textContent='Рекорд: '+best.toLocaleString('ru-RU');
 function resetInput(){keys.clear();firing=false;stick={x:0,z:0};stickPointer=null;firePointer=null;$('stick-thumb').style.transform='';}
@@ -20,7 +20,7 @@ function updateHud(){const p=world.player;$('wave').innerHTML=String(Math.max(1,
 function frame(now){const dt=Math.min((now-(lastTime||now))/1000,.05);lastTime=now;let aim=mouse?renderer.groundPoint(mouse.x,mouse.y):null;
  if(mode==='playing'){const x=Number(keys.has('KeyD')||keys.has('ArrowRight'))-Number(keys.has('KeyA')||keys.has('ArrowLeft'))+stick.x;const z=Number(keys.has('KeyS')||keys.has('ArrowDown'))-Number(keys.has('KeyW')||keys.has('ArrowUp'))+stick.z;stepWorld(world,dt,{x,z,aim,fire:firing||keys.has('Space')});for(const event of world.events){if(event.kind==='pickup'||event.kind==='wave')toast(event.text);}world.events.length=0;hudTimer-=dt;if(hudTimer<=0){updateHud();hudTimer=.1;}if(world.status!=='playing'){mode='ended';record();showMenu(world.status==='won'?'Сектор за вами.':'Броня не выдержала.',world.status==='won'?'Пять волн пройдены! Собрано усилений: '+world.collected+'. Очки: '+world.score+'.':'Уничтожено танков: '+world.kills+'. Очки: '+world.score+'. Собирайте щиты и ремонт, чтобы продержаться дольше.','Новый бой');updateHud();}}
  if(toastTimer>0){toastTimer-=dt;if(toastTimer<=0)$('toast').classList.remove('show');}
- renderer.render(world,mode==='playing'?dt:0,mode==='playing'?aim:null);raf=requestAnimationFrame(frame);
+ if(mode==='playing'||now>=nextIdleDraw){renderer.render(world,mode==='playing'?dt:0,mode==='playing'?aim:null);nextIdleDraw=now+250;}raf=requestAnimationFrame(frame);
 }
 $('start').addEventListener('click',start);$('pause').addEventListener('click',pause);$('restart').addEventListener('click',()=>{mode='intro';start();});
 document.addEventListener('keydown',e=>{if(['KeyW','KeyA','KeyS','KeyD','ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Space'].includes(e.code)&&mode==='playing'){e.preventDefault();keys.add(e.code);}if((e.code==='KeyP'||e.code==='Escape')&&!e.repeat){if(mode==='playing')pause();else if(mode==='paused')start();}});
