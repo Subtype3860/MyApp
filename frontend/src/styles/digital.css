@@ -36,14 +36,12 @@
     font-size: 19px;
     letter-spacing: -0.04em;
   }
-  .brand-identity svg {
-    width: 32px;
-    height: 32px;
+  .brand-identity__logo {
+    display: block;
+    width: 44px;
+    height: 44px;
     flex: none;
-    fill: none;
-    stroke: var(--accent);
-    stroke-width: 2;
-    stroke-linejoin: round;
+    object-fit: contain;
   }
   .brand-identity strong {
     font-weight: 800;
