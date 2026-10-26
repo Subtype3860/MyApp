@@ -2,7 +2,7 @@
 
 Локальный адрес: http://localhost:5150/games/mechanic/index.html
 
-Запуск: `npm run dev` из `frontend`. Игра находится в `frontend/public/games/mechanic`, попадает в сборку Vite как самостоятельная страница. Для локального Vite нужно указывать `index.html` в адресе. Публикация ещё не выполнена.
+Запуск: `npm run dev` из `frontend`. Игра находится в `frontend/public/games/mechanic`, попадает в сборку Vite как самостоятельная страница. Для локального Vite нужно указывать `index.html` в адресе. Опубликована 27.10.2026: https://boora.ru/games/mechanic/index.html. В Atlas доступна через меню «Игры → Смена».
 
 ## Как играть
 
