@@ -29,5 +29,6 @@ public static class MaintenancePlanSchema
             created_at timestamptz NOT NULL DEFAULT NOW(),
             UNIQUE(vehicle_id, revision)
             );
+            ALTER TABLE vehicle_maintenance_events ADD COLUMN IF NOT EXISTS request_hash text;
             """, ct);
 }

@@ -9,6 +9,8 @@ import VehicleHours from './VehicleHours.vue'
 import RepairMediaViewer from './RepairMediaViewer.vue'
 import RepairActionsMenu from './RepairActionsMenu.vue'
 import WorkParticipants from './WorkParticipants.vue'
+import LocalAdvicePanel from './LocalAdvicePanel.vue'
+import LocalRequestDraft from './LocalRequestDraft.vue'
 import { convertImageToWebp } from '../utils/mediaUpload'
 
 /**
@@ -85,6 +87,18 @@ const mediaViewerType = ref('image')
 
 // --- Форма заявки на ремонт ---
 const problemDescription = ref('')
+const requestNode = ref(''), requestCause = ref(''), requestErrorCode = ref('')
+watch(selectedVehicleId, () => { requestNode.value = ''; requestCause.value = ''; requestErrorCode.value = '' })
+function applyRepairDraft(draft) {
+  if ('symptoms' in draft) problemDescription.value = draft.symptoms
+  if ('nodeName' in draft) requestNode.value = draft.nodeName
+  if ('failureReason' in draft) requestCause.value = draft.failureReason
+  if ('errorCode' in draft) requestErrorCode.value = draft.errorCode
+}
+function applyPartsDraft(draft) {
+  partsActionDraft.value.description = [draft.description ?? partsActionDraft.value.description,
+    draft.requiredParts ? `Запчасти: ${draft.requiredParts}` : ''].filter(Boolean).join('\n')
+}
 const requestOperationalState = ref('operating')
 const requestDate = ref(new Date().toISOString().slice(0, 10))
 const requestTime = ref(new Date().toTimeString().slice(0, 5))
@@ -983,7 +997,9 @@ async function submitForm() {
         method: 'POST',
         headers: authHeaders(true),
         body: JSON.stringify({
-          errorCode: null,
+          errorCode: requestErrorCode.value,
+          nodeName: requestNode.value,
+          failureReason: requestCause.value,
           symptoms: problemDescription.value,
           operationalState: requestOperationalState.value,
           downtimeStartedAt: requestOperationalState.value === 'stopped' ? new Date(
@@ -1003,6 +1019,7 @@ async function submitForm() {
     await uploadFiles('defects', result.id, 'videos', videos.value)
     successMessage.value = 'Заявка на ремонт отправлена.'
     problemDescription.value = ''
+    requestNode.value = ''; requestCause.value = ''; requestErrorCode.value = ''
     photos.value = []
     videos.value = []
     clearPreviews()
@@ -1261,6 +1278,10 @@ function formatDateTime(value) {
             <span>Описание неисправности</span>
             <textarea v-model="problemDescription" required rows="4" placeholder="Опишите неисправность"></textarea>
           </label>
+          <div class="vehicle-field--full"><LocalRequestDraft :token="token" kind="repair" :source="problemDescription" :context="selectedVehicleId" :disabled="isSaving" @apply="applyRepairDraft" /></div>
+          <label class="vehicle-field"><span>Узел (если известен)</span><input v-model="requestNode" maxlength="200" /></label>
+          <label class="vehicle-field"><span>Причина отказа (если установлена)</span><input v-model="requestCause" maxlength="4000" /></label>
+          <label class="vehicle-field"><span>Код ошибки (если указан)</span><input v-model="requestErrorCode" maxlength="100" /></label>
           <label class="vehicle-field vehicle-field--full">
             <span>Эксплуатация машины</span>
             <select v-model="requestOperationalState"><option value="operating">Эксплуатация продолжается</option><option value="stopped">Машина остановлена</option></select>
@@ -1396,6 +1417,7 @@ function formatDateTime(value) {
             <template v-if="partsAction !== 'delete'">
               <label v-if="partsAction !== 'complete'">Дата заявки<input v-model="partsActionDraft.date" type="date" :disabled="isSaving" required /></label>
               <label v-if="partsAction !== 'complete'">Номер и описание заявки<textarea v-model="partsActionDraft.description" rows="5" maxlength="5000" :disabled="isSaving" required></textarea></label>
+              <LocalRequestDraft v-if="partsAction !== 'complete'" :key="partsAction + partsActionRowId + partsActionItemId" :token="token" kind="parts" :source="partsActionDraft.description" :context="partsActionRowId" :disabled="isSaving" @apply="applyPartsDraft" />
               <label v-if="partsAction !== 'complete'" class="parts-completed-toggle"><input v-model="partsActionDraft.completed" type="checkbox" :disabled="isSaving" />Выполнено</label>
               <label v-if="partsActionDraft.completed">Дата выполнения<input v-model="partsActionDraft.completedDate" type="date" :min="partsActionDraft.date" :disabled="isSaving" required /></label>
             </template>
@@ -1452,6 +1474,7 @@ function formatDateTime(value) {
 
             <section class="repair-fault-panel" aria-label="Неисправность">
               <div><h3>Неисправность</h3><p>{{ defect.symptoms || defect.failureReason || 'Описание не указано.' }}</p></div>
+              <LocalAdvicePanel :token="token" :context="isLoading || isSaving" :url="`/api/local-advice/defects/${defect.id}/recurrence`" title="Проверить риск повторения" />
               <div class="repair-timeline-media">
                 <button v-if="defect.photos?.length" class="secondary-button" type="button" @click="openRepairMediaCollection(defect, 'image')">Фото · {{ defect.photos.length }}</button>
                 <button v-if="defect.videos?.length" class="secondary-button" type="button" @click="openRepairMediaCollection(defect, 'video')">Видео · {{ defect.videos.length }}</button>

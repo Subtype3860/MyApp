@@ -6,6 +6,8 @@ using MyApp.Infrastructure.Db.Entities;
 namespace MyApp.Infrastructure.Db {
     /// <summary>Контекст Entity Framework Core для таблиц и представлений приложения.</summary>
     public class AppDbContext : DbContext {
+        public DbSet<RepairOperationReceipt> RepairOperationReceipts => Set<RepairOperationReceipt>();
+        public DbSet<VehicleShiftOutcome> VehicleShiftOutcomes => Set<VehicleShiftOutcome>();
         public DbSet<VehicleMaintenancePlan> VehicleMaintenancePlans => Set<VehicleMaintenancePlan>();
         public DbSet<VehicleMaintenanceEvent> VehicleMaintenanceEvents => Set<VehicleMaintenanceEvent>();
         public DbSet<GtoReport> GtoReports => Set<GtoReport>();
@@ -68,6 +70,21 @@ namespace MyApp.Infrastructure.Db {
         public AppDbContext(DbContextOptions<AppDbContext> options) : base(options) {}
         /// <summary>Настраивает таблицы, ключи, связи и ограничения моделей Entity Framework Core.</summary>
         protected override void OnModelCreating(ModelBuilder modelBuilder) {
+            modelBuilder.Entity<RepairOperationReceipt>(e => {
+                e.ToTable("repair_operation_receipts"); e.HasKey(x => x.Id);
+                e.Property(x => x.Id).HasColumnName("id"); e.Property(x => x.Owner).HasColumnName("owner");
+                e.Property(x => x.Hash).HasColumnName("hash"); e.Property(x => x.ResultId).HasColumnName("result_id");
+            });
+            modelBuilder.Entity<VehicleShiftOutcome>(entity => {
+                entity.ToTable("vehicle_shift_outcomes");
+                entity.HasKey(x => new { x.VehicleId, x.Date, x.Shift });
+                entity.Property(x => x.VehicleId).HasColumnName("vehicle_id");
+                entity.Property(x => x.Date).HasColumnName("date");
+                entity.Property(x => x.Shift).HasColumnName("shift");
+                entity.Property(x => x.ReadyWholeShift).HasColumnName("ready_whole_shift");
+                entity.Property(x => x.ConfirmedBy).HasColumnName("confirmed_by");
+                entity.Property(x => x.RecordedAt).HasColumnName("recorded_at");
+            });
             modelBuilder.Entity<User>(entity => {
                 entity.ToTable("app_users");
                 entity.HasKey(x => x.Id);
@@ -157,6 +174,7 @@ namespace MyApp.Infrastructure.Db {
                 entity.Property(x => x.UpdatedAt).HasColumnName("updated_at");
             });
             modelBuilder.Entity<VehicleMaintenanceEvent>(entity => {
+                entity.Property(x => x.RequestHash).HasColumnName("request_hash");
                 entity.ToTable("vehicle_maintenance_events"); entity.HasKey(x => x.Id);
                 entity.Property(x => x.Id).HasColumnName("id");
                 entity.Property(x => x.VehicleId).HasColumnName("vehicle_id");

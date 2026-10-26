@@ -12,6 +12,7 @@ public sealed class VehicleMaintenancePlan
 /// <summary>Неизменяемый журнал версий и выполнения ТО; хранит график до и после операции.</summary>
 public sealed class VehicleMaintenanceEvent
 {
+    public string? RequestHash { get; set; }
     public Guid Id { get; set; }
     public Guid VehicleId { get; set; }
     public int Revision { get; set; }

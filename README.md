@@ -1,4 +1,7 @@
-# MyApp
+# Атлас
+
+Нативный Android-клиент находится в [android](android/README.md).
+Текущее покрытие и полный объём офлайн-версии: [матрица Android](docs/android/coverage.md).
 
 Бэкенд состоит из трёх проектов:
 

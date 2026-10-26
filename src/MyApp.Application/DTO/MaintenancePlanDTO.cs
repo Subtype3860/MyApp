@@ -14,5 +14,5 @@ public sealed record MaintenanceDue(
     string Kind, Guid? RunInId, string Name, decimal Interval,
     int EngineNumber, decimal StartHours, decimal CurrentHours,
     decimal DueHours, decimal Elapsed, decimal Remaining, DateOnly ReadingDate, bool IsEstimated = false, DateOnly? SourceDate = null);
-public sealed record MaintenanceCompletion(int Revision, DateOnly Date, MaintenanceEngine[] Engines, string Description, Guid? RunInId = null);
+public sealed record MaintenanceCompletion(int Revision, DateOnly Date, MaintenanceEngine[] Engines, string Description, Guid? RunInId = null, Guid? OperationId = null);
 

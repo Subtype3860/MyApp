@@ -62,7 +62,15 @@ public sealed class MaintenancePlanPersistenceTests
         }
         await using(var db=fixture.CreateContext()){
             Assert.IsType<BadRequestObjectResult>(await Controller(db,id).Complete(id,new(1,date.AddDays(-1),[new(1,600)],"Нет показаний за дату"),default));
-            Assert.IsType<OkObjectResult>(await Controller(db,id).Complete(id,new(1,date.AddDays(1),[new(1,99999)],"Масла заменены"),default));
+            var operationId = Guid.NewGuid();
+            var completion = new MaintenanceCompletion(1,date.AddDays(1),[new(1,99999)],"Масла заменены",OperationId:operationId);
+            Assert.IsType<OkObjectResult>(await Controller(db,id).Complete(id,completion,default));
+            // A lost response followed by a retry must not advance the cycle twice.
+            var retried = Assert.IsType<OkObjectResult>(await Controller(db,id).Complete(id,completion,default));
+            Assert.Equal(2,JsonSerializer.SerializeToElement(retried.Value,new JsonSerializerOptions(JsonSerializerDefaults.Web)).GetProperty("revision").GetInt32());
+            Assert.Equal(2,await db.VehicleMaintenanceEvents.CountAsync());
+            Assert.IsType<ConflictObjectResult>(await Controller(db,id).Complete(id,completion with { Description="Изменённый запрос" },default));
+            Assert.IsType<ConflictObjectResult>(await Controller(db,id).Complete(id,completion with { OperationId=Guid.NewGuid() },default));
         }
         await fixture.ExecuteAsync("INSERT INTO vehicle_hour_readings(id,vehicle_id,reading_date,engine_hours,engine_number,created_by) VALUES(@id,@vehicle,@date,560,1,@actor);",
             ("id",Guid.NewGuid()),("vehicle",id),("date",date.AddDays(2)),("actor",Actor));

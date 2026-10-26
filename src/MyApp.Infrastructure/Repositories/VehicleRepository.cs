@@ -388,8 +388,8 @@ public sealed class VehicleRepository(
         {
             Id = Guid.NewGuid(),
             VehicleId = vehicleId,
-            NodeName = string.Empty,
-            FailureReason = request.Symptoms,
+            NodeName = request.NodeName,
+            FailureReason = request.FailureReason,
             ErrorCode = request.ErrorCode ?? string.Empty,
             Symptoms = request.Symptoms,
             DowntimeStartedAt = request.OperationalState == "operating" ? null : request.DowntimeStartedAt,
@@ -658,8 +658,9 @@ public sealed class VehicleRepository(
         bool administrator,
         CancellationToken cancellationToken)
     {
-        await using var transaction = await dbContext.Database
-            .BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
+        // Mobile sync owns the surrounding transaction so the receipt and work commit together.
+        await using var transaction = dbContext.Database.CurrentTransaction is null
+            ? await dbContext.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken) : null;
         var defect = await dbContext.VehicleDefects
             .AsNoTracking()
             .SingleOrDefaultAsync(
@@ -695,7 +696,7 @@ public sealed class VehicleRepository(
             Status = "pending", RequestedAt = DateTimeOffset.UtcNow
         });
         await dbContext.SaveChangesAsync(cancellationToken);
-        await transaction.CommitAsync(cancellationToken);
+        if (transaction is not null) await transaction.CommitAsync(cancellationToken);
         return entity.Id;
     }
 

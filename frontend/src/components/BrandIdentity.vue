@@ -6,6 +6,6 @@
       />
       <circle cx="12" cy="11" r="3.5" />
     </svg>
-    <span class="brand-identity__text"><strong>АРМ</strong> механика</span>
+    <span class="brand-identity__text"><strong>Атлас</strong></span>
   </span>
 </template>

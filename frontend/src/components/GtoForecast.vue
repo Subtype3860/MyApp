@@ -4,6 +4,8 @@ import { buildForecastRows, climateLabels, currentStateLabel, forecastGroups, fo
 import { formatReportDate, vehicleTitle, localDate } from '../utils/shiftReport'
 import { createGtoForecastPdf } from '../utils/gtoForecastPdf'
 import FleetActionMenu from './FleetActionMenu.vue'
+import LocalAdvicePanel from './LocalAdvicePanel.vue'
+import ShiftOutcome from './ShiftOutcome.vue'
 
 const props = defineProps({ token: { type: String, required: true } })
 const selection = nextForecastSelection()
@@ -322,6 +324,8 @@ onBeforeUnmount(()=>{clearTimeout(saveTimer);void persistReport();controller?.ab
       <section v-for="group in visibleGroups" :key="group.name" class="gto-group">
         <h3>{{ group.name }}</h3>
         <article v-for="row in group.rows" :key="row.vehicle.id" class="gto-panel gto-row">
+          <LocalAdvicePanel v-if="!viewingHistory" :token="token" :context="loading" :url="`/api/local-advice/vehicles/${row.vehicle.id}/readiness?date=${date}&shift=${shift}`" title="Локальная рекомендация к смене" />
+          <ShiftOutcome v-if="canEdit && date < localDate(new Date())" :token="token" :vehicle-id="row.vehicle.id" :date="date" :shift="shift" />
           <header><h4>{{ vehicleTitle(row.vehicle) }}</h4><span>{{ currentStateLabel(row.currentState) }}</span></header>
           <p class="gto-hint">Наработка: <template v-for="(hours,index) in (engineHoursText(row) || 'не указана').split(' / ')" :key="index"><template v-if="index"> / </template><strong>{{ hours }}</strong></template> м/ч · Начало простоя: {{ row.forecast !== 'healthy' && row.downtimeStartedAt ? new Date(row.downtimeStartedAt).toLocaleDateString('ru-RU') : 'не указано' }}</p>
           <div class="gto-engines">

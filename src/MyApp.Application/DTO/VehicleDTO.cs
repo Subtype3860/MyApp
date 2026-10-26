@@ -42,7 +42,9 @@ public sealed record VehicleDefectRequest(
     string? ErrorCode,
     string Symptoms,
     DateTimeOffset? DowntimeStartedAt,
-    string OperationalState = "stopped");
+    string OperationalState = "stopped",
+    string NodeName = "",
+    string FailureReason = "");
 
 /// <summary>
 /// Неисправность техники с прикреплёнными фото- и видеовложениями и

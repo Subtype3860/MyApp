@@ -130,7 +130,6 @@ onMounted(load)
     <p v-if="!canManage">Изменять график и регистрировать выполнение могут механики, старшие механики и администраторы.</p>
     <label>Название графика<input v-model.trim="draft.name" maxlength="200" required /></label>
     <div class="maintenance-presets"><span>Заполнить цикл:</span><button v-for="(item,index) in maintenancePresets" :key="item.name" type="button" class="secondary-button" @click="preset(index)">{{item.name}}</button></div>
-    <h3 class="maintenance-steps-heading">Виды ТО по порядку цикла</h3>
     <ol class="maintenance-steps">
      <li v-for="(step,index) in draft.steps" :key="index"><span>{{index+1}}</span><label><span class="maintenance-step-label">Вид ТО</span><input v-model.trim="step.name" :aria-label="'Вид ТО, шаг '+(index+1)" required maxlength="100" /></label><button type="button" class="secondary-button" :aria-label="'Удалить шаг '+(index+1)" :disabled="draft.steps.length===1" @click="removeStep(index)">×</button></li>
     </ol>

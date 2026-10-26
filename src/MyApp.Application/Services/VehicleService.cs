@@ -230,7 +230,9 @@ public sealed class VehicleService(
                 request with
                 {
                     ErrorCode = Clean(request.ErrorCode),
-                    Symptoms = symptoms
+                    Symptoms = symptoms,
+                    NodeName = Clean(request.NodeName),
+                    FailureReason = Clean(request.FailureReason)
                 },
                 createdBy,
                 cancellationToken),
@@ -754,6 +756,8 @@ public sealed class VehicleService(
         string symptoms,
         DateTimeOffset? downtimeStartedAt) =>
         ValidateText(symptoms, "Симптомы")
+        ?? (Clean(request.NodeName).Length > 200 || Clean(request.FailureReason).Length > 4000
+            ? "Узел: до 200 символов; причина отказа: до 4000 символов." : null)
         ?? (Clean(request.ErrorCode).Length > 100
             ? "Код ошибки не должен превышать 100 символов."
             : request.OperationalState is not ("operating" or "stopped")

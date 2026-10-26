@@ -1,4 +1,4 @@
-﻿
+
 Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 18
 VisualStudioVersion = 18.6.11819.183
@@ -10,6 +10,8 @@ EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MyApp.Infrastructure", "MyApp.Infrastructure\MyApp.Infrastructure.csproj", "{D95F217A-4D05-045B-0843-7F59A85CC609}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MyApp.Infrastructure.Tests", "MyApp.Infrastructure.Tests\MyApp.Infrastructure.Tests.csproj", "{8D9F6542-6B57-4E1C-8E57-B9E8AA0DAA52}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MyApp.LocalAdvice.Evaluation", "MyApp.LocalAdvice.Evaluation\MyApp.LocalAdvice.Evaluation.csproj", "{605A407F-78CA-48AF-866A-4E0280365A24}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -33,6 +35,10 @@ Global
 		{8D9F6542-6B57-4E1C-8E57-B9E8AA0DAA52}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{8D9F6542-6B57-4E1C-8E57-B9E8AA0DAA52}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{8D9F6542-6B57-4E1C-8E57-B9E8AA0DAA52}.Release|Any CPU.Build.0 = Release|Any CPU
+		{605A407F-78CA-48AF-866A-4E0280365A24}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{605A407F-78CA-48AF-866A-4E0280365A24}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{605A407F-78CA-48AF-866A-4E0280365A24}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{605A407F-78CA-48AF-866A-4E0280365A24}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

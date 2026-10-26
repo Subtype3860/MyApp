@@ -21,7 +21,7 @@ async function choose(id) {
 </script>
 <template>
   <main class="home-page help-page" :class="{ 'home-page--expanded': navigationCollapsed }">
-    <header class="home-header"><div><p class="eyebrow">СПРАВОЧНИК</p><h1>Помощь</h1><p>Пошаговые инструкции по работе с АРМ механика.</p></div></header>
+    <header class="home-header"><div><p class="eyebrow">СПРАВОЧНИК</p><h1>Помощь</h1><p>Пошаговые инструкции по работе с приложением «Атлас».</p></div></header>
     <label class="help-search">Поиск по справочнику<input v-model="query" type="search" placeholder="Например: КТГ, закупка, пароль" /></label>
     <p role="status" class="help-count">Найдено тем: {{ filtered.length }}</p>
     <div v-if="active" class="help-layout">

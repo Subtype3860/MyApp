@@ -1,4 +1,6 @@
 using System.Security.Claims;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -24,6 +26,9 @@ public sealed class MaintenancePlansController(AppDbContext db, IVehicleService 
     private Task<bool> CanManage(CancellationToken ct) => Manage(ct);
     private async Task<bool> Manage(CancellationToken ct) => Actor != Guid.Empty && (await vehicles.GetVehicleCatalogOptionsAsync(Actor, ct)).CanManage;
     private static MaintenancePlan Read(VehicleMaintenancePlan item) => JsonSerializer.Deserialize<MaintenancePlan>(item.Snapshot, JsonOptions)!;
+
+    [HttpGet("sync-capabilities")]
+    public IActionResult SyncCapabilities() => Ok(new { completionIdempotency = 1 });
 
     [HttpGet]
     public async Task<IActionResult> List(CancellationToken ct)
@@ -142,6 +147,7 @@ public sealed class MaintenancePlansController(AppDbContext db, IVehicleService 
     public async Task<IActionResult> Complete(Guid vehicleId, MaintenanceCompletion request, CancellationToken ct)
     {
         if (!await CanManage(ct)) return Forbid();
+        if (request.OperationId == Guid.Empty) return BadRequest(new { message = "Некорректный идентификатор операции." });
         var vehicle = (await vehicles.GetVehiclesAsync(ct)).FirstOrDefault(v => v.Id == vehicleId);
         if (vehicle is null) return NotFound();
         if (request.Date == default || request.Date > Today ||
@@ -149,6 +155,22 @@ public sealed class MaintenancePlansController(AppDbContext db, IVehicleService 
             return BadRequest(new { message = "Укажите дату и описание выполненного ТО." });
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
         await Lock(vehicleId, ct);
+        // Keep deduplication and the business write in the same transaction. A retry after
+        // a lost response must return the original result, even after subsequent edits.
+        var requestHash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(
+            JsonSerializer.Serialize(new { vehicleId, Actor, request.Revision, request.Date,
+                request.Description, request.RunInId }, JsonOptions))));
+        if (request.OperationId is { } operationId)
+        {
+            await db.Database.ExecuteSqlInterpolatedAsync($"SELECT pg_advisory_xact_lock(hashtextextended({operationId.ToString()}, 228))", ct);
+            var previous = await db.VehicleMaintenanceEvents.AsNoTracking().SingleOrDefaultAsync(e => e.Id == operationId, ct);
+            if (previous is not null)
+            {
+                if (previous.RequestHash != requestHash || previous.VehicleId != vehicleId || previous.CreatedBy != Actor)
+                    return Conflict(new { message = "Идентификатор операции уже использован для других данных." });
+                return Ok(new { previous.Revision });
+            }
+        }
         var stored = await db.VehicleMaintenancePlans.SingleOrDefaultAsync(p => p.VehicleId == vehicleId, ct);
         if (stored is null) return NotFound();
         if (stored.Revision != request.Revision) return VersionConflict();
@@ -168,7 +190,7 @@ public sealed class MaintenancePlansController(AppDbContext db, IVehicleService 
             return BadRequest(new { message = "Показания ТО превышают показания, записанные на более позднюю дату." });
         var next = MaintenancePlanner.Complete(plan, request);
         var name = runIn is null ? plan.Steps[plan.NextStepIndex].Name : "Обкаточное ТО: " + runIn.Reason;
-        Record(stored, next, runIn is null ? "scheduled" : "run-in", name + ". " + request.Description.Trim(), request.Date, request.Engines);
+        Record(stored, next, runIn is null ? "scheduled" : "run-in", name + ". " + request.Description.Trim(), request.Date, request.Engines, request.OperationId, requestHash);
         await db.SaveChangesAsync(ct);
         await transaction.CommitAsync(ct);
         return Ok(new { stored.Revision });
@@ -177,7 +199,7 @@ public sealed class MaintenancePlansController(AppDbContext db, IVehicleService 
     private async Task Lock(Guid id, CancellationToken ct) =>
         await db.Database.ExecuteSqlInterpolatedAsync($"SELECT pg_advisory_xact_lock(hashtextextended({id.ToString()}, 227))", ct);
     private IActionResult VersionConflict() => Conflict(new { message = "График изменён другим пользователем. Обновите данные перед сохранением." });
-    private void Record(VehicleMaintenancePlan stored, MaintenancePlan plan, string kind, string description, DateOnly date, MaintenanceEngine[] readings)
+    private void Record(VehicleMaintenancePlan stored, MaintenancePlan plan, string kind, string description, DateOnly date, MaintenanceEngine[] readings, Guid? operationId = null, string? requestHash = null)
     {
         var before = stored.Snapshot;
         stored.Revision++;
@@ -185,7 +207,7 @@ public sealed class MaintenancePlansController(AppDbContext db, IVehicleService 
         stored.UpdatedAt = DateTimeOffset.UtcNow;
         stored.UpdatedBy = Actor;
         db.VehicleMaintenanceEvents.Add(new VehicleMaintenanceEvent {
-            Id = Guid.NewGuid(), VehicleId = stored.VehicleId, Revision = stored.Revision, Kind = kind,
+            Id = operationId ?? Guid.NewGuid(), RequestHash = requestHash, VehicleId = stored.VehicleId, Revision = stored.Revision, Kind = kind,
             Description = description, Date = date, Before = before, After = stored.Snapshot,
             Readings = JsonSerializer.Serialize(readings, JsonOptions), CreatedBy = Actor, CreatedAt = stored.UpdatedAt
         });
