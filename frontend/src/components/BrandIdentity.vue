@@ -5,6 +5,5 @@ import atlasLogo from '../assets/atlas-auth-logo.png'
 <template>
   <span class="brand-identity">
     <img class="brand-identity__logo" :src="atlasLogo" alt="Атлас" width="44" height="44" />
-    <span class="brand-identity__text" aria-hidden="true"><strong>Атлас</strong></span>
   </span>
 </template>
