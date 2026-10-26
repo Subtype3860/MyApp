@@ -1,6 +1,6 @@
 <script setup>
 import { computed, ref } from 'vue'
-import BrandIdentity from './BrandIdentity.vue'
+import atlasAuthLogo from '../assets/atlas-auth-logo.png'
 
 const props = defineProps({
   sessionMessage: {
@@ -61,7 +61,7 @@ async function submitLogin() {
 <template>
   <main class="auth-page">
     <section class="auth-intro" aria-labelledby="auth-heading">
-      <BrandIdentity />
+      <img class="auth-emblem auth-emblem--intro" :src="atlasAuthLogo" alt="Атлас — учёт и обслуживание техники" width="1254" height="1254" />
       <p class="eyebrow">РАБОЧЕЕ ПРОСТРАНСТВО МЕХАНИКА</p>
       <h2 id="auth-heading">Техника<br /><span>под контролем</span></h2>
       <p>
@@ -72,7 +72,7 @@ async function submitLogin() {
       </div>
     </section>
     <section class="auth-card macos-glass-panel" aria-labelledby="login-title">
-      <BrandIdentity />
+      <img class="auth-emblem auth-emblem--card" :src="atlasAuthLogo" alt="Атлас — учёт и обслуживание техники" width="1254" height="1254" />
       <p class="eyebrow">ВХОД В СИСТЕМУ</p>
       <h1 id="login-title">Добро пожаловать</h1>
       <p class="auth-subtitle">Войдите в аккаунт, чтобы продолжить работу.</p>
@@ -126,6 +126,35 @@ async function submitLogin() {
 </template>
 
 <style scoped>
+.auth-emblem {
+  display: block;
+  height: auto;
+  object-fit: contain;
+}
+
+.auth-emblem--intro {
+  width: clamp(180px, 19vw, 250px);
+  margin: 0 0 28px;
+  filter: drop-shadow(0 10px 22px rgb(0 0 0 / 12%));
+}
+
+.auth-intro > .eyebrow {
+  margin-top: 0;
+}
+
+.auth-emblem--card {
+  display: none;
+}
+
+@media (max-width: 760px) {
+  .auth-emblem--card {
+    display: block;
+    width: 154px;
+    max-width: 100%;
+    margin: 0 auto 24px;
+  }
+}
+
 .layout-warning {
   margin: 0;
   padding: 0.65rem 0.8rem;
