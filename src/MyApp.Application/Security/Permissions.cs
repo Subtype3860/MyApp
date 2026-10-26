@@ -13,6 +13,7 @@ public static class Permissions
     public const string AuxiliaryWorksRead = "auxiliary-works.read";
     public const string RequirementsView = "menu.requirements";
     public const string MaintenanceView = "menu.maintenance";
+    public const string TanksPlay = "games.tanks";
 
     public static readonly IReadOnlyList<PermissionDefinition> Catalog =
     [
@@ -39,7 +40,8 @@ public static class Permissions
             new(ShiftReport, "Отчёт за смену"),
             new(GtoReport, "Выход ГТО"),
             new(RequirementsView, "Выписанные требования")
-        ])
+        ]),
+        new(TanksPlay, "Танки — доступ к сетевой игре")
     ];
 
     public static readonly IReadOnlyList<string> All =

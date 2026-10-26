@@ -4,6 +4,7 @@ using MyApp.Application.Common;
 using MyApp.Application.DTO;
 using MyApp.Application.Services;
 using MyApp.Application.Models;
+using MyApp.Application.Security;
 using Xunit;
 
 namespace MyApp.Infrastructure.Tests;
@@ -11,6 +12,34 @@ namespace MyApp.Infrastructure.Tests;
 /// <summary>Тесты отзыва сессий при изменении пользовательских данных.</summary>
 public sealed class UserSessionRevocationTests
 {
+    [Fact]
+    public async Task New_user_has_no_game_admission_and_grant_or_revoke_changes_session_stamp()
+    {
+        User? created = null;
+        var users = DispatchProxy.Create<IUserRepository, WorkParticipationAuthorizationTests.InvocationProxy>();
+        ((WorkParticipationAuthorizationTests.InvocationProxy)(object)users).Handler = (method, args) => method.Name switch {
+            nameof(IUserRepository.UserNameExistsAsync) => Task.FromResult(false),
+            nameof(IUserRepository.AddAsync) => Capture((User)args![0]!),
+            nameof(IUserRepository.SaveChangesAsync) => Task.CompletedTask,
+            _ => throw new Exception(method.Name)
+        };
+        Task Capture(User user) { created = user; return Task.CompletedTask; }
+        var professions = DispatchProxy.Create<IProfessionRepository, WorkParticipationAuthorizationTests.InvocationProxy>();
+        ((WorkParticipationAuthorizationTests.InvocationProxy)(object)professions).Handler = (_, _) => Task.FromResult(true);
+        var result = await new UserService(users, professions, new Passwords()).CreateAsync(new("Test", "Test", "Test", "unused", "unused", Guid.NewGuid()), default);
+        Assert.Equal(ServiceResultStatus.Success, result.Status);
+        Assert.NotNull(created);
+        Assert.DoesNotContain(Permissions.TanksPlay, UserAccess.EffectivePermissions(created));
+        var stamp = created.SessionStamp;
+        var grant = new UpdateUserRequest(created.FirstName, created.MiddleName, created.LastName, created.UserName, null, created.PositionId, "user", [Permissions.TanksPlay]);
+        Assert.Equal(ServiceResultStatus.Success, (await Service(created).UpdateAsync(created.Id, grant, default)).Status);
+        Assert.Contains(Permissions.TanksPlay, UserAccess.EffectivePermissions(created));
+        Assert.NotEqual(stamp, created.SessionStamp);
+        stamp = created.SessionStamp;
+        await Service(created).UpdateAsync(created.Id, grant with { Permissions = [] }, default);
+        Assert.DoesNotContain(Permissions.TanksPlay, UserAccess.EffectivePermissions(created));
+        Assert.NotEqual(stamp, created.SessionStamp);
+    }
     /// <summary>Собирает сервис пользователей с подменёнными зависимостями для теста.</summary>
     private static UserService Service(User user)
     {

@@ -14,6 +14,8 @@ import TablesView from './components/TablesView.vue'
 import VehicleJournalView from './components/VehicleJournalView.vue'
 import AuxiliaryWorksView from './components/AuxiliaryWorksView.vue'
 import IdleSessionWarning from './components/IdleSessionWarning.vue'
+import TanksView from './components/TanksView.vue'
+import MechanicView from './components/MechanicView.vue'
 
 const TOKEN_KEY = 'myapp.authToken'
 const ROLE_KEY = 'myapp.userRole'
@@ -64,7 +66,8 @@ function navigate(page) {
   closeMobileMenu()
 }
 const hasReportLink = new URLSearchParams(window.location.search).has('reportWork')
-const currentPage = ref(hasReportLink ? (new URLSearchParams(window.location.search).get('reportSource') === 'auxiliary' ? 'auxiliary-works' : 'reports') : 'home')
+const linkedGame = new URLSearchParams(window.location.search).get('game')
+const currentPage = ref(['mechanic', 'tanks'].includes(linkedGame) ? linkedGame : hasReportLink ? (new URLSearchParams(window.location.search).get('reportSource') === 'auxiliary' ? 'auxiliary-works' : 'reports') : 'home')
 const currentTable = ref('v_full_ost')
 const currentSettings = ref('users')
 const currentVehicleSection = ref(hasReportLink ? 'report' : 'defects')
@@ -312,6 +315,8 @@ function updateSelectedComponentRows(rows) {
         :selected-section="currentSettings"
         :token="token"
       />
+      <TanksView v-else-if="currentPage === 'tanks'" :token="token" :navigation-collapsed="isNavigationCollapsed" />
+      <MechanicView v-else-if="currentPage === 'mechanic'" :navigation-collapsed="isNavigationCollapsed" />
       <HelpView v-else-if="currentPage === 'help'" :navigation-collapsed="isNavigationCollapsed" />
       <ProfileView
         v-else-if="currentPage === 'profile'"

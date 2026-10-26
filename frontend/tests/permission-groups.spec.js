@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test'
 const catalog = [
+  {key:'games.tanks',label:'Танки — доступ к сетевой игре',children:[]},
   {key:'menu.tables',label:'Таблицы',children:[{key:'tables.v_full_ost',label:'Остатки на складе'},{key:'tables.v_meh_ost',label:'Остатки механиков'},{key:'tables.v_workers',label:'Работники'},{key:'tables.selected_components',label:'Выбранные компоненты'}]},
   {key:'menu.vehicles',label:'Транспорт',children:[{key:'vehicles.repair_request',label:'Заявка на ремонт'},{key:'vehicles.repair',label:'Ремонт'},{key:'vehicles.repair_history',label:'История ремонта'},{key:'vehicles.maintenance_execution',label:'Проведение ТО'},{key:'vehicles.parts_request',label:'Заявка на закупку ЗЧ'},{key:'vehicles.hours',label:'Моточасы'}]},
   {key:'menu.reports',label:'Отчёты',children:[{key:'reports.shift',label:'Отчёт за смену'},{key:'reports.gto',label:'Выход ГТО'}]},

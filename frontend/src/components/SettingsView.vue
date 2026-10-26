@@ -504,6 +504,7 @@ watch(
         <fieldset class="user-permissions">
           <legend>Что пользователь может просматривать</legend>
           <small>Главная страница и собственный профиль доступны всем. Настройки доступны только администратору.</small>
+          <small>Допуск «Танки — доступ к сетевой игре» выдаётся отдельно. Снятие права отключает пользователя от арены; после изменения прав потребуется повторный вход.</small>
           <div v-for="menu in permissionCatalog" :key="menu.key" class="permission-group" role="group" :aria-label="menu.label">
             <label class="permission-option permission-option--menu">
               <input

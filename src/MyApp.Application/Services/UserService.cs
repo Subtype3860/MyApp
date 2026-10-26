@@ -79,7 +79,7 @@ public sealed class UserService(
             PasswordHash = passwordHasher.Hash(temporaryPassword),
             PositionId = request.ProfessionId,
             Role = "user",
-            Permissions = string.Join(',', Permissions.All),
+            Permissions = string.Join(',', Permissions.All.Where(permission => permission != Permissions.TanksPlay)),
             CreatedAt = DateTime.UtcNow
         };
 
