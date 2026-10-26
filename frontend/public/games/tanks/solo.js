@@ -33,5 +33,5 @@ pad.addEventListener('pointerdown',e=>{if(mode!=='playing'||stickPointer!==null)
 $('fire').addEventListener('pointerdown',e=>{if(mode!=='playing')return;e.preventDefault();firePointer=e.pointerId;mouse=null;firing=true;$('fire').setPointerCapture(e.pointerId);});function releaseFire(e){if(e.pointerId===firePointer){firePointer=null;firing=false;}}for(const type of ['pointerup','pointercancel','lostpointercapture'])$('fire').addEventListener(type,releaseFire);
 window.addEventListener('blur',()=>{resetInput();pause();});document.addEventListener('visibilitychange',()=>{if(document.hidden){resetInput();pause();}});
 canvas.addEventListener('webglcontextlost',e=>{e.preventDefault();cancelAnimationFrame(raf);resetInput();$('unsupported').hidden=false;$('overlay').hidden=true;});
-raf=requestAnimationFrame(frame);updateHud();
+raf=requestAnimationFrame(frame);updateHud();$('start').disabled=false;$('start').textContent='В бой ↗';
 }
