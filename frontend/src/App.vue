@@ -3,6 +3,7 @@ import { nextTick, onBeforeUnmount, ref } from 'vue'
 import BrandIdentity from './components/BrandIdentity.vue'
 import AuthLogin from './components/AuthLogin.vue'
 import HomeView from './components/HomeView.vue'
+import HelpView from './components/HelpView.vue'
 import MaintenanceView from './components/MaintenanceView.vue'
 import NavigationSidebar from './components/NavigationSidebar.vue'
 import ProfileView from './components/ProfileView.vue'
@@ -11,6 +12,10 @@ import SelectedComponentsView from './components/SelectedComponentsView.vue'
 import SettingsView from './components/SettingsView.vue'
 import TablesView from './components/TablesView.vue'
 import VehicleJournalView from './components/VehicleJournalView.vue'
+import AuxiliaryWorksView from './components/AuxiliaryWorksView.vue'
+import IdleSessionWarning from './components/IdleSessionWarning.vue'
+import TanksView from './components/TanksView.vue'
+import MechanicView from './components/MechanicView.vue'
 
 const TOKEN_KEY = 'myapp.authToken'
 const ROLE_KEY = 'myapp.userRole'
@@ -25,7 +30,7 @@ const legacyPermissionMap = {
   'requirements.view': 'menu.requirements',
   'maintenance.view': 'menu.maintenance',
 }
-const parsePermissions = (value) => {
+const /** Разбирает сохранённый набор разрешений пользователя. */ parsePermissions = (value) => {
   try {
     const permissions = JSON.parse(value || '[]')
     return [
@@ -49,24 +54,29 @@ const permissions = ref(parsePermissions(storedPermissions))
 const isNavigationCollapsed = ref(false)
 const mobileMenuOpen = ref(false)
 const mobileMenuButton = ref(null)
+/** Закрывает боковое меню на мобильном экране. */
 function closeMobileMenu() {
   const wasOpen = mobileMenuOpen.value
   mobileMenuOpen.value = false
   if (wasOpen) nextTick(() => mobileMenuButton.value?.focus())
 }
+/** Переключает активный раздел приложения. */
 function navigate(page) {
   currentPage.value = page
   closeMobileMenu()
 }
-const currentPage = ref('home')
+const hasReportLink = new URLSearchParams(window.location.search).has('reportWork')
+const linkedGame = new URLSearchParams(window.location.search).get('game')
+const currentPage = ref(['mechanic', 'tanks'].includes(linkedGame) ? linkedGame : hasReportLink ? (new URLSearchParams(window.location.search).get('reportSource') === 'auxiliary' ? 'auxiliary-works' : 'reports') : 'home')
 const currentTable = ref('v_full_ost')
 const currentSettings = ref('users')
-const currentVehicleSection = ref('defects')
+const currentVehicleSection = ref(hasReportLink ? 'report' : 'defects')
 const selectedComponentRows = ref([])
 const selectedResponsibleEmployee = ref(null)
 const profileVersion = ref(0)
 const sessionExpiredMessage = ref('')
 
+/** Сохраняет данные успешного входа и открывает приложение. */
 function handleAuthenticated(authData) {
   localStorage.setItem(TOKEN_KEY, authData.token)
   localStorage.setItem(ROLE_KEY, authData.role)
@@ -80,7 +90,8 @@ function handleAuthenticated(authData) {
   sessionExpiredMessage.value = ''
 }
 
-function handleLogout() {
+/** Очищает локальные данные пользовательской сессии. */
+function clearSession() {
   closeMobileMenu()
   localStorage.removeItem(TOKEN_KEY)
   localStorage.removeItem(ROLE_KEY)
@@ -94,10 +105,29 @@ function handleLogout() {
   selectedResponsibleEmployee.value = null
 }
 
+/** Завершает пользовательскую сессию и возвращает форму входа. */
+async function handleLogout() {
+  if (!token.value) return
+  try {
+    const response = await fetch('/api/auth/logout', { method: 'POST', headers: { Authorization: `Bearer ${token.value}` } })
+    if (!response.ok && response.status !== 401) throw new Error('Не удалось завершить сессию на сервере. Повторите выход.')
+    clearSession()
+  } catch (error) {
+    window.alert(error.message || 'Не удалось завершить сессию на сервере. Повторите выход.')
+  }
+}
+
+/** Сбрасывает сессию после отклонения токена сервером. */
 function handleSessionExpired(event) {
   sessionExpiredMessage.value =
     event.detail?.message ||
     'Срок действия сессии истёк. Требуется повторная авторизация.'
+  clearSession()
+}
+
+/** Завершает сессию после превышения времени бездействия. */
+function handleIdleExpired() {
+  sessionExpiredMessage.value = ''
   handleLogout()
 }
 
@@ -106,6 +136,7 @@ onBeforeUnmount(() => {
   window.removeEventListener('myapp:session-expired', handleSessionExpired)
 })
 
+/** Открывает выбранное табличное представление. */
 function openTable(tableName) {
   closeMobileMenu()
   if (
@@ -118,28 +149,33 @@ function openTable(tableName) {
   currentPage.value = 'tables'
 }
 
+/** Открывает выбранный раздел настроек. */
 function openSettings(section) {
   closeMobileMenu()
   currentSettings.value = section
   currentPage.value = 'settings'
 }
 
+/** Переключает раздел работы с техникой. */
 function openVehicleSection(section) {
   closeMobileMenu()
   currentVehicleSection.value = section
-  currentPage.value = 'vehicles'
+  currentPage.value = ['report', 'gtoForecast'].includes(section) ? 'reports' : 'vehicles'
 }
 
+/** Открывает список материалов, выбранных для требования. */
 function openSelectedComponents() {
   closeMobileMenu()
   currentPage.value = 'selected-components'
 }
 
+/** Добавляет материалы выбранного шаблона ТО в требование. */
 function applyMaintenanceTemplate(rows) {
   currentTable.value = 'v_full_ost'
   updateSelectedComponentRows(rows)
 }
 
+/** Обновляет выбранного ответственного сотрудника. */
 function updateResponsibleEmployee(employee) {
   if (
     employee &&
@@ -152,6 +188,7 @@ function updateResponsibleEmployee(employee) {
   selectedResponsibleEmployee.value = employee
 }
 
+/** Обновляет выбранные материалы и их количества. */
 function updateSelectedComponentRows(rows) {
   selectedComponentRows.value = rows
   const sourceTable = rows[0]?.__sourceTable
@@ -172,6 +209,7 @@ function updateSelectedComponentRows(rows) {
   />
 
   <div v-else class="app-shell">
+    <IdleSessionWarning @expired="handleIdleExpired" />
     <header class="mobile-topbar" :inert="mobileMenuOpen">
       <BrandIdentity />
       <button
@@ -260,8 +298,10 @@ function updateSelectedComponentRows(rows) {
         @apply-template="applyMaintenanceTemplate"
         @show-selected="openSelectedComponents"
       />
+      <AuxiliaryWorksView v-else-if="currentPage === 'auxiliary-works'" :token="token" :navigation-collapsed="isNavigationCollapsed" />
+
       <VehicleJournalView
-        v-else-if="currentPage === 'vehicles'"
+        v-else-if="currentPage === 'vehicles' || currentPage === 'reports'"
         :navigation-collapsed="isNavigationCollapsed"
         :section="currentVehicleSection"
         :token="token"
@@ -275,6 +315,9 @@ function updateSelectedComponentRows(rows) {
         :selected-section="currentSettings"
         :token="token"
       />
+      <TanksView v-else-if="currentPage === 'tanks'" :token="token" :navigation-collapsed="isNavigationCollapsed" />
+      <MechanicView v-else-if="currentPage === 'mechanic'" :navigation-collapsed="isNavigationCollapsed" />
+      <HelpView v-else-if="currentPage === 'help'" :navigation-collapsed="isNavigationCollapsed" />
       <ProfileView
         v-else-if="currentPage === 'profile'"
         :navigation-collapsed="isNavigationCollapsed"

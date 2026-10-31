@@ -5,12 +5,14 @@ using MyApp.Infrastructure.Db;
 
 namespace MyApp.Infrastructure.Repositories;
 
+/// <summary>Доступ к данным настроек и переноса медиафайлов.</summary>
 public sealed class MediaStorageAdministrationRepository(
     AppDbContext db,
     MediaStorageOptions storageOptions) : IMediaStorageAdministrationRepository
 {
     private const short SettingsId = 1;
 
+    /// <summary>Возвращает срок хранения медиа во временных каталогах в днях.</summary>
     public async Task<int> GetRetentionDaysAsync(
         CancellationToken cancellationToken) =>
         await db.MediaStorageSettings
@@ -20,6 +22,7 @@ public sealed class MediaStorageAdministrationRepository(
         ?? throw new InvalidOperationException(
             "Media storage retention settings are missing.");
 
+    /// <summary>Сохраняет срок хранения медиа во временных каталогах.</summary>
     public async Task SetRetentionDaysAsync(
         int retentionDays,
         CancellationToken cancellationToken)
@@ -38,6 +41,7 @@ public sealed class MediaStorageAdministrationRepository(
         }
     }
 
+    /// <summary>Находит временные медиафайлы, готовые к переносу в постоянное хранилище.</summary>
     public async Task<IReadOnlyList<StagedMediaFile>> GetExpiredFilesAsync(
         int retentionDays,
         int batchSize,
@@ -122,6 +126,7 @@ public sealed class MediaStorageAdministrationRepository(
             .ToArray();
     }
 
+    /// <summary>Обновляет путь медиафайла после его переноса.</summary>
     public async Task<bool> UpdateStoragePathAsync(
         StagedMediaFile file,
         string destinationPath,
@@ -171,6 +176,7 @@ public sealed class MediaStorageAdministrationRepository(
         return updated == 1;
     }
 
+    /// <summary>Данные кандидата на перенос из временного медиаархива.</summary>
     private sealed record StagedMediaCandidate(
         string TableName,
         Guid Id,

@@ -7,9 +7,11 @@ using Npgsql;
 
 namespace MyApp.Infrastructure.Repositories;
 
+/// <summary>Доступ к данным подписей сотрудников.</summary>
 public sealed class EmployeeSignatureRepository(
     AppDbContext db) : IEmployeeSignatureRepository
 {
+    /// <summary>Возвращает данные подписи сотрудника.</summary>
     public async Task<EmployeeSignatureResponse?> GetAsync(
         EmployeeSignatureKey employee,
         CancellationToken cancellationToken)
@@ -33,6 +35,7 @@ public sealed class EmployeeSignatureRepository(
                 signature.ContentType);
     }
 
+    /// <summary>Сохраняет подпись сотрудника.</summary>
     public async Task SaveAsync(
         EmployeeSignatureKey employee,
         byte[] content,
@@ -91,6 +94,7 @@ public sealed class EmployeeSignatureRepository(
         await db.SaveChangesAsync(cancellationToken);
     }
 
+    /// <summary>Удаляет подпись сотрудника.</summary>
     public async Task<bool> DeleteAsync(
         EmployeeSignatureKey employee,
         CancellationToken cancellationToken)
@@ -105,6 +109,7 @@ public sealed class EmployeeSignatureRepository(
         return deleted > 0;
     }
 
+    /// <summary>Находит сохранённую подпись по ключу сотрудника.</summary>
     private Task<EmployeeSignatureRecord?> FindSignatureAsync(
         EmployeeSignatureKey employee,
         CancellationToken cancellationToken) =>

@@ -13,6 +13,7 @@ namespace MyApp.Infrastructure.Tests;
 /// </summary>
 public sealed class VehiclePartsCurrentModelPostgreSqlTests
 {
+    /// <summary>Создаёт репозиторий на контексте тестовой схемы.</summary>
     private static VehicleRepository Repo(MyApp.Infrastructure.Db.AppDbContext db)
     {
         var options = new MediaStorageOptions(
@@ -21,6 +22,7 @@ public sealed class VehiclePartsCurrentModelPostgreSqlTests
         return new VehicleRepository(db, new MediaStorageService(options), options);
     }
 
+    /// <summary>Проверяет операции с заявкой на запчасти на этапе ожидания деталей.</summary>
     [Xunit.Fact]
     [Xunit.Trait("Category", "Integration")]
     public async Task Awaiting_parts_allows_create_update_read_and_delete()
@@ -44,7 +46,8 @@ public sealed class VehiclePartsCurrentModelPostgreSqlTests
         var revised = request with {
             RequestNumber = "PR-101",
             Description = "Two hydraulic filters",
-            RequiredParts = "3 pcs"
+            RequiredParts = "3 pcs",
+            CompletedDate = new DateOnly(2026, 10, 10)
         };
         Xunit.Assert.True(await repository.UpdatePartsRequestAsync(
             id.Value, revised, CancellationToken.None));
@@ -52,6 +55,7 @@ public sealed class VehiclePartsCurrentModelPostgreSqlTests
             defect, CancellationToken.None));
         Xunit.Assert.Equal("PR-101", changed.RequestNumber);
         Xunit.Assert.Equal("3 pcs", changed.RequiredParts);
+        Xunit.Assert.Equal(new DateOnly(2026, 10, 10), changed.CompletedDate);
 
         Xunit.Assert.True(await repository.DeletePartsRequestAsync(
             id.Value, CancellationToken.None));
@@ -61,6 +65,7 @@ public sealed class VehiclePartsCurrentModelPostgreSqlTests
             defect, CancellationToken.None));
     }
 
+    /// <summary>Проверяет обязательность этапа ожидания запчастей для создания заявки.</summary>
     [Xunit.Fact]
     [Xunit.Trait("Category", "Integration")]
     public async Task Parts_request_requires_awaiting_parts_repair_status()
@@ -84,6 +89,7 @@ public sealed class VehiclePartsCurrentModelPostgreSqlTests
         Xunit.Assert.Equal(1L, await fixture.CountAsync());
     }
 
+    /// <summary>Проверяет ограничение уникальности заявок на запчасти.</summary>
     [Xunit.Fact]
     [Xunit.Trait("Category", "Integration")]
     public async Task Duplicate_parts_request_preserves_existing_uniqueness_rule()

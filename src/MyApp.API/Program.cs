@@ -4,6 +4,8 @@ using MyApp.Application;
 using MyApp.Application.Security;
 using MyApp.Application.Storage;
 using MyApp.Infrastructure;
+using MyApp.API.Games;
+using System.Threading.RateLimiting;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -53,6 +55,9 @@ builder.Services.AddHostedService<StagedMediaTransferService>();
 builder.Services.AddJwtAuthentication(builder.Configuration);
 builder.Services.AddAuthorization(options =>
 {
+    options.AddPolicy(Permissions.AuxiliaryWorksView, policy => policy.RequireClaim("permission", Permissions.AuxiliaryWorksView));
+    options.AddPolicy(Permissions.AuxiliaryWorksRead, policy => policy.RequireAuthenticatedUser().RequireAssertion(context =>
+        context.User.HasClaim("permission", Permissions.AuxiliaryWorksView) || (context.User.HasClaim("permission", "vehicles.report") || context.User.HasClaim("permission", Permissions.ShiftReport))));
     options.AddPolicy(Permissions.TablesView, policy =>
         policy.RequireClaim("permission", Permissions.TablesView));
     options.AddPolicy(Permissions.VehiclesView, policy =>
@@ -64,6 +69,19 @@ builder.Services.AddAuthorization(options =>
 });
 builder.Services.AddControllers();
 builder.Services.AddMemoryCache();
+builder.Services.AddSingleton(TimeProvider.System);
+builder.Services.AddScoped<ITanksAccess, TanksAccess>();
+builder.Services.AddSingleton<TanksTickets>();
+builder.Services.AddSingleton<TanksArena>();
+builder.Services.AddSingleton<TanksServer>();
+builder.Services.AddHostedService<TanksTicker>();
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = 429;
+    options.AddPolicy("tanks", context => RateLimitPartition.GetFixedWindowLimiter(
+        context.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? context.Connection.RemoteIpAddress?.ToString() ?? "anonymous",
+        _ => new FixedWindowRateLimiterOptions { PermitLimit = 20, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
+});
 
 var app = builder.Build();
 
@@ -74,7 +92,14 @@ if (app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 app.UseAuthentication();
+app.UseRateLimiter();
 app.UseAuthorization();
+var gameSockets = new WebSocketOptions { KeepAliveInterval = TimeSpan.FromSeconds(15), KeepAliveTimeout = TimeSpan.FromSeconds(15) };
+foreach (var origin in builder.Configuration.GetSection("Tanks:AllowedOrigins").Get<string[]>() ?? ["https://boora.ru", "https://www.boora.ru"])
+    gameSockets.AllowedOrigins.Add(origin);
+if (app.Environment.IsDevelopment())
+    foreach (var origin in new[] { "http://localhost:5150", "http://127.0.0.1:5150", "http://localhost:5296" }) gameSockets.AllowedOrigins.Add(origin);
+app.UseWebSockets(gameSockets);
 
 await app.Services.InitializeDatabaseAsync();
 

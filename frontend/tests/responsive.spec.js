@@ -9,6 +9,7 @@ const vehicles = Array.from({ length: 12 }, (_, index) => ({
   stateNumber: `А${index}АА`,
   vin: `VIN${index}`,
 }))
+/** Настраивает ответы тестового API для проверки интерфейса. */
 async function mockApi(page, { status = 200, items = vehicles } = {}) {
   await page.route('**/api/**', (route) => {
     const path = new URL(route.request().url()).pathname
@@ -19,6 +20,7 @@ async function mockApi(page, { status = 200, items = vehicles } = {}) {
     return route.fulfill({ json: [] })
   })
 }
+/** Подготавливает данные авторизации в браузере теста. */
 async function authenticate(page, role = 'Administrator', permissions = []) {
   await page.addInitScript(
     ({ role, permissions }) => {
@@ -29,6 +31,7 @@ async function authenticate(page, role = 'Administrator', permissions = []) {
     { role, permissions },
   )
 }
+/** Проверяет отсутствие горизонтального переполнения на текущем размере экрана. */
 async function expectNoOverflow(page) {
   expect(
     await page.evaluate(
@@ -52,8 +55,8 @@ for (const width of [320, 390, 768, 1440]) {
     ).toBeVisible()
     await expectNoOverflow(page)
     await expect(
-      page.locator('.dashboard-metric').first().locator('strong'),
-    ).toHaveText('12')
+      page.getByRole('heading', { name: 'Ближайшее ТО', exact: true }),
+    ).toBeVisible()
     if (width > 760) {
       await expect.poll(() => page.locator('.sidebar').evaluate(el => Math.round(el.getBoundingClientRect().width))).toBe(268)
     }
@@ -159,11 +162,12 @@ test('API error is recoverable and does not display fake zero metrics', async ({
   await page.goto('/')
   await expect(page.getByRole('alert')).toContainText('Не удалось загрузить')
   await expect(
-    page.locator('.dashboard-metric').first().locator('strong'),
-  ).toHaveText('—')
+    page.locator('.dashboard-metric'),
+  ).toHaveCount(0)
   await page.route('**/api/vehicles', (route) =>
     route.fulfill({ json: vehicles }),
   )
+  await page.getByLabel('Меню парка техники').click()
   await page.getByRole('button', { name: 'Обновить' }).click()
   await expect(
     page.getByRole('heading', { name: 'Sany SET 150' }),
@@ -177,4 +181,9 @@ test('expired session returns to login', async ({ page }) => {
     page.getByRole('heading', { name: 'Добро пожаловать' }),
   ).toBeVisible()
   await expect(page.getByRole('alert')).toContainText('повторная авторизация')
+  expect(await page.evaluate(() => [
+    localStorage.getItem('myapp.authToken'),
+    localStorage.getItem('myapp.userRole'),
+    localStorage.getItem('myapp.userPermissions'),
+  ])).toEqual([null, null, null])
 })

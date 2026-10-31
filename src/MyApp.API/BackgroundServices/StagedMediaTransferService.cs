@@ -5,6 +5,7 @@ using Microsoft.Extensions.Hosting;
 
 namespace MyApp.API.BackgroundServices;
 
+/// <summary>Фоновый перенос медиа из временных каталогов в постоянное хранилище.</summary>
 public sealed class StagedMediaTransferService(
     IServiceScopeFactory scopeFactory,
     MediaStorageOptions options,
@@ -13,6 +14,7 @@ public sealed class StagedMediaTransferService(
     private const int BatchSize = 100;
     private static readonly TimeSpan ScanInterval = TimeSpan.FromHours(25);
 
+    /// <summary>Выполняет фоновый цикл переноса медиа до отмены работы приложения.</summary>
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         using var timer = new PeriodicTimer(ScanInterval);
@@ -36,6 +38,7 @@ public sealed class StagedMediaTransferService(
         while (await timer.WaitForNextTickAsync(stoppingToken));
     }
 
+    /// <summary>Переносит файлы, срок хранения которых во временном каталоге истёк.</summary>
     private async Task TransferExpiredFilesAsync(
         CancellationToken cancellationToken)
     {
@@ -78,6 +81,7 @@ public sealed class StagedMediaTransferService(
         }
     }
 
+    /// <summary>Переносит один медиафайл и обновляет его путь в базе данных.</summary>
     private async Task TransferFileAsync(
         IMediaStorageAdministrationRepository repository,
         StagedMediaFile file,
@@ -141,6 +145,7 @@ public sealed class StagedMediaTransferService(
         }
     }
 
+    /// <summary>Выбирает постоянный каталог по типу медиафайла.</summary>
     private string GetDestinationDirectory(string sourcePath)
     {
         if (IsWithin(sourcePath, options.StagingPhotoDirectory))
@@ -156,6 +161,7 @@ public sealed class StagedMediaTransferService(
             $"Staged media path '{sourcePath}' is outside configured staging directories.");
     }
 
+    /// <summary>Проверяет, что путь расположен внутри указанного каталога.</summary>
     private static bool IsWithin(string filePath, string directory)
     {
         var normalizedDirectory = Path.GetFullPath(directory) +

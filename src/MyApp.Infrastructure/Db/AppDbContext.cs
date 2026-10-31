@@ -1,10 +1,20 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
-using MyApp.Domain.Entities;
+using MyApp.Application.Models;
 using MyApp.Infrastructure.Db.Entities;
 
 namespace MyApp.Infrastructure.Db {
+    /// <summary>Контекст Entity Framework Core для таблиц и представлений приложения.</summary>
     public class AppDbContext : DbContext {
+        public DbSet<RepairOperationReceipt> RepairOperationReceipts => Set<RepairOperationReceipt>();
+        public DbSet<VehicleShiftOutcome> VehicleShiftOutcomes => Set<VehicleShiftOutcome>();
+        public DbSet<VehicleMaintenancePlan> VehicleMaintenancePlans => Set<VehicleMaintenancePlan>();
+        public DbSet<VehicleMaintenanceEvent> VehicleMaintenanceEvents => Set<VehicleMaintenanceEvent>();
+        public DbSet<GtoReport> GtoReports => Set<GtoReport>();
+        public DbSet<VehicleEngineSettings> VehicleEngineSettings => Set<VehicleEngineSettings>();
+        public DbSet<GtoUserSettings> GtoUserSettings => Set<GtoUserSettings>();
+        public DbSet<GtoVehicleSettings> GtoVehicleSettings => Set<GtoVehicleSettings>();
+        public DbSet<GtoDefectSettings> GtoDefectSettings => Set<GtoDefectSettings>();
         public DbSet<User> Users => Set<User>();
         public DbSet<Profession> Professions => Set<Profession>();
         public DbSet<GroupCarRecord> VehicleGroups => Set<GroupCarRecord>();
@@ -18,6 +28,7 @@ namespace MyApp.Infrastructure.Db {
         public DbSet<VehicleHourReadingRecord> VehicleHourReadings =>
             Set<VehicleHourReadingRecord>();
         public DbSet<VehicleWorkRecord> VehicleWorks => Set<VehicleWorkRecord>();
+        public DbSet<VehicleWorkParticipantRecord> VehicleWorkParticipants => Set<VehicleWorkParticipantRecord>();
         public DbSet<VehicleWorkPhotoRecord> VehicleWorkPhotos =>
             Set<VehicleWorkPhotoRecord>();
         public DbSet<VehicleDefectPhotoRecord> VehicleDefectPhotos =>
@@ -55,8 +66,25 @@ namespace MyApp.Infrastructure.Db {
             Set<FullStockLegacyRecord>();
         public DbSet<MechanicalStockLegacyRecord> MechanicalStockLegacy =>
             Set<MechanicalStockLegacyRecord>();
+        /// <summary>Создаёт AppDbContext и сохраняет переданные зависимости.</summary>
         public AppDbContext(DbContextOptions<AppDbContext> options) : base(options) {}
+        /// <summary>Настраивает таблицы, ключи, связи и ограничения моделей Entity Framework Core.</summary>
         protected override void OnModelCreating(ModelBuilder modelBuilder) {
+            modelBuilder.Entity<RepairOperationReceipt>(e => {
+                e.ToTable("repair_operation_receipts"); e.HasKey(x => x.Id);
+                e.Property(x => x.Id).HasColumnName("id"); e.Property(x => x.Owner).HasColumnName("owner");
+                e.Property(x => x.Hash).HasColumnName("hash"); e.Property(x => x.ResultId).HasColumnName("result_id");
+            });
+            modelBuilder.Entity<VehicleShiftOutcome>(entity => {
+                entity.ToTable("vehicle_shift_outcomes");
+                entity.HasKey(x => new { x.VehicleId, x.Date, x.Shift });
+                entity.Property(x => x.VehicleId).HasColumnName("vehicle_id");
+                entity.Property(x => x.Date).HasColumnName("date");
+                entity.Property(x => x.Shift).HasColumnName("shift");
+                entity.Property(x => x.ReadyWholeShift).HasColumnName("ready_whole_shift");
+                entity.Property(x => x.ConfirmedBy).HasColumnName("confirmed_by");
+                entity.Property(x => x.RecordedAt).HasColumnName("recorded_at");
+            });
             modelBuilder.Entity<User>(entity => {
                 entity.ToTable("app_users");
                 entity.HasKey(x => x.Id);
@@ -70,6 +98,7 @@ namespace MyApp.Infrastructure.Db {
                 entity.Property(x => x.PositionId).HasColumnName("position").IsRequired();
                 entity.Property(x => x.Role).HasColumnName("role").IsRequired().HasMaxLength(30);
                 entity.Property(x => x.Permissions).HasColumnName("permissions").IsRequired();
+                entity.Property(x => x.SessionStamp).HasColumnName("session_stamp").IsRequired();
                 entity.Property(x => x.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("NOW()");
                 entity.Property(x => x.AvatarContent).HasColumnName("avatar_content");
                 entity.Property(x => x.AvatarContentType)
@@ -103,6 +132,7 @@ namespace MyApp.Infrastructure.Db {
                 entity.Property(x => x.RequestDate)
                     .HasColumnName("request_date")
                     .HasColumnType("date");
+                entity.Property(x => x.CompletedDate).HasColumnName("completed_date").HasColumnType("date");
                 entity.Property(x => x.RequestNumber)
                     .HasColumnName("request_number")
                     .HasMaxLength(100);
@@ -121,6 +151,62 @@ namespace MyApp.Infrastructure.Db {
                 entity.HasKey(x => x.Id);
                 entity.Property(x => x.Id).HasColumnName("id");
                 entity.Property(x => x.FullName).HasColumnName("full_name");
+                entity.Property(x => x.ReportSortOrder).HasColumnName("report_sort_order").HasDefaultValue(0);
+            });
+            modelBuilder.Entity<VehicleEngineSettings>(entity => {
+                entity.ToTable("vehicle_engine_settings"); entity.HasKey(x => new { x.VehicleId, x.EngineNumber });
+                entity.Property(x => x.VehicleId).HasColumnName("vehicle_id");
+                entity.Property(x => x.EngineNumber).HasColumnName("engine_number");
+                entity.Property(x => x.HoursAtReplacement).HasColumnName("hours_at_replacement");
+            });
+            modelBuilder.Entity<GtoUserSettings>(entity => {
+                entity.ToTable("gto_user_settings"); entity.HasKey(x => x.UserId);
+                entity.Property(x => x.UserId).HasColumnName("user_id");
+                entity.Property(x => x.Organisation).HasColumnName("organisation").HasMaxLength(200);
+                entity.Property(x => x.Site).HasColumnName("site").HasMaxLength(200);
+            });
+            modelBuilder.Entity<VehicleMaintenancePlan>(entity => {
+                entity.ToTable("vehicle_maintenance_plans"); entity.HasKey(x => x.VehicleId);
+                entity.Property(x => x.VehicleId).HasColumnName("vehicle_id");
+                entity.Property(x => x.Revision).HasColumnName("revision");
+                entity.Property(x => x.Snapshot).HasColumnName("snapshot").HasColumnType("jsonb");
+                entity.Property(x => x.UpdatedBy).HasColumnName("updated_by");
+                entity.Property(x => x.UpdatedAt).HasColumnName("updated_at");
+            });
+            modelBuilder.Entity<VehicleMaintenanceEvent>(entity => {
+                entity.Property(x => x.RequestHash).HasColumnName("request_hash");
+                entity.ToTable("vehicle_maintenance_events"); entity.HasKey(x => x.Id);
+                entity.Property(x => x.Id).HasColumnName("id");
+                entity.Property(x => x.VehicleId).HasColumnName("vehicle_id");
+                entity.Property(x => x.Revision).HasColumnName("revision");
+                entity.Property(x => x.Kind).HasColumnName("kind");
+                entity.Property(x => x.Description).HasColumnName("description");
+                entity.Property(x => x.Date).HasColumnName("event_date");
+                entity.Property(x => x.Before).HasColumnName("before_snapshot").HasColumnType("jsonb");
+                entity.Property(x => x.After).HasColumnName("after_snapshot").HasColumnType("jsonb");
+                entity.Property(x => x.Readings).HasColumnName("readings").HasColumnType("jsonb");
+                entity.Property(x => x.CreatedBy).HasColumnName("created_by");
+                entity.Property(x => x.CreatedAt).HasColumnName("created_at");
+                entity.HasIndex(x => new { x.VehicleId, x.Revision }).IsUnique();
+            });
+            modelBuilder.Entity<GtoReport>(entity => {
+                entity.ToTable("gto_reports"); entity.HasKey(x => new { x.ReportDate, x.Shift });
+                entity.Property(x => x.ReportDate).HasColumnName("report_date");
+                entity.Property(x => x.Shift).HasColumnName("shift");
+                entity.Property(x => x.Revision).HasColumnName("revision");
+                entity.Property(x => x.Snapshot).HasColumnName("snapshot").HasColumnType("jsonb");
+                entity.Property(x => x.UpdatedBy).HasColumnName("updated_by");
+                entity.Property(x => x.UpdatedAt).HasColumnName("updated_at");
+            });
+            modelBuilder.Entity<GtoVehicleSettings>(entity => {
+                entity.ToTable("gto_vehicle_settings"); entity.HasKey(x => x.VehicleId);
+                entity.Property(x => x.VehicleId).HasColumnName("vehicle_id");
+                entity.Property(x => x.Climate).HasColumnName("climate").HasMaxLength(20);
+            });
+            modelBuilder.Entity<GtoDefectSettings>(entity => {
+                entity.ToTable("gto_defect_settings"); entity.HasKey(x => x.DefectId);
+                entity.Property(x => x.DefectId).HasColumnName("defect_id");
+                entity.Property(x => x.PlannedRelease).HasColumnName("planned_release").HasMaxLength(2000);
             });
             modelBuilder.Entity<TypeCarRecord>(entity => {
                 entity.ToTable("type_car");
@@ -128,6 +214,8 @@ namespace MyApp.Infrastructure.Db {
                 entity.Property(x => x.Id).HasColumnName("id");
                 entity.Property(x => x.FullName).HasColumnName("full_name");
                 entity.Property(x => x.CarGroupId).HasColumnName("car_group_id");
+                entity.Property(x => x.IconPath).HasColumnName("icon_path").HasMaxLength(255);
+                entity.HasOne<GroupCarRecord>().WithMany().HasForeignKey(x => x.CarGroupId).OnDelete(DeleteBehavior.Restrict);
             });
             modelBuilder.Entity<ModelCarRecord>(entity => {
                 entity.ToTable("model_car");
@@ -135,12 +223,15 @@ namespace MyApp.Infrastructure.Db {
                 entity.Property(x => x.Id).HasColumnName("id");
                 entity.Property(x => x.FullName).HasColumnName("full_name");
                 entity.Property(x => x.CarTypeId).HasColumnName("car_type_id");
+                entity.HasOne<TypeCarRecord>().WithMany().HasForeignKey(x => x.CarTypeId).OnDelete(DeleteBehavior.Restrict);
             });
             modelBuilder.Entity<NumberCarRecord>(entity => {
                 entity.ToTable("number_car");
                 entity.HasKey(x => x.Id);
                 entity.Property(x => x.Id).HasColumnName("id");
+                entity.Property(x => x.IsArchived).HasColumnName("is_archived");
                 entity.Property(x => x.CarModeId).HasColumnName("car_mode_id");
+                entity.HasOne<ModelCarRecord>().WithMany().HasForeignKey(x => x.CarModeId).OnDelete(DeleteBehavior.Restrict);
                 entity.Property(x => x.GarageNumber).HasColumnName("gar_number");
                 entity.Property(x => x.StateNumber).HasColumnName("gos_number");
                 entity.Property(x => x.Vin).HasColumnName("vim");
@@ -165,6 +256,7 @@ namespace MyApp.Infrastructure.Db {
                 entity.Property(x => x.ErrorCode).HasColumnName("error_code");
                 entity.Property(x => x.Symptoms).HasColumnName("symptoms");
                 entity.Property(x => x.DowntimeStartedAt).HasColumnName("downtime_started_at");
+                entity.Property(x => x.OperationalState).HasColumnName("operational_state");
                 entity.Property(x => x.AssignedTo).HasColumnName("assigned_to");
                 entity.Property(x => x.RepairStartedAt).HasColumnName("repair_started_at");
                 entity.Property(x => x.CreatedBy).HasColumnName("created_by");
@@ -174,15 +266,20 @@ namespace MyApp.Infrastructure.Db {
             modelBuilder.Entity<VehicleHourReadingRecord>(entity => {
                 entity.Property(x => x.VehicleId).HasColumnName("vehicle_id");
                 entity.Property(x => x.ReadingDate).HasColumnName("reading_date").HasColumnType("date");
+                entity.Property(x => x.ReadingTime).HasColumnName("reading_time").HasColumnType("time without time zone");
                 entity.Property(x => x.EngineHours).HasColumnName("engine_hours");
+                entity.Property(x => x.EngineNumber).HasColumnName("engine_number");
                 entity.Property(x => x.Note).HasColumnName("note");
                 entity.Property(x => x.CreatedBy).HasColumnName("created_by");
             });
             ConfigureCreatedAt(modelBuilder.Entity<VehicleWorkRecord>(), "vehicle_works");
             modelBuilder.Entity<VehicleWorkRecord>(entity => {
                 entity.Property(x => x.VehicleId).HasColumnName("vehicle_id");
+                entity.Property(x => x.WorkKind).HasColumnName("work_kind");
+                entity.Property(x => x.Title).HasColumnName("title");
                 entity.Property(x => x.WorkDate).HasColumnName("work_date").HasColumnType("date");
                 entity.Property(x => x.Description).HasColumnName("description");
+                entity.Property(x => x.Location).HasColumnName("location");
                 entity.Property(x => x.EngineHours).HasColumnName("engine_hours");
                 entity.Property(x => x.Performer).HasColumnName("performer");
                 entity.Property(x => x.Note).HasColumnName("note");
@@ -192,7 +289,24 @@ namespace MyApp.Infrastructure.Db {
                 entity.Property(x => x.RequiredParts).HasColumnName("required_parts");
                 entity.Property(x => x.PerformedBy).HasColumnName("performed_by");
                 entity.Property(x => x.CompletedAt).HasColumnName("completed_at");
+                entity.Property(x => x.OperationalState).HasColumnName("operational_state");
+                entity.Property(x => x.DowntimeStartedAt).HasColumnName("downtime_started_at");
                 entity.Property(x => x.CreatedBy).HasColumnName("created_by");
+            });
+            modelBuilder.Entity<VehicleWorkParticipantRecord>(entity => {
+                entity.ToTable("vehicle_work_participants");
+                entity.HasKey(x => x.Id);
+                entity.Property(x => x.Id).HasColumnName("id");
+                entity.Property(x => x.WorkId).HasColumnName("work_id");
+                entity.Property(x => x.UserId).HasColumnName("user_id");
+                entity.Property(x => x.Status).HasColumnName("status");
+                entity.Property(x => x.RequestedAt).HasColumnName("requested_at");
+                entity.Property(x => x.ReviewedBy).HasColumnName("reviewed_by");
+                entity.Property(x => x.ReviewedAt).HasColumnName("reviewed_at");
+                entity.HasIndex(x => new { x.WorkId, x.UserId }).IsUnique();
+                entity.HasOne<VehicleWorkRecord>().WithMany().HasForeignKey(x => x.WorkId).OnDelete(DeleteBehavior.Cascade);
+                entity.HasOne<User>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Restrict);
+                entity.HasOne<User>().WithMany().HasForeignKey(x => x.ReviewedBy).OnDelete(DeleteBehavior.Restrict);
             });
             ConfigureMedia<VehicleWorkPhotoRecord>(modelBuilder, "vehicle_work_photos",
                 entity => {
@@ -223,6 +337,7 @@ namespace MyApp.Infrastructure.Db {
             ConfigureStockViews(modelBuilder);
         }
 
+        /// <summary>Настраивает хранение требований и их позиций в базе данных.</summary>
         private static void ConfigureRequirementRecords(ModelBuilder modelBuilder) {
             modelBuilder.Entity<ComponentRequirementRecord>(entity => {
                 entity.ToTable("component_requirements");
@@ -251,6 +366,7 @@ namespace MyApp.Infrastructure.Db {
             });
         }
 
+        /// <summary>Настраивает хранение справочника сотрудников и подписей.</summary>
         private static void ConfigureEmployeeRecords(ModelBuilder modelBuilder) {
             modelBuilder.Entity<EmployeeSignatureRecord>(entity => {
                 entity.ToTable("employee_signatures");
@@ -270,12 +386,16 @@ namespace MyApp.Infrastructure.Db {
             });
             modelBuilder.Entity<EmployeeDirectoryRecord>(entity => {
                 entity.HasNoKey();
-                entity.ToView("employees");
-                entity.Property(x => x.FullName).HasColumnName("FullName");
-                entity.Property(x => x.Profession).HasColumnName("Profession");
+                entity.ToSqlQuery("""
+                    SELECT CONCAT_WS(' ', last_name, first_name, NULLIF(patronymic, '')) AS full_name, profession
+                    FROM app_csv_workers
+                    """);
+                entity.Property(x => x.FullName).HasColumnName("full_name");
+                entity.Property(x => x.Profession).HasColumnName("profession");
             });
         }
 
+        /// <summary>Настраивает связи оборудования, интервалов ТО и материалов шаблонов.</summary>
         private static void ConfigureMaintenanceRecords(ModelBuilder modelBuilder) {
             modelBuilder.Entity<MaintenanceEquipmentRecord>(entity => {
                 entity.ToTable("maintenance_equipment");
@@ -303,6 +423,7 @@ namespace MyApp.Infrastructure.Db {
             });
         }
 
+        /// <summary>Настраивает таблицы групп материалов и их состава.</summary>
         private static void ConfigureMaterialGroupRecords(ModelBuilder modelBuilder) {
             modelBuilder.Entity<MaterialGroupRecord>(entity => {
                 entity.ToTable("material_groups");
@@ -320,6 +441,7 @@ namespace MyApp.Infrastructure.Db {
             });
         }
 
+        /// <summary>Настраивает хранение параметров медиаархива.</summary>
         private static void ConfigureMediaStorageSettings(ModelBuilder modelBuilder) {
             modelBuilder.Entity<MediaStorageSettingsRecord>(entity => {
                 entity.ToTable("media_storage_settings");
@@ -332,17 +454,16 @@ namespace MyApp.Infrastructure.Db {
             });
         }
 
+        /// <summary>Настраивает модели чтения складских данных.</summary>
         private static void ConfigureStockViews(ModelBuilder modelBuilder) {
             modelBuilder.Entity<FullStockRecord>(entity => {
                 entity.HasNoKey();
-                // Source views may expose "Количество" as numeric or text.
-                // Normalize it in the SQL query before Npgsql materializes a string.
-                // Keep this as a composable query so the repositories still use LINQ.
+                // Preserve existing DTO column names while reading transactional DB balances.
+                // Quantities are exposed as text for the existing stock DTOs.
                 entity.ToSqlQuery(
                     """
-                    SELECT v."Наименование", v."Ед.изм.",
-                           v."Количество"::text AS "Количество"
-                    FROM v_full_ost AS v
+                    SELECT name AS "Наименование", unit AS "Ед.изм.", quantity::text AS "Количество"
+                    FROM app_stock_balances WHERE source_table = 'v_full_ost'
                     """);
                 entity.Property(x => x.Name).HasColumnName("Наименование");
                 entity.Property(x => x.Unit).HasColumnName("Ед.изм.");
@@ -352,9 +473,8 @@ namespace MyApp.Infrastructure.Db {
                 entity.HasNoKey();
                 entity.ToSqlQuery(
                     """
-                    SELECT v."Наименование", v."Ед.изм.",
-                           v."Количество"::text AS "Количество"
-                    FROM v_meh_ost AS v
+                    SELECT name AS "Наименование", unit AS "Ед.изм.", quantity::text AS "Количество"
+                    FROM app_stock_balances WHERE source_table = 'v_meh_ost'
                     """);
                 entity.Property(x => x.Name).HasColumnName("Наименование");
                 entity.Property(x => x.Unit).HasColumnName("Ед.изм.");
@@ -364,8 +484,7 @@ namespace MyApp.Infrastructure.Db {
                 entity.HasNoKey();
                 entity.ToSqlQuery(
                     """
-                    SELECT v.name, v.amount::text AS amount
-                    FROM full_ost AS v
+                    SELECT name, quantity::text AS amount FROM app_stock_balances WHERE source_table = 'v_full_ost'
                     """);
                 entity.Property(x => x.Name).HasColumnName("name");
                 entity.Property(x => x.Amount).HasColumnName("amount");
@@ -374,14 +493,14 @@ namespace MyApp.Infrastructure.Db {
                 entity.HasNoKey();
                 entity.ToSqlQuery(
                     """
-                    SELECT v.name, v.amount::text AS amount
-                    FROM meh_ost AS v
+                    SELECT name, quantity::text AS amount FROM app_stock_balances WHERE source_table = 'v_meh_ost'
                     """);
                 entity.Property(x => x.Name).HasColumnName("name");
                 entity.Property(x => x.Amount).HasColumnName("amount");
             });
         }
 
+        /// <summary>Настраивает поле времени создания записи.</summary>
         private static EntityTypeBuilder<T> ConfigureCreatedAt<T>(
             EntityTypeBuilder<T> entity,
             string tableName) where T : class {
@@ -394,6 +513,7 @@ namespace MyApp.Infrastructure.Db {
             return entity;
         }
 
+        /// <summary>Настраивает общие поля и связи модели медиафайла.</summary>
         private static void ConfigureMedia<T>(
             ModelBuilder modelBuilder,
             string tableName,

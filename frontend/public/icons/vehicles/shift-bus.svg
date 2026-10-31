@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="320" height="256" viewBox="0 0 320 256" role="img" aria-labelledby="title">
+<title id="title">Автобус</title>
+<g stroke="#151716" stroke-width="6" stroke-linecap="round" stroke-linejoin="round">
+<path d="M30 180V88Q30 70 48 70H255Q270 70 275 88L286 127V184Q286 192 277 192H39Q30 192 30 180Z" fill="#F7BE16"/>
+<rect x="44" y="85" width="35" height="45" rx="3" fill="#505B60"/>
+<rect x="89" y="85" width="35" height="45" rx="3" fill="#505B60"/>
+<rect x="134" y="85" width="35" height="45" rx="3" fill="#505B60"/>
+<rect x="179" y="85" width="35" height="45" rx="3" fill="#505B60"/>
+<path d="M230 85H253Q258 85 260 92L270 130H230Z" fill="#505B60"/>
+<path d="M224 142H254V182H224Z" fill="#505B60"/>
+<path d="M239 144V181M44 147H207M39 181H59M105 181H201M268 181H280" fill="none"/>
+<rect x="31" y="153" width="10" height="15" rx="2" fill="#E9A11B"/>
+<path d="M275 151H285V165H275Z" fill="#FFF0AA"/>
+<path d="M280 117H296V137H289" fill="none"/>
+<circle cx="82" cy="190" r="27" fill="#505B60"/>
+<circle cx="82" cy="190" r="14.6" fill="#F7BE16"/>
+<circle cx="194" cy="190" r="27" fill="#505B60"/>
+<circle cx="194" cy="190" r="14.6" fill="#F7BE16"/>
+</g></svg>

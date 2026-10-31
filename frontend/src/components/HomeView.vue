@@ -1,16 +1,55 @@
 <script setup>
+import { expandPermissions } from "../utils/permissions"
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import UserAvatar from './UserAvatar.vue'
-
+import FleetVehicleEditor from './FleetVehicleEditor.vue'
+import FleetActionMenu from './FleetActionMenu.vue'
+import MaintenanceDashboard from './MaintenanceDashboard.vue'
 const props = defineProps({
   navigationCollapsed: { type: Boolean, required: true },
   token: { type: String, required: true },
-  permissions: { type: Array, default: () => [] },
+  permissions: { type: Array, default: /** Создаёт независимое значение по умолчанию для свойства компонента. */ () => [] },
   isAdmin: { type: Boolean, default: false },
 })
 const emit = defineEmits(['navigate', 'navigate-vehicle'])
-const canView = (permission) =>
-  props.isAdmin || props.permissions.includes(permission)
+const /** Проверяет наличие разрешения на отображение раздела. */ canView = (permission) =>
+  props.isAdmin || expandPermissions(props.permissions).includes(permission)
+const fleetOptions = ref({ canManage: false, groups: [], types: [], models: [] })
+const fleetEditorOpen = ref(false), editingVehicle = ref(null), mutationBusy = ref(false), fleetMessage = ref(''), fleetError = ref('')
+/** Загружает справочники парка и права управления техникой. */
+async function loadFleetOptions() {
+  if (!canView('menu.vehicles')) return
+  try {
+    const response = await fetch('/api/vehicles/fleet-options', { headers: { Authorization: `Bearer ${props.token}` } })
+    if (response.ok) { const data = await response.json(); if (data && !Array.isArray(data)) fleetOptions.value = data }
+  } catch { /* Do not expose editing controls without server permission. */ }
+}
+/** Открывает форму создания или редактирования карточки техники. */
+function openFleetEditor(vehicle = null) {
+  if (!fleetOptions.value.canManage || mutationBusy.value) return
+  editingVehicle.value = vehicle
+  fleetError.value = ''; fleetMessage.value = ''
+  fleetEditorOpen.value = true
+}
+/** Обновляет список техники после сохранения карточки. */
+async function fleetSaved(result) {
+  query.value = ''
+  await Promise.all([loadVehicles(), loadFleetOptions()])
+  fleetMessage.value = result.editing ? 'Изменения техники сохранены.' : 'Техника добавлена в парк.'
+}
+/** Архивирует выбранную технику после подтверждения. */
+async function removeFleetVehicle(vehicle) {
+  if (!fleetOptions.value.canManage || mutationBusy.value) return
+  if (!window.confirm(`Удалить ${vehicle.modelName} № ${vehicle.garageNumber ?? vehicle.stateNumber} из парка? История ремонтов, моточасы и старые отчёты будут сохранены.`)) return
+  mutationBusy.value = true; fleetError.value = ''; fleetMessage.value = ''
+  try {
+    const response = await fetch(`/api/vehicles/${vehicle.id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${props.token}` } })
+    if (!response.ok) { const result = await response.json().catch(() => null); throw new Error(result?.message || 'Не удалось удалить технику из парка.') }
+    await loadVehicles()
+    fleetMessage.value = 'Техника удалена из активного парка. История сохранена.'
+  } catch (failure) { fleetError.value = failure.message }
+  finally { mutationBusy.value = false }
+}
 const vehicles = ref([])
 const loading = ref(false)
 const error = ref('')
@@ -42,32 +81,6 @@ const pageCount = computed(() =>
 const visibleVehicles = computed(() =>
   filtered.value.slice((page.value - 1) * pageSize, page.value * pageSize),
 )
-const metrics = computed(() => [
-  {
-    label: 'Вся техника',
-    value: vehicles.value.length,
-    note: 'единиц в реестре',
-    icon: '▤',
-  },
-  {
-    label: 'Модели',
-    value: new Set(vehicles.value.map((v) => v.modelName).filter(Boolean)).size,
-    note: 'моделей техники',
-    icon: '◇',
-  },
-  {
-    label: 'Типы техники',
-    value: new Set(vehicles.value.map((v) => v.typeName).filter(Boolean)).size,
-    note: 'типов в реестре',
-    icon: '▦',
-  },
-  {
-    label: 'Группы',
-    value: new Set(vehicles.value.map((v) => v.groupName).filter(Boolean)).size,
-    note: 'групп техники',
-    icon: '◎',
-  },
-])
 const shortcuts = computed(() =>
   [
     {
@@ -79,7 +92,7 @@ const shortcuts = computed(() =>
       icon: '↗',
     },
     {
-      permission: 'vehicles.works',
+      permission: 'vehicles.repair',
       parent: 'menu.vehicles',
       title: 'Ремонт',
       text: 'Работы, история и состояние ремонта техники.',
@@ -106,6 +119,7 @@ const shortcuts = computed(() =>
   ),
 )
 
+/** Загружает список техники для отображения. */
 async function loadVehicles() {
   if (!canView('menu.vehicles')) return
   controller?.abort()
@@ -135,8 +149,9 @@ async function loadVehicles() {
     loading.value = false
   }
 }
-onMounted(loadVehicles)
+onMounted(() => Promise.all([loadVehicles(), loadFleetOptions()]))
 onBeforeUnmount(() => controller?.abort())
+/** Открывает раздел приложения по выбранной быстрой ссылке. */
 function openShortcut(item) {
   if (item.section) emit('navigate-vehicle', item.section)
   else emit('navigate', item.page)
@@ -163,24 +178,6 @@ function openShortcut(item) {
           Единое рабочее пространство механика.<br />Техника, обслуживание и
           ремонт — в одном месте.
         </p>
-        <div class="dashboard-hero__actions">
-          <a
-            v-if="canView('menu.vehicles')"
-            class="primary-button"
-            href="#fleet"
-            >Парк техники <span aria-hidden="true">↓</span></a
-          >
-          <button
-            v-if="
-              canView('menu.vehicles') && canView('vehicles.repair_request')
-            "
-            class="secondary-button"
-            type="button"
-            @click="emit('navigate-vehicle', 'repairRequest')"
-          >
-            Создать заявку <span aria-hidden="true">↗</span>
-          </button>
-        </div>
       </div>
       <svg
         class="dashboard-blueprint"
@@ -204,28 +201,7 @@ function openShortcut(item) {
     </section>
 
     <template v-if="canView('menu.vehicles')">
-      <section
-        class="dashboard-metrics"
-        aria-label="Сводка реестра техники"
-        :aria-busy="loading"
-      >
-        <article
-          v-for="metric in metrics"
-          :key="metric.label"
-          class="dashboard-metric"
-        >
-          <span class="dashboard-metric__icon" aria-hidden="true">{{
-            metric.icon
-          }}</span>
-          <div>
-            <span>{{ metric.label }}</span
-            ><strong>{{
-              loaded && !error && !loading ? metric.value : '—'
-            }}</strong
-            ><small>{{ metric.note }}</small>
-          </div>
-        </article>
-      </section>
+      <MaintenanceDashboard :token="token" :can-open="canView('vehicles.maintenance_execution')" @open="emit('navigate-vehicle', 'maintenanceExecution')" />
       <div class="dashboard-columns">
         <section
           id="fleet"
@@ -238,15 +214,13 @@ function openShortcut(item) {
               <h2 id="fleet-title">Парк техники</h2>
               <p>Реестр предприятия</p>
             </div>
-            <button
-              class="secondary-button"
-              type="button"
-              :disabled="loading"
-              @click="loadVehicles"
-            >
-              Обновить
-            </button>
+            <FleetActionMenu class="fleet-management-toolbar" label="Меню парка техники" :disabled="loading || mutationBusy">
+              <button v-if="fleetOptions.canManage" type="button" class="primary-button" :disabled="loading || mutationBusy" @click="openFleetEditor()">Добавить технику</button>
+              <button class="secondary-button" type="button" :disabled="loading || mutationBusy" @click="loadVehicles">Обновить</button>
+            </FleetActionMenu>
           </header>
+          <p v-if="fleetMessage" class="fleet-management-message" role="status">{{ fleetMessage }}</p>
+          <p v-if="fleetError" class="form-message--error" role="alert">{{ fleetError }}</p>
           <label class="fleet-search"
             ><span class="visually-hidden">Поиск техники</span
             ><svg viewBox="0 0 24 24" aria-hidden="true">
@@ -283,7 +257,7 @@ function openShortcut(item) {
                 class="fleet-row"
               >
                 <span class="fleet-icon" aria-hidden="true"
-                  ><svg viewBox="0 0 32 32">
+                  ><img v-if="vehicle.typeIconPath" :src="vehicle.typeIconPath" class="fleet-type-icon" alt="" /><svg v-else viewBox="0 0 32 32">
                     <path
                       d="M3 8h16v13H3zM19 13h5l5 6v5h-5M8 24h11M19 21v3M23 14v5h5"
                     />
@@ -308,6 +282,10 @@ function openShortcut(item) {
                     <dd>{{ vehicle.stateNumber || '—' }}</dd>
                   </div>
                 </dl>
+                <FleetActionMenu v-if="fleetOptions.canManage" class="fleet-management-actions" :label="`Действия с ${vehicle.modelName} № ${vehicle.garageNumber ?? vehicle.stateNumber}`" :disabled="loading || mutationBusy">
+                  <button type="button" class="secondary-button" :disabled="loading || mutationBusy" :aria-label="`Редактировать ${vehicle.modelName} № ${vehicle.garageNumber ?? vehicle.stateNumber}`" @click="openFleetEditor(vehicle)">Редактировать</button>
+                  <button type="button" class="fleet-delete-action" :disabled="loading || mutationBusy" :aria-label="`Удалить из парка ${vehicle.modelName} № ${vehicle.garageNumber ?? vehicle.stateNumber}`" @click="removeFleetVehicle(vehicle)">Удалить из парка</button>
+                </FleetActionMenu>
               </article>
             </div>
             <footer class="fleet-pagination">
@@ -364,7 +342,7 @@ function openShortcut(item) {
             ><span aria-hidden="true">↗</span>
           </button>
           <p class="dashboard-note">
-            В сводке отображаются данные реестра. Рабочие статусы и план ТО
+            В списке отображаются данные реестра. Рабочие статусы и история ТО
             доступны в соответствующих разделах.
           </p>
         </section>
@@ -389,5 +367,17 @@ function openShortcut(item) {
         администратору.
       </p>
     </section>
+    <FleetVehicleEditor :open="fleetEditorOpen" :vehicle="editingVehicle" :options="fleetOptions" :token="token" @close="fleetEditorOpen = false" @saved="fleetSaved" />
   </main>
 </template>
+
+<style scoped>
+.fleet-type-icon { width: 40px; height: 32px; object-fit: contain; }
+.fleet-row:has(.fleet-management-actions) { grid-template-columns: 42px minmax(0, 1fr) minmax(130px, .7fr) 40px; }
+.fleet-management-actions { grid-column: 4; grid-row: 1; justify-self: end; }
+@media (max-width: 760px) {
+  .fleet-row:has(.fleet-management-actions) { grid-template-columns: 42px minmax(0, 1fr) 40px; }
+  .fleet-management-actions { grid-column: 3; }
+}
+.fleet-management-message { color: var(--accent); font-size: 13px; }
+</style>

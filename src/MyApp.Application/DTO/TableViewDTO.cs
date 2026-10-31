@@ -1,5 +1,6 @@
 namespace MyApp.Application.DTO;
 
+/// <summary>Параметры страницы, поиска и сортировки табличного представления.</summary>
 public sealed record TableViewRequest(
     string TableName,
     int Page,
@@ -11,6 +12,7 @@ public sealed record TableViewRequest(
     string? Profession,
     bool IncludeSignatures);
 
+/// <summary>Страница табличных данных и сведения для навигации по результатам.</summary>
 public sealed record TableViewResponse(
     IReadOnlyList<string> Columns,
     IReadOnlyList<Dictionary<string, object?>> Rows,

@@ -2,8 +2,10 @@ using MyApp.Infrastructure.Storage;
 
 namespace MyApp.Infrastructure.Tests;
 
+/// <summary>Тесты поиска и проверки PDF-шаблона.</summary>
 public sealed class ComponentPdfTemplateFileTests
 {
+    /// <summary>Проверяет разрешение относительного пути шаблона от каталога приложения.</summary>
     [Xunit.Fact]
     public void Relative_template_path_is_resolved_against_application_directory()
     {
@@ -29,6 +31,7 @@ public sealed class ComponentPdfTemplateFileTests
         }
     }
 
+    /// <summary>Проверяет сохранение абсолютного пути шаблона.</summary>
     [Xunit.Fact]
     public void Absolute_template_path_is_preserved()
     {
@@ -49,6 +52,7 @@ public sealed class ComponentPdfTemplateFileTests
         }
     }
 
+    /// <summary>Проверяет сообщение об отсутствующем PDF-шаблоне.</summary>
     [Xunit.Fact]
     public void Missing_pdf_file_is_reported_as_missing()
     {
@@ -67,6 +71,7 @@ public sealed class ComponentPdfTemplateFileTests
         }
     }
 
+    /// <summary>Проверяет отклонение HTML, переданного вместо PDF.</summary>
     [Xunit.Fact]
     public void Html_instead_of_pdf_is_rejected()
     {
@@ -88,6 +93,7 @@ public sealed class ComponentPdfTemplateFileTests
         }
     }
 
+    /// <summary>Проверяет отклонение пустого пути шаблона.</summary>
     [Xunit.Fact]
     public void Empty_template_path_is_rejected()
     {
@@ -98,6 +104,7 @@ public sealed class ComponentPdfTemplateFileTests
         });
     }
 
+    /// <summary>Создаёт отдельный временный каталог для файлов теста.</summary>
     private static string CreateTemporaryDirectory()
     {
         var path = Path.Combine(Path.GetTempPath(),

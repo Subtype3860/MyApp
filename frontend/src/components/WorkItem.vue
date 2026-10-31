@@ -1,9 +1,13 @@
 <script setup>
+import RepairActionsMenu from './RepairActionsMenu.vue'
+import WorkParticipants from './WorkParticipants.vue'
 defineProps({
+  isAdministrator: { type: Boolean, default: false },
+  busy: { type: Boolean, default: false },
   work: { type: Object, required: true },
 })
 
-const emit = defineEmits(['view-media'])
+const emit = defineEmits(['view-media', 'manage-entry'])
 </script>
 
 <template>
@@ -13,17 +17,11 @@ const emit = defineEmits(['view-media'])
         <time :datetime="work.date">{{ work.dateLabel || work.date || 'Дата не указана' }}</time>
         <h5>{{ work.name || 'Ремонтная работа' }}</h5>
       </div>
-      <span
-        class="work-item__status"
-        :class="`work-item__status--${work.status === 'completed' ? 'completed' : 'in-progress'}`"
-      >
-        {{ work.status === 'completed' ? 'Завершена' : 'В работе' }}
-      </span>
+      <RepairActionsMenu v-if="isAdministrator" label="Действия с работой" edit-label="Редактировать работу" delete-label="Удалить работу" :busy="busy"
+        @edit="emit('manage-entry', 'edit', 'works', work)" @delete="emit('manage-entry', 'delete', 'works', work)" />
     </header>
 
-    <p class="work-item__performer">
-      <strong>Исполнитель:</strong> {{ work.performer || '—' }}
-    </p>
+    <WorkParticipants :work="work" />
 
     <div
       v-if="work.photos?.length || work.videos?.length"
@@ -52,8 +50,8 @@ const emit = defineEmits(['view-media'])
 .work-item {
   min-width: 0;
   display: grid;
-  gap: 0.6rem;
-  padding: 0.9rem;
+  gap: 0.4rem;
+  padding: 0.6rem;
   border: 1px solid var(--border);
   border-radius: 0.75rem;
   background: var(--bg-surface);
@@ -66,6 +64,8 @@ const emit = defineEmits(['view-media'])
   gap: 0.75rem;
 }
 
+.work-item__header > div { min-width: 0; overflow-wrap: anywhere; display: flex; align-items: baseline; flex-wrap: wrap; gap: 0.25rem 0.65rem; }
+
 .work-item time,
 .work-item__performer,
 .work-item__no-media {
@@ -74,27 +74,9 @@ const emit = defineEmits(['view-media'])
 }
 
 .work-item h5 {
-  margin: 0.25rem 0 0;
+  margin: 0;
   color: var(--text-main);
   font-size: 1rem;
-}
-
-.work-item__status {
-  flex: 0 0 auto;
-  padding: 0.3rem 0.6rem;
-  border-radius: 999px;
-  font-size: 0.8rem;
-  font-weight: 700;
-}
-
-.work-item__status--completed {
-  background: #e9f7ef;
-  color: #187647;
-}
-
-.work-item__status--in-progress {
-  background: #fff4df;
-  color: #9a5b00;
 }
 
 .work-item__performer,
@@ -109,7 +91,8 @@ const emit = defineEmits(['view-media'])
 }
 
 .work-item__media button {
-  padding: 0.55rem 0.75rem;
+  padding: 0.35rem 0.65rem;
+  min-height: 36px;
   border: 1px solid var(--border);
   border-radius: 0.6rem;
   background: var(--bg-surface);
@@ -120,7 +103,7 @@ const emit = defineEmits(['view-media'])
 
 @media (max-width: 480px) {
   .work-item__header {
-    flex-direction: column;
+    gap: 0.5rem;
   }
 }
 </style>

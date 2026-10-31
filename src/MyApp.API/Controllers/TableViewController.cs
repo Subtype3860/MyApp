@@ -7,11 +7,13 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace MyApp.API.Controllers;
 
+/// <summary>HTTP-эндпоинты просмотра табличных данных.</summary>
 [ApiController]
 [Route("api/tables")]
 [Authorize(Policy = Permissions.TablesView)]
 public class TableViewController : ControllerBase
 {
+    /// <summary>Возвращает данные табличного представления.</summary>
     [HttpGet("{tableName}")]
     public async Task<IActionResult> Get(
         string tableName,

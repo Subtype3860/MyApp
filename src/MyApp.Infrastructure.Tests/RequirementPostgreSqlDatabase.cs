@@ -5,8 +5,7 @@ using Npgsql;
 namespace MyApp.Infrastructure.Tests;
 
 /// <summary>
-/// Stock fixture uses PostgreSQL table-backed edit_csv_tab instead of a real
-/// filesystem writer. Database transaction tests cannot prove file rollback.
+/// Legacy CSV views are copied into real transactional database balances.
 /// </summary>
 internal sealed class RequirementPostgreSqlDatabase : IAsyncDisposable
 {
@@ -14,6 +13,7 @@ internal sealed class RequirementPostgreSqlDatabase : IAsyncDisposable
     private readonly string schema;
     private readonly string scopedConnectionString;
 
+    /// <summary>Подготавливает объект тестового окружения с заданными зависимостями.</summary>
     private RequirementPostgreSqlDatabase(string connectionString, string schema)
     {
         adminConnectionString = connectionString;
@@ -24,11 +24,16 @@ internal sealed class RequirementPostgreSqlDatabase : IAsyncDisposable
         }.ConnectionString;
     }
 
+    /// <summary>Создаёт контекст EF Core, подключённый к изолированной тестовой схеме.</summary>
     public AppDbContext CreateContext() =>
         new(new DbContextOptionsBuilder<AppDbContext>()
             .UseNpgsql(scopedConnectionString)
             .Options);
 
+    /// <summary>Создаёт источник подключений к изолированной тестовой схеме.</summary>
+    public NpgsqlDataSource CreateDataSource() => NpgsqlDataSource.Create(scopedConnectionString);
+
+    /// <summary>Создаёт изолированную схему PostgreSQL и подготавливает данные теста.</summary>
     public static async Task<RequirementPostgreSqlDatabase> CreateAsync(
         decimal stock = 10m,
         bool numericViews = false)
@@ -65,6 +70,7 @@ internal sealed class RequirementPostgreSqlDatabase : IAsyncDisposable
         }
     }
 
+    /// <summary>Создаёт таблицы и исходные данные изолированной тестовой схемы.</summary>
     private async Task InitializeAsync(decimal quantity, bool numericViews)
     {
         await using var dataSource = NpgsqlDataSource.Create(scopedConnectionString);
@@ -113,15 +119,7 @@ internal sealed class RequirementPostgreSqlDatabase : IAsyncDisposable
                 file_name text, search_text text, new_value numeric)
             RETURNS text LANGUAGE plpgsql AS $body$
             BEGIN
-                IF file_name NOT IN ('o', 'c') THEN
-                    RETURN 'Unknown stock source';
-                END IF;
-                UPDATE stock_fixture SET quantity = new_value
-                WHERE BTRIM(name) = BTRIM(search_text);
-                IF NOT FOUND THEN
-                    RETURN 'Material missing';
-                END IF;
-                RETURN 'Успешно обновлено!';
+                RAISE EXCEPTION 'External CSV writes must never be called';
             END;
             $body$;
             """);
@@ -129,8 +127,11 @@ internal sealed class RequirementPostgreSqlDatabase : IAsyncDisposable
         await ExecuteAsync(
             "INSERT INTO stock_fixture(name, quantity) VALUES ('Filter', @qty)",
             ("qty", quantity));
+        await using var db = CreateContext();
+        await CsvDatabaseMigration.InitializeAsync(db);
     }
 
+    /// <summary>Выполняет SQL-команду в изолированной тестовой схеме.</summary>
     public async Task ExecuteAsync(string sql, params (string Name, object Value)[] values)
     {
         await using var dataSource = NpgsqlDataSource.Create(scopedConnectionString);
@@ -140,15 +141,26 @@ internal sealed class RequirementPostgreSqlDatabase : IAsyncDisposable
         await command.ExecuteNonQueryAsync();
     }
 
-    public async Task<decimal> StockAsync(string name = "Filter")
+    /// <summary>Читает актуальный остаток материала для утверждений теста.</summary>
+    public async Task<decimal> StockAsync(string name = "Filter", string source = "v_full_ost")
     {
         await using var dataSource = NpgsqlDataSource.Create(scopedConnectionString);
         await using var command = dataSource.CreateCommand(
-            "SELECT quantity FROM stock_fixture WHERE name = @name");
+            "SELECT quantity FROM app_stock_balances WHERE name = @name AND source_table = @source");
         command.Parameters.AddWithValue("name", name);
+        command.Parameters.AddWithValue("source", source);
         return (decimal)(await command.ExecuteScalarAsync())!;
     }
 
+    /// <summary>Читает остаток из прежнего складского источника в тестовой схеме.</summary>
+    public async Task<decimal> LegacyStockAsync()
+    {
+        await using var source = CreateDataSource();
+        await using var command = source.CreateCommand("SELECT quantity FROM stock_fixture WHERE name = 'Filter'");
+        return (decimal)(await command.ExecuteScalarAsync())!;
+    }
+
+    /// <summary>Возвращает количество записей для проверки состояния тестовой базы.</summary>
     public async Task<long> CountAsync()
     {
         await using var dataSource = NpgsqlDataSource.Create(scopedConnectionString);
@@ -157,6 +169,7 @@ internal sealed class RequirementPostgreSqlDatabase : IAsyncDisposable
         return (long)(await command.ExecuteScalarAsync())!;
     }
 
+    /// <summary>Удаляет изолированную схему после завершения теста.</summary>
     public async ValueTask DisposeAsync()
     {
         await using var connection = new NpgsqlConnection(adminConnectionString);

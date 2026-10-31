@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace MyApp.API.Controllers;
 
+/// <summary>HTTP-эндпоинты подписей сотрудников.</summary>
 [ApiController]
 [Route("api/employees/signature")]
 [Authorize(Roles = "administrator")]
@@ -19,6 +20,7 @@ public class EmployeeSignatureController : ControllerBase
             "image/webp"
         };
 
+    /// <summary>Возвращает данные подписи сотрудника.</summary>
     [HttpGet]
     public async Task<IActionResult> Get(
         [FromQuery] string lastName,
@@ -31,6 +33,7 @@ public class EmployeeSignatureController : ControllerBase
         return this.ToActionResult(result, signature => File(signature.Content, signature.ContentType, enableRangeProcessing: false));
     }
 
+    /// <summary>Сохраняет подпись сотрудника.</summary>
     [HttpPost]
     [IgnoreAntiforgeryToken]
     public async Task<IActionResult> Save(
@@ -62,6 +65,7 @@ public class EmployeeSignatureController : ControllerBase
         return this.ToActionResult(result, _ => Ok());
     }
 
+    /// <summary>Удаляет подпись сотрудника.</summary>
     [HttpDelete]
     public async Task<IActionResult> Delete(
         [FromQuery] string lastName,
@@ -74,6 +78,7 @@ public class EmployeeSignatureController : ControllerBase
         return this.ToActionResult(result, _ => Ok());
     }
 
+    /// <summary>Формирует ключ подписи сотрудника из данных запроса.</summary>
     private static EmployeeSignatureKey CreateKey(string lastName, string firstName, string? patronymic) =>
         new(lastName, firstName, patronymic ?? string.Empty);
 }

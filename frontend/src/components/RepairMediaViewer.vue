@@ -39,16 +39,20 @@ watch(() => props.open, async (open) => {
 })
 onBeforeUnmount(closeDialog)
 
+/** Строит адрес API для фотографии или видео выбранной записи. */
 function mediaRoute(media) {
+  if (media?.source === 'auxiliary') return props.mediaType === 'video' ? 'videos' : 'photos'
   const work = media?.source === 'work'
   if (work) return props.mediaType === 'video' ? 'work-videos' : 'work-photos'
   return props.mediaType === 'video' ? 'defect-videos' : 'defect-photos'
 }
 
+/** Формирует заголовки авторизации и, при необходимости, JSON-запроса. */
 function authHeaders() {
   return { Authorization: `Bearer ${props.token}` }
 }
 
+/** Загружает выбранное фото либо получает билет для просмотра видео. */
 async function loadCurrentMedia() {
   const item = props.items[currentIndex.value]
   if (!item) return
@@ -66,10 +70,11 @@ async function loadCurrentMedia() {
 
   try {
     const route = mediaRoute(item.media ?? item)
+    const base = (item.media ?? item).source === 'auxiliary' ? '/api/auxiliary-works' : '/api/vehicles'
     let url
     if (props.mediaType === 'video') {
       const response = await fetch(
-        `/api/vehicles/${route}/${item.id ?? item.media?.id}/stream-ticket`,
+        `${base}/${route}/${item.id ?? item.media?.id}/stream-ticket`,
         { method: 'POST', headers: authHeaders() },
       )
       if (!response.ok) throw new Error('Видео недоступно.')
@@ -77,7 +82,7 @@ async function loadCurrentMedia() {
       url = result.url
     } else {
       const response = await fetch(
-        `/api/vehicles/${route}/${item.id ?? item.media?.id}`,
+        `${base}/${route}/${item.id ?? item.media?.id}`,
         { headers: authHeaders() },
       )
       if (!response.ok) throw new Error('Изображение недоступно.')
@@ -98,6 +103,7 @@ async function loadCurrentMedia() {
   }
 }
 
+/** Переключает текущее вложение в просмотрщике. */
 function navigate(step) {
   if (props.items.length < 2) return
   currentIndex.value =
@@ -105,6 +111,7 @@ function navigate(step) {
   loadCurrentMedia()
 }
 
+/** Останавливает проигрывание видео перед сменой вложения или закрытием окна. */
 function stopVideo() {
   const video = videoElement.value
   if (!video) return
@@ -115,10 +122,12 @@ function stopVideo() {
   videoElement.value = null
 }
 
+/** Освобождает временный URL загруженного медиафайла. */
 function releaseBlobUrl() {
   if (mediaUrl.value.startsWith('blob:')) URL.revokeObjectURL(mediaUrl.value)
 }
 
+/** Закрывает диалог просмотра медиа. */
 function closeDialog() {
   requestId++
   stopVideo()
@@ -131,15 +140,18 @@ function closeDialog() {
   currentIndex.value = 0
 }
 
+/** Закрывает просмотрщик и сообщает родителю об изменении состояния. */
 function close() {
   emit('close')
 }
 
+/** Снимает состояние загрузки после готовности изображения или видео. */
 function onMediaLoaded() {
   isLoading.value = false
   mediaError.value = ''
 }
 
+/** Показывает ошибку загрузки выбранного медиафайла. */
 function onMediaError() {
   isLoading.value = false
   mediaError.value = props.mediaType === 'video'
@@ -147,6 +159,7 @@ function onMediaError() {
     : 'Изображение недоступно.'
 }
 
+/** Запоминает начальную точку жеста для перелистывания вложений. */
 function startSwipe(event) {
   swipeEnabled = event.touches.length === 1
   touchStartX = event.changedTouches[0]?.clientX ?? 0
@@ -156,6 +169,7 @@ function startSwipe(event) {
   }
 }
 
+/** Завершает жест и при достаточном смещении переключает вложение. */
 function endSwipe(event) {
   if (swipeEnabled && props.items.length > 1) {
     const endX = event.changedTouches[0]?.clientX ?? touchStartX
@@ -165,11 +179,13 @@ function endSwipe(event) {
   if (event.touches.length < 2) pinchStartDistance.value = 0
 }
 
+/** Вычисляет расстояние между двумя касаниями для масштабирования. */
 function touchDistance(touches) {
   const [first, second] = touches
   return Math.hypot(second.clientX - first.clientX, second.clientY - first.clientY)
 }
 
+/** Обновляет масштаб изображения при жесте двумя пальцами. */
 function movePinch(event) {
   if (event.touches.length !== 2 || !pinchStartDistance.value) return
   const scale = pinchStartScale.value *
@@ -181,6 +197,7 @@ function movePinch(event) {
   }
 }
 
+/** Переключает увеличение изображения. */
 function toggleZoom() {
   zoomScale.value = zoomScale.value === 1 ? 2.5 : 1
   if (zoomScale.value === 1) {
