@@ -103,6 +103,14 @@ const isReportsExpanded = ref(false)
 const isSettingsExpanded = ref(false)
 const isGamesExpanded = ref(['mechanic', 'tanks'].includes(props.activePage))
 const profile = ref(null)
+const canCreateRegions = ref(false)
+watch(() => [props.token, props.profileVersion], async () => {
+  canCreateRegions.value = false
+  try {
+    const response = await fetch('/api/fleet-regions/capabilities', { headers: { Authorization: `Bearer ${props.token}` } })
+    if (response.ok) canCreateRegions.value = (await response.json()).canCreate === true
+  } catch { /* Hide the entry when permissions cannot be verified. */ }
+}, { immediate: true })
 const avatarUrl = ref('')
 const /** Проверяет наличие разрешения на отображение раздела. */ canView = (permission) =>
   props.isAdmin ||
@@ -433,6 +441,16 @@ function toggleGames() {
           :aria-current="activePage === 'requirements' ? 'page' : undefined"
           @click="$emit('navigate', 'requirements')">Выписанные требования</button>
       </div>
+      <button
+        v-if="canCreateRegions"
+        class="nav-link"
+        :class="{ 'nav-link--active': activePage === 'fleet-regions' }"
+        type="button"
+        title="Участок"
+        @click="$emit('navigate', 'fleet-regions')"
+        aria-label="Участок"
+        :aria-current="activePage === 'fleet-regions' ? 'page' : undefined"
+      ><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 22s8-8 8-14a8 8 0 0 0-16 0c0 6 8 14 8 14Z M12 5a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z" /></svg><span class="sidebar-label">Участок</span></button>
       <button
         v-if="isAdmin"
         class="nav-link"

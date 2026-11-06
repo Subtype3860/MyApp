@@ -149,8 +149,41 @@ public sealed class WorkParticipationAuthorizationTests
             throw new InvalidOperationException(method.Name);
         });
         var result = await service.AddWorkPhotosAsync(workId, [new("photo.webp", "image/webp", "RIFF0000WEBP"u8.ToArray())], userId, default);
-        Assert.Equal(owner ? ServiceResultStatus.Success : ServiceResultStatus.Unauthorized, result.Status);
+        Assert.Equal(owner ? ServiceResultStatus.Success : ServiceResultStatus.Forbidden, result.Status);
         Assert.Equal(owner, saved);
+    }
+
+    // Creating a stage is not restricted to the legacy short profession names.
+    [Theory]
+    [InlineData("Электрослесарь по ремонту оборудования", true, false, false)]
+    [InlineData("Электрослесарь по ремонту оборудования", true, true, false)]
+    [InlineData("Механик", true, false, false)]
+    [InlineData("Электрослесарь по ремонту оборудования", false, false, false)]
+    [InlineData("Электрослесарь по ремонту оборудования", false, true, false)]
+    [InlineData("Слесарь", false, false, true)]
+    [InlineData("Слесарь", false, true, true)]
+    [InlineData("Слесарь", false, false, false)]
+    public async Task Repair_media_allows_creator_and_preserves_legacy_performer_access(
+        string profession, bool owner, bool video, bool performer)
+    {
+        var saved = false;
+        var service = MakeService(MakeUser(userId, profession), (method, args) => {
+            Assert.Equal(workId, args[0]);
+            if (method.Name == nameof(IVehicleRepository.WorkExistsAsync)) return Task.FromResult(true);
+            if (method.Name == nameof(IVehicleRepository.IsWorkCreatorAsync)) return Task.FromResult(owner);
+            if (method.Name == nameof(IVehicleRepository.IsWorkPerformerAsync)) return Task.FromResult(performer);
+            if (method.Name is nameof(IVehicleRepository.GetWorkPhotoCountAsync) or nameof(IVehicleRepository.GetWorkVideoCountAsync)) return Task.FromResult(0);
+            if (method.Name is nameof(IVehicleRepository.AddWorkPhotosAsync) or nameof(IVehicleRepository.AddWorkVideosAsync)) {
+                saved = true;
+                return Task.FromResult<IReadOnlyList<Guid>>([Guid.NewGuid()]);
+            }
+            throw new InvalidOperationException(method.Name);
+        });
+        var result = video
+            ? await service.AddWorkVideosAsync(workId, [new("video.mp4", "video/mp4", "0000ftyp0000"u8.ToArray())], userId, default)
+            : await service.AddWorkPhotosAsync(workId, [new("photo.webp", "image/webp", "RIFF0000WEBP"u8.ToArray())], userId, default);
+        Assert.Equal(owner || performer ? ServiceResultStatus.Success : ServiceResultStatus.Forbidden, result.Status);
+        Assert.Equal(owner || performer, saved);
     }
 
     /// <summary>Проверяет право механиков и администраторов управлять парком техники.</summary>

@@ -51,6 +51,8 @@ async function removeFleetVehicle(vehicle) {
   finally { mutationBusy.value = false }
 }
 const vehicles = ref([])
+const regions = ref([]), assignments = ref([]), selectedRegion = ref('')
+const assignmentMap = computed(() => new Map(assignments.value.map(item => [item.vehicleId, item])))
 const loading = ref(false)
 const error = ref('')
 const loaded = ref(false)
@@ -61,6 +63,9 @@ let controller
 const filtered = computed(() => {
   const term = query.value.trim().toLocaleLowerCase('ru')
   return vehicles.value.filter((vehicle) =>
+    (!selectedRegion.value || (selectedRegion.value === 'unassigned'
+      ? !assignmentMap.value.has(vehicle.id)
+      : assignmentMap.value.get(vehicle.id)?.regionId === selectedRegion.value)) &&
     [
       vehicle.modelName,
       vehicle.typeName,
@@ -127,20 +132,28 @@ async function loadVehicles() {
   loading.value = true
   error.value = ''
   try {
-    const response = await fetch('/api/vehicles', {
+    const options = {
       headers: { Authorization: `Bearer ${props.token}` },
       signal: controller.signal,
-    })
+    }
+    const [response, regionResponse, assignmentResponse] = await Promise.all([
+      fetch('/api/vehicles', options), fetch('/api/fleet-regions', options), fetch('/api/fleet-regions/vehicles', options),
+    ])
     if (!response.ok)
       throw new Error(
         response.status === 403
           ? 'Нет доступа к реестру техники.'
           : 'Не удалось загрузить технику. Попробуйте ещё раз.',
       )
-    const data = await response.json()
+    if (!regionResponse.ok || !assignmentResponse.ok) throw new Error('Не удалось загрузить участки и закрепления техники. Повторите обновление.')
+    const [data, regionData, assignmentData] = await Promise.all([response.json(), regionResponse.json(), assignmentResponse.json()])
     if (!Array.isArray(data))
       throw new Error('Сервер вернул неверный формат данных.')
+    if (!Array.isArray(regionData?.regions) || !Array.isArray(assignmentData)) throw new Error('Сервер вернул неверный формат участков.')
     vehicles.value = data
+    regions.value = regionData.regions
+    assignments.value = assignmentData
+    if (selectedRegion.value && selectedRegion.value !== 'unassigned' && !regions.value.some(r => r.id === selectedRegion.value)) selectedRegion.value = ''
     loaded.value = true
     page.value = 1
   } catch (cause) {
@@ -221,6 +234,13 @@ function openShortcut(item) {
           </header>
           <p v-if="fleetMessage" class="fleet-management-message" role="status">{{ fleetMessage }}</p>
           <p v-if="fleetError" class="form-message--error" role="alert">{{ fleetError }}</p>
+          <label class="fleet-region-filter">Участок
+            <select v-model="selectedRegion" aria-label="Участок парка техники" :disabled="loading" @change="page = 1">
+              <option value="">Все доступные участки</option>
+              <option v-for="region in regions" :key="region.id" :value="region.id">{{ region.name }}{{ region.isArchived ? ' (архив)' : '' }}</option>
+              <option v-if="isAdmin" value="unassigned">Без закрепления</option>
+            </select>
+          </label>
           <label class="fleet-search"
             ><span class="visually-hidden">Поиск техники</span
             ><svg viewBox="0 0 24 24" aria-hidden="true">
@@ -246,7 +266,7 @@ function openShortcut(item) {
             {{
               query
                 ? 'По вашему запросу ничего не найдено.'
-                : 'В реестре пока нет техники.'
+                : selectedRegion ? 'На выбранном участке техника не найдена.' : 'В реестре пока нет техники.'
             }}
           </p>
           <template v-else>
@@ -271,6 +291,7 @@ function openShortcut(item) {
                       vehicle.typeName || vehicle.groupName || 'Тип не указан'
                     }}
                   </p>
+                  <p>{{ assignmentMap.get(vehicle.id)?.regionName || 'Без закрепления' }}</p>
                 </div>
                 <dl>
                   <div>
@@ -372,6 +393,8 @@ function openShortcut(item) {
 </template>
 
 <style scoped>
+.fleet-region-filter { display: grid; gap: 6px; margin-bottom: 12px; min-width: 0; font-size: 13px; }
+.fleet-region-filter select { width: 100%; min-width: 0; padding: 10px 12px; border: 1px solid var(--border-color, #d5dce5); border-radius: 10px; background: var(--surface, #fff); color: inherit; font: inherit; }
 .fleet-type-icon { width: 40px; height: 32px; object-fit: contain; }
 .fleet-row:has(.fleet-management-actions) { grid-template-columns: 42px minmax(0, 1fr) minmax(130px, .7fr) 40px; }
 .fleet-management-actions { grid-column: 4; grid-row: 1; justify-self: end; }

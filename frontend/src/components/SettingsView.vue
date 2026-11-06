@@ -27,6 +27,8 @@ const editingUserId = ref(null)
 const editingProfessionId = ref(null)
 const professionName = ref('')
 const mediaRetentionDays = ref(1)
+const permanentRetentionDays = ref(180)
+const maxStorageGb = ref(20)
 const isLoading = ref(false)
 const isSubmitting = ref(false)
 const errorMessage = ref('')
@@ -276,6 +278,8 @@ async function loadMediaStorageSettings() {
     }
     const settings = await response.json()
     mediaRetentionDays.value = settings.retentionDays
+    permanentRetentionDays.value = settings.permanentRetentionDays
+    maxStorageGb.value = settings.maxStorageGb
   } catch (error) {
     errorMessage.value =
       error instanceof Error ? error.message : 'Не удалось загрузить настройки хранения медиа.'
@@ -293,12 +297,16 @@ async function saveMediaStorageSettings() {
     const response = await fetch('/api/admin/media-storage', {
       method: 'PUT',
       headers: authHeaders(true),
-      body: JSON.stringify({ retentionDays: mediaRetentionDays.value }),
+      body: JSON.stringify({
+        retentionDays: mediaRetentionDays.value,
+        permanentRetentionDays: permanentRetentionDays.value,
+        maxStorageGb: maxStorageGb.value,
+      }),
     })
     if (!response.ok) {
       throw new Error(await readError(response, 'Не удалось сохранить настройки хранения медиа.'))
     }
-    successMessage.value = 'Срок хранения медиафайлов сохранён.'
+    successMessage.value = 'Настройки хранения медиафайлов сохранены.'
   } catch (error) {
     errorMessage.value =
       error instanceof Error ? error.message : 'Не удалось сохранить настройки хранения медиа.'
@@ -752,10 +760,14 @@ watch(
     >
       <div class="settings-section-header">
         <div>
-          <h2>Временное хранение медиафайлов</h2>
+          <h2>Хранение медиафайлов</h2>
           <p>
             После загрузки фото и видео хранятся на локальном диске, чтобы не ждать записи
             на сетевое хранилище. Затем фоновая задача переносит их в постоянные папки.
+          </p>
+          <p>
+            Постоянные файлы старше указанного срока удаляются. Если суммарный объём
+            превышает лимит, первыми удаляются самые старые файлы.
           </p>
         </div>
       </div>
@@ -767,6 +779,26 @@ watch(
             type="number"
             min="1"
             max="180"
+            required
+          />
+        </label>
+        <label>
+          <span>Хранить постоянно, дней (от 1 до 3650)</span>
+          <input
+            v-model.number="permanentRetentionDays"
+            type="number"
+            min="1"
+            max="3650"
+            required
+          />
+        </label>
+        <label>
+          <span>Максимальный объём медиа, ГБ (от 1 до 1024)</span>
+          <input
+            v-model.number="maxStorageGb"
+            type="number"
+            min="1"
+            max="1024"
             required
           />
         </label>

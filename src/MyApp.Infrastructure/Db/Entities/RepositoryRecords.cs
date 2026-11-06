@@ -84,11 +84,13 @@ public sealed class MaterialGroupItemRecord
     public string MaterialName { get; set; } = string.Empty;
 }
 
-/// <summary>Сохранённые параметры срока хранения временных медиафайлов.</summary>
+/// <summary>Сохранённые параметры хранения медиафайлов.</summary>
 public sealed class MediaStorageSettingsRecord
 {
     public short Id { get; set; }
     public int RetentionDays { get; set; }
+    public int PermanentRetentionDays { get; set; }
+    public long MaxStorageBytes { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }
 }
 

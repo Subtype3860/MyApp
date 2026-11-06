@@ -123,7 +123,7 @@ async function withPrintResolution(blob) {
 /** Растеризует исходный PDF без изменения его оформления и разбиения страниц. */
 export async function createGtoForecastImage(report) {
   const [{ getDocument, GlobalWorkerOptions }, { default: workerUrl }] = await Promise.all([
-    import('pdfjs-dist'), import('pdfjs-dist/build/pdf.worker.min.mjs?url'),
+    import('pdfjs-dist/legacy/build/pdf.mjs'), import('pdfjs-dist/legacy/build/pdf.worker.min.mjs?url'),
   ])
   GlobalWorkerOptions.workerSrc = workerUrl
   const task = getDocument({ data: new Uint8Array(await (await createGtoForecastPdf(report)).arrayBuffer()), useSystemFonts: true })

@@ -1,0 +1,17 @@
+[Unit]
+Description=Replicate MyApp media files to the standby host
+Documentation=file:/opt/myapp/docs/deployment/media-replica.md
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=myapp
+Group=myapp
+RuntimeDirectory=myapp-media-replica
+RuntimeDirectoryMode=0750
+EnvironmentFile=-/etc/myapp/media-replica.env
+ExecStart=/usr/local/bin/myapp-media-replica
+TimeoutStartSec=45min
+Nice=10
+IOSchedulingClass=idle

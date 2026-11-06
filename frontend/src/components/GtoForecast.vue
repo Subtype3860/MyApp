@@ -11,6 +11,14 @@ const props = defineProps({ token: { type: String, required: true } })
 const selection = nextForecastSelection()
 const date = ref(selection.date), shift = ref(selection.shift)
 const rows = ref([]), organisation = ref(''), site = ref(''), mechanic = ref('')
+const regions = ref([]), regionId = ref('')
+let activeRegion = ''
+const reportUrl = path => `/api/gto-reports${path}${path.includes('?') ? '&' : '?'}regionId=${encodeURIComponent(activeRegion)}`
+const draftKey = () => storageKey ? `${storageKey}.${activeRegion}` : null
+function applyRegionName() {
+  organisation.value = regions.value.find(r => r.id === activeRegion)?.name || ''
+  site.value = organisation.value
+}
 const loading = ref(false), exporting = ref(false), error = ref(''), draftMessage = ref(''), canEdit = ref(false), canManageHours = ref(false), query = ref('')
 const loaded = ref(false)
 const saving = ref(0)
@@ -20,7 +28,7 @@ const editable = computed(() => canEdit.value && reportReady.value && !viewingHi
 let activeDate = date.value, activeShift = String(shift.value), revision = 0, reportVersion = 0
 let saveTimer, pendingReportSave, ignoreSelection = false
 const snapshot = () => JSON.parse(JSON.stringify({version:1,date:activeDate,shift:activeShift,mechanic:mechanic.value,organisation:organisation.value,site:site.value,rows:rows.value}))
-const recoveryKey = () => storageKey ? storageKey + '.' + activeDate + '.' + activeShift : null
+const recoveryKey = () => draftKey() ? draftKey() + '.' + activeDate + '.' + activeShift : null
 const headers = () => ({Authorization:`Bearer ${props.token}`,'Content-Type':'application/json'})
 function reportChanged() {
   if (!reportReady.value || loading.value || !editable.value) return
@@ -43,7 +51,7 @@ async function persistReport() {
     try {
       while(reportDirty.value) {
         const version=reportVersion, data=snapshot()
-        const response=await fetch(`/api/gto-reports/${activeDate}/${activeShift}`,{method:'PUT',headers:headers(),body:JSON.stringify({revision,snapshot:data}),signal:AbortSignal.timeout(15000)})
+        const response=await fetch(reportUrl(`/${activeDate}/${activeShift}`),{method:'PUT',headers:headers(),body:JSON.stringify({revision,snapshot:data}),signal:AbortSignal.timeout(15000)})
         const result=await response.json().catch(()=>null)
         if(!response.ok) {
           reportConflict.value=response.status===409
@@ -61,7 +69,7 @@ async function persistReport() {
   const result=await pendingReportSave;pendingReportSave=null;return result
 }
 async function loadHistory(append=false) {
-  try {const response=await fetch('/api/gto-reports'+(append?'?offset='+history.value.length:''),{headers:headers()});if(!response.ok)throw new Error();const items=await response.json();history.value=append?[...history.value,...items]:items;moreHistory.value=items.length===100}
+  try {const response=await fetch(reportUrl(append?'?offset='+history.value.length:''),{headers:headers()});if(!response.ok)throw new Error();const items=await response.json();history.value=append?[...history.value,...items]:items;moreHistory.value=items.length===100}
   catch {error.value='Не удалось загрузить историю отчётов.'}
 }
 async function openHistory() {
@@ -77,20 +85,21 @@ async function returnToCurrent() {
   viewingHistory.value=false;await load()
 }
 function applySnapshot(data) {
-  rows.value=data.rows;organisation.value=data.organisation;site.value=data.site;mechanic.value=data.mechanic
+  rows.value=data.rows;applyRegionName();mechanic.value=data.mechanic
 }
 async function load(refresh=false) {
-  if(loading.value)return
+  if(loading.value || !regionId.value)return
   loading.value=true
   if(!await persistReport()) {
-    ignoreSelection=true;date.value=activeDate;shift.value=activeShift;ignoreSelection=false
+    ignoreSelection=true;date.value=activeDate;shift.value=activeShift;regionId.value=activeRegion;ignoreSelection=false
     loading.value=false;return
   }
   reportReady.value=false;loaded.value=false;error.value='';reportConflict.value=false;draftMessage.value=''
   const preserved=refresh ? {rows:Object.fromEntries(rows.value.map(row=>[row.vehicle.id,Object.fromEntries(draftFields.map(field=>[field,row[field]]))]))} : null
-  activeDate=date.value;activeShift=String(shift.value);revision=0
+  activeDate=date.value;activeShift=String(shift.value);activeRegion=regionId.value;revision=0
+  historyChoice.value='';history.value=[];applyRegionName()
   try {
-    const [saved,options]=await Promise.all([fetch(`/api/gto-reports/${activeDate}/${activeShift}`,{headers:headers()}),fetch('/api/vehicles/fleet-options',{headers:headers()})])
+    const [saved,options]=await Promise.all([fetch(reportUrl(`/${activeDate}/${activeShift}`),{headers:headers()}),fetch('/api/vehicles/fleet-options',{headers:headers()})])
     if(!options.ok)throw new Error('Не удалось проверить права отчёта.')
     const rights=await options.json();canEdit.value=rights.canManage===true;canManageHours.value=rights.canManageHours===true
     let stored
@@ -102,7 +111,7 @@ async function load(refresh=false) {
       reportStatus.value='Сохранённый отчёт от '+new Date(stored.updatedAt).toLocaleString('ru-RU')
     } else {
       if(viewingHistory.value || (!stored && activeDate<localDate(new Date())))throw new Error('За выбранную дату и смену отчёт не был сохранён. Восстановить прошлый отчёт из текущих данных невозможно.')
-      const response=await fetch(`/api/gto-reports/defaults?date=${activeDate}&shift=${activeShift}`,{headers:headers()})
+      const response=await fetch(reportUrl(`/defaults?date=${activeDate}&shift=${activeShift}`),{headers:headers()})
       if(!response.ok)throw new Error('Не удалось загрузить предыдущие КТГ и вид ТО.')
       const defaults=await response.json()
       const draft=preserved ?? (defaults.rows?.length ? {rows:Object.fromEntries(defaults.rows.map(row=>[row.vehicle.id,{ktg:row.ktg,maintenance:row.maintenance}]))} : activeDate===selection.date && activeShift===selection.shift ? savedDraft() : null)
@@ -160,8 +169,6 @@ async function queueSave(key, url, body, afterSaved, allowed = canEdit.value) {
   try { await pending;failedSaves.delete(key) } catch(failure) { failedSaves.set(key,{url,body,afterSaved});error.value=failure.message }
   finally { saving.value--;if(saveQueues.get(key)===pending)saveQueues.delete(key) }
 }
-/** Сохраняет организацию и участок пользователя в настройках ГТО. */
-function saveUserSettings() { return queueSave('user','/api/gto-settings/user',{organisation:organisation.value,site:site.value}) }
 /** Проверяет и сохраняет моточасы двигателя на момент замены. */
 function saveEngine(row,engine) {
   const /** Преобразует заполненное значение в число, сохраняя пустое значение как null. */ numeric=value=>value==null || value==='' ? null : Number(value)
@@ -174,7 +181,7 @@ function saveVehicleSettings(row) { return queueSave(row.vehicle.id,`/api/gto-se
 /** Читает совместимую версию локального черновика прогноза ГТО. */
 function savedDraft() {
   if (!storageKey) return null
-  try { const value=JSON.parse(localStorage.getItem(storageKey));return [1,2].includes(value?.version)?value:null }
+  try { const value=JSON.parse(localStorage.getItem(draftKey()));return [1,2].includes(value?.version)?value:null }
   catch { return null }
 }
 /** Применяет допустимые поля черновика к строке прогноза с учётом старых значений статуса. */
@@ -196,7 +203,7 @@ function applyDraft(row, draft) {
 function saveDraft() {
   if(!loaded.value || !canEdit.value || !storageKey || viewingHistory.value)return
   try {
-    localStorage.setItem(storageKey,JSON.stringify({version:2,
+    localStorage.setItem(draftKey(),JSON.stringify({version:2,
       rows:Object.fromEntries(rows.value.map(row=>[row.vehicle.id,Object.fromEntries(draftFields.map(field=>[field,row[field]]))]))}))
     draftMessage.value=''
   } catch { draftMessage.value='Браузер не смог сохранить черновик. Скачайте PDF перед закрытием формы.' }
@@ -209,8 +216,9 @@ async function loadLive(draft = null) {
     const headers={Authorization:`Bearer ${props.token}`},signal=controller.signal
     await Promise.all([...saveQueues.values()].map(promise=>promise.catch(()=>{})))
     settingsReady=false
-    const [historyResponse,optionsResponse,profileResponse,settingsResponse]=await Promise.all([
+    const [historyResponse,optionsResponse,profileResponse,settingsResponse,assignmentsResponse]=await Promise.all([
       fetch('/api/vehicles/repair-journal',{headers,signal}),fetch('/api/vehicles/fleet-options',{headers,signal}),fetch('/api/profile',{headers,signal}),fetch('/api/gto-settings',{headers,signal}),
+      fetch('/api/fleet-regions/vehicles',{headers,signal}),
     ])
     if(!historyResponse.ok)throw new Error('Не удалось загрузить парк и состояние ремонта.')
     if(!optionsResponse.ok)throw new Error('Не удалось проверить права составления прогноза.')
@@ -218,8 +226,10 @@ async function loadLive(draft = null) {
     if(profileResponse.ok) {const profile=await profileResponse.json();mechanic.value=[profile.lastName,profile.firstName,profile.middleName].filter(Boolean).join(' ')}
     if(!settingsResponse.ok)throw new Error('Не удалось загрузить сохранённые настройки отчёта.')
     const settings=await settingsResponse.json()
-    rows.value=buildForecastRows(await historyResponse.json()).map(row=>applyDraft(row,draft))
-    organisation.value=settings.organisation ?? '';site.value=settings.site ?? ''
+    if(!assignmentsResponse.ok)throw new Error('Не удалось загрузить закрепления техники за участками.')
+    const ids=new Set((await assignmentsResponse.json()).filter(a=>a.regionId===activeRegion).map(a=>a.vehicleId))
+    rows.value=buildForecastRows((await historyResponse.json()).filter(journal=>ids.has(journal.vehicle.id))).map(row=>applyDraft(row,draft))
+    applyRegionName()
     const climate=new Map((settings.vehicles ?? []).map(item=>[item.vehicleId,item.climate]))
     const plans=new Map((settings.plans ?? []).map(item=>[item.defectId,item.plannedRelease]))
     const engineSettings=new Map((settings.engines ?? []).map(item=>[`${item.vehicleId}:${item.engineNumber}`,item]))
@@ -231,10 +241,6 @@ async function loadLive(draft = null) {
     settingsReady=true
     // Transfer existing local settings once; subsequent loads use server values.
     if(canEdit.value && draft?.version===1) {
-      if(!settings.hasUserSettings && (draft.organisation || draft.site)) {
-        organisation.value=String(draft.organisation ?? '').slice(0,200);site.value=String(draft.site ?? '').slice(0,200)
-        await saveUserSettings()
-      }
       for(const row of rows.value) {
         const old=draft.rows?.[row.vehicle.id]
         if(!old)continue
@@ -274,8 +280,16 @@ async function download(format = 'pdf') {
   finally{exporting.value=false}
 }
 watch([rows,organisation,site],reportChanged,{deep:true,flush:'sync'})
-watch([date,shift],()=>{if(!ignoreSelection && !loading.value)void load()}, {flush:'sync'})
-onMounted(()=>{void load();window.addEventListener('beforeunload',beforeLeave)})
+watch([date,shift,regionId],()=>{if(!ignoreSelection && !loading.value)void load()}, {flush:'sync'})
+onMounted(async()=>{
+  window.addEventListener('beforeunload',beforeLeave)
+  try {
+    const response=await fetch('/api/fleet-regions',{headers:headers()})
+    if(!response.ok)throw new Error('Не удалось загрузить участки.')
+    regions.value=(await response.json()).regions.filter(r=>!r.isArchived)
+    if(regions.value.length===1)regionId.value=regions.value[0].id
+  } catch(failure) {error.value=failure.message}
+})
 onBeforeUnmount(()=>{clearTimeout(saveTimer);void persistReport();controller?.abort();window.removeEventListener('beforeunload',beforeLeave)})
 </script>
 
@@ -291,7 +305,11 @@ onBeforeUnmount(()=>{clearTimeout(saveTimer);void persistReport();controller?.ab
         <button v-if="loaded" type="button" class="secondary-button" :disabled="loading || exporting || !loaded || !rows.length || saving > 0" @click="download('png')">Скачать изображение</button>
       </FleetActionMenu>
       </header>
-      <p>Отчёт общий для выбранной даты и смены. Изменения автоматически сохраняются в базе. Новый отчёт использует текущие данные ремонта; КТГ и вид ТО переносятся из предыдущего отчёта.</p>
+      <p>Отчёт формируется по выбранному участку, дате и смене. Организация берётся из названия участка. Изменения автоматически сохраняются отдельно для каждого участка.</p>
+      <div class="gto-fields">
+        <label>Организация / участок<select aria-label="Организация / участок" v-model="regionId" :disabled="loading || exporting || reportSaving || saving > 0"><option value="" disabled>Выберите участок</option><option v-for="region in regions" :key="region.id" :value="region.id">{{ region.name }}</option></select></label>
+      </div>
+      <p v-if="!regionId" class="gto-hint">Выберите участок для формирования прогноза. Если список пуст, обратитесь к администратору.</p>
       <div class="gto-fields">
         <label>История отчётов<select aria-label="История отчётов" v-model="historyChoice" :disabled="loading || exporting"><option value="">Выберите сохранённый отчёт</option><option v-for="item in history" :key="item.date+'/'+item.shift" :value="item.date+'/'+item.shift">{{ formatReportDate(item.date) }} · {{ item.shift }} смена</option></select></label>
         <button v-if="moreHistory" type="button" class="secondary-button" :disabled="loading || exporting" @click="loadHistory(true)">Более ранние отчёты</button>
@@ -305,8 +323,6 @@ onBeforeUnmount(()=>{clearTimeout(saveTimer);void persistReport();controller?.ab
       <div class="gto-fields">
         <label>Дата прогноза<input v-model="date" type="date" :disabled="exporting || loading || viewingHistory" /></label>
         <label>Смена<select aria-label="Смена" v-model="shift" :disabled="exporting || loading || viewingHistory"><option value="1">1 смена</option><option value="2">2 смена</option></select></label>
-        <label>Организация<input v-model="organisation" maxlength="200" @change="saveUserSettings" :disabled="!editable || loading || exporting" /></label>
-        <label>Участок<input v-model="site" maxlength="200" @change="saveUserSettings" :disabled="!editable || loading || exporting" /></label>
       </div>
       <label class="gto-search">Поиск техники<input v-model="query" type="search" placeholder="Группа, тип, модель или номер" /></label>
       <p>Механик: {{ mechanic || 'ФИО не указано в профиле' }}</p>
@@ -319,7 +335,7 @@ onBeforeUnmount(()=>{clearTimeout(saveTimer);void persistReport();controller?.ab
     <p v-if="error" class="form-message--error" role="alert">{{ error }}</p>
     <p v-if="loading" role="status">Загрузка парка техники…</p>
     <template v-else-if="loaded">
-      <p v-if="!rows.length">В парке пока нет техники.</p>
+      <p v-if="!rows.length">За выбранным участком не закреплена действующая техника.</p>
       <p v-else-if="!visibleGroups.length">Техники в ремонте по выбранным условиям нет.</p>
       <section v-for="group in visibleGroups" :key="group.name" class="gto-group">
         <h3>{{ group.name }}</h3>

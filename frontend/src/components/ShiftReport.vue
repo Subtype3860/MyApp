@@ -1,8 +1,9 @@
 <script setup>
+import { fetchReportMediaLinks } from '../utils/reportMedia'
 import FleetActionMenu from './FleetActionMenu.vue'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import RepairMediaViewer from './RepairMediaViewer.vue'
-import { cardMedia, cardState, defaultReportSelection, formatReportDate, selectShiftWorks, vehicleTitle, workPerformersLabel, selectAuxiliaryWorks, groupReportWorks, reportCardTitle } from '../utils/shiftReport'
+import { cardMedia, cardState, defaultReportSelection, formatReportDate, selectShiftWorks, vehicleTitle, cardWorkSections, selectAuxiliaryWorks, groupReportWorks, reportCardTitle } from '../utils/shiftReport'
 import { compactPhoto, createShiftReportPdf } from '../utils/shiftReportPdf'
 
 const props = defineProps({ token: { type: String, required: true } })
@@ -14,6 +15,7 @@ const journals = ref([])
 const auxiliaryJournal = ref([])
 const loading = ref(false), exporting = ref(false), error = ref(''), dataLoaded = ref(false)
 const locations = ref({}), photos = ref({})
+const mediaLinks = ref({})
 const viewerOpen = ref(false), viewerItems = ref([]), viewerType = ref('image')
 const works = computed(() => selectShiftWorks(journals.value, date.value, shift.value))
 const auxiliaryWorks = computed(() => selectAuxiliaryWorks(auxiliaryJournal.value, date.value, shift.value))
@@ -24,6 +26,7 @@ const groups = computed(() => groupReportWorks(works.value, auxiliaryWorks.value
 const cards = computed(() => groups.value.flatMap(group => group.categories.flatMap(category => category.cards)))
 const controller = new AbortController()
 let previewGeneration = 0
+let mediaLinkGeneration = 0
 const previewPromises = new Map()
 
 /** Загружает данные ремонтных и вспомогательных работ для сменного отчёта. */
@@ -38,6 +41,7 @@ async function load() {
     const [repairData, auxiliaryData] = await Promise.all([response.json(), auxiliaryResponse.json()])
     journals.value = repairData
     auxiliaryJournal.value = auxiliaryData
+    await refreshMediaLinks()
     dataLoaded.value = true
     if (query.has('reportWork')) {
       const ids = new Set(query.get('reportWork').split(','))
@@ -53,10 +57,16 @@ async function load() {
   finally { loading.value = false }
 }
 
+async function refreshMediaLinks() {
+  const generation = ++mediaLinkGeneration
+  const links = await fetchReportMediaLinks(cards.value, props.token, controller.signal)
+  if (generation === mediaLinkGeneration) mediaLinks.value = links
+}
+
 /** Загружает изображения для предварительного просмотра вложений отчёта. */
 async function loadPreviews() {
   const generation = ++previewGeneration
-  const items = cards.value.flatMap(card => cardMedia(card, 'image').slice(0, 2))
+  const items = cards.value.flatMap(card => card.works.flatMap(work => cardMedia({ works: [work] }, 'image').slice(0, 2)))
   for (const item of items) {
     if (generation !== previewGeneration || controller.signal.aborted) return
     if (photos.value[item.id]) continue
@@ -89,7 +99,8 @@ async function download() {
   error.value = ''
   try {
     await loadPreviews()
-    const blob = await createShiftReportPdf({ groups: groups.value, date: date.value, shift: shift.value, photos: photos.value })
+    await refreshMediaLinks()
+    const blob = await createShiftReportPdf({ groups: groups.value, date: date.value, shift: shift.value, photos: photos.value, mediaLinks: mediaLinks.value })
     const url = URL.createObjectURL(blob)
     const anchor = document.createElement('a')
     anchor.href = url
@@ -100,6 +111,10 @@ async function download() {
   finally { exporting.value = false }
 }
 watch(cards, loadPreviews)
+watch([date, shift, locations], async () => {
+  try { await refreshMediaLinks() }
+  catch (failure) { if (failure.name !== 'AbortError') error.value = failure.message }
+}, { deep: true })
 onMounted(load)
 onBeforeUnmount(() => {
   controller.abort()
@@ -118,7 +133,7 @@ onBeforeUnmount(() => {
       <button type="button" class="primary-button" :disabled="loading || exporting || !dataLoaded || !workCount || !!missingLocations.length || !date" @click="download">{{ exporting ? 'Формирование…' : 'Скачать PDF' }}</button>
 </FleetActionMenu>
     </div>
-    <p class="shift-report__hint">Ремонт и вспомогательные работы за выбранную дату и смену. Фото и видео открываются в приложении по ссылкам из PDF.</p>
+    <p class="shift-report__hint">Ремонт и вспомогательные работы за выбранную дату и смену. Фото и видео открываются по ссылкам без входа на сайт.</p>
     <p v-if="error" role="alert" class="shift-report__error">{{ error }}</p>
     <p v-if="loading" role="status">Загрузка истории ремонта…</p>
     <div v-else-if="legacyWorks.length" class="shift-report__missing">
@@ -136,20 +151,33 @@ onBeforeUnmount(() => {
           <h4>{{ category.name }}</h4>
           <article v-for="card in category.cards" :key="card.id || card.vehicle.id" class="shift-report__card">
             <header><h5>{{ reportCardTitle(card) }}</h5><span v-if="!card.auxiliary" class="shift-report__state" :class="`shift-report__state--${cardState(card).kind}`">{{ cardState(card).label }}</span></header>
-            <div v-for="work in card.works" :key="work.id">
-              <p class="shift-report__description">{{ work.description || work.cause || 'Описание не указано.' }}</p>
-              <p class="shift-report__performers">{{ workPerformersLabel(work) }}</p>
-            </div>
-            <div v-if="cardMedia(card, 'image').length" class="shift-report__photos">
-              <button v-for="photo in cardMedia(card, 'image').slice(0, 2)" :key="photo.id" type="button" :aria-label="`Открыть фото: ${photo.fileName}`" @click="openMedia([photo], 'image')">
-                <img v-if="photos[photo.id]?.url" :src="photos[photo.id].url" :alt="photo.fileName" />
-                <span v-else>{{ photos[photo.id]?.error ? 'Превью недоступно' : 'Загрузка фото…' }}</span>
-              </button>
-            </div>
-            <div class="shift-report__links">
-              <button v-if="cardMedia(card, 'image').length" type="button" @click="openMedia(cardMedia(card, 'image'), 'image')">Все фото · {{ cardMedia(card, 'image').length }}</button>
-              <button v-if="cardMedia(card, 'video').length" type="button" @click="openMedia(cardMedia(card, 'video'), 'video')">▶ Смотреть видео · {{ cardMedia(card, 'video').length }}</button>
-            </div>
+            <section v-for="section in cardWorkSections(card)" :key="section.works[0].id" class="shift-report__work-section">
+              <div v-for="work in section.works" :key="work.id" class="shift-report__work">
+                <div v-if="cardMedia({ works: [work] }, 'image').length" class="shift-report__photos">
+                  <a v-for="photo in cardMedia({ works: [work] }, 'image').slice(0, 2)" :key="photo.id" :href="mediaLinks[`image:${photo.id}`]" target="_blank" rel="noopener noreferrer" :aria-label="`Открыть фото: ${photo.fileName}`">
+                    <img v-if="photos[photo.id]?.url" :src="photos[photo.id].url" :alt="photo.fileName" />
+                    <span v-else>{{ photos[photo.id]?.error ? 'Превью недоступно' : 'Загрузка фото…' }}</span>
+                  </a>
+                </div>
+                <ul class="shift-report__works"><li class="shift-report__description">{{ work.description || work.cause || 'Описание не указано.' }}</li></ul>
+                <div class="shift-report__links">
+                  <a v-for="photo in cardMedia({ works: [work] }, 'image').slice(2)" :key="photo.id" :href="mediaLinks[`image:${photo.id}`]" target="_blank" rel="noopener noreferrer" :aria-label="`Открыть фото: ${photo.fileName}`">▧</a>
+                  <a v-for="video in cardMedia({ works: [work] }, 'video')" :key="video.id" :href="mediaLinks[`video:${video.id}`]" target="_blank" rel="noopener noreferrer" :aria-label="`Открыть видео: ${video.fileName}`">▶</a>
+                </div>
+              </div>
+              <div class="shift-report__performers">
+                <template v-if="section.performers.groups.length">
+                  <p>Исполнители:</p>
+                  <ul class="shift-report__professions">
+                    <li v-for="group in section.performers.groups" :key="group.position">
+                      {{ group.position }}:
+                      <p class="shift-report__names">+ {{ group.names.join('; ') }}</p>
+                    </li>
+                  </ul>
+                </template>
+                <p v-else>Исполнители пока не подтверждены</p>
+              </div>
+            </section>
           </article>
         </section>
       </section>
@@ -183,12 +211,16 @@ onBeforeUnmount(() => {
 .shift-report__state--ready { background: #e9f4ef; color: #2d6b4f; }
 .shift-report__state--stopped { background: #fbefed; color: #9b4840; }
 .shift-report__description { margin: 12px 0; font-size: 14px; line-height: 1.65; white-space: pre-wrap; overflow-wrap: anywhere; }
-.shift-report__performers { margin: -4px 0 14px; font-size: 12px; color: #667580; line-height: 1.5; overflow-wrap: anywhere; }
+.shift-report__work-section + .shift-report__work-section { border-top: 1px dashed #b5bec5; margin-top: 18px; padding-top: 8px; }
+.shift-report__works { padding-left: 20px; }
+.shift-report__professions { padding-left: 20px; list-style-type: "- "; }
+.shift-report__names { margin: 4px 0 8px; padding-left: 12px; }
+.shift-report__performers { margin: 0 0 14px; font-size: 12px; color: #667580; line-height: 1.5; overflow-wrap: anywhere; }
 .shift-report__photos { display: flex; gap: 10px; margin: 14px 0 10px; }
-.shift-report__photos button { width: 180px; height: 116px; max-width: calc(50% - 5px); padding: 0; overflow: hidden; border: 1px solid #e1e6eb; border-radius: 6px; background: #f4f6f8; cursor: pointer; color: #65717c; }
+.shift-report__photos a { display: flex; align-items: center; justify-content: center; text-decoration: none; width: 180px; height: 116px; max-width: calc(50% - 5px); padding: 0; overflow: hidden; border: 1px solid #e1e6eb; border-radius: 6px; background: #f4f6f8; cursor: pointer; color: #65717c; }
 .shift-report__photos img { width: 100%; height: 100%; object-fit: contain; }
 .shift-report__links { display: flex; flex-wrap: wrap; gap: 18px; }
-.shift-report__links button { border: 0; background: transparent; padding: 4px 0; font: inherit; font-size: 12px; color: #155f6b; cursor: pointer; }
+.shift-report__links a { text-decoration: none; border: 0; background: transparent; padding: 4px 0; font: inherit; font-size: 12px; color: #155f6b; cursor: pointer; }
 .shift-report__empty { padding: 32px; text-align: center; color: var(--text-secondary); }
 @media(max-width: 600px) { .shift-report__paper { padding: 24px 18px; } .shift-report__heading h2 { font-size: 24px; } .shift-report__toolbar label { flex: 1; min-width: 120px; } .shift-report__toolbar button { flex: 1; } }
 </style>

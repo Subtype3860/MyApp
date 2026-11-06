@@ -23,6 +23,7 @@ const props = defineProps({
   section: { type: String, required: true },
   token: { type: String, required: true },
 })
+const emit = defineEmits(['maintenance-materials'])
 
 // --- Список техники и поиск ---
 const session = computed(() => {
@@ -711,6 +712,8 @@ function repairDraft(defect) {
       downtimeStartedAt: defect.downtimeStartedAt ? new Date(new Date(defect.downtimeStartedAt).getTime() - new Date(defect.downtimeStartedAt).getTimezoneOffset() * 60000).toISOString().slice(0, 16) : '',
       files: [],
       previews: [],
+      savedWorkId: null,
+      preparing: false,
     }
   }
   return repairDrafts.value[defect.id]
@@ -733,6 +736,8 @@ function isRepairMediaFile(file) {
  * @param {DragEvent|Event} event Событие drop либо изменения `<input>`.
  */
 async function uploadRepairFiles(defect, event) {
+  const draft = repairDraft(defect)
+  if (isSaving.value || draft.preparing) return
   const files = Array.from(event.dataTransfer?.files ?? event.target?.files ?? [])
   if (event.target) event.target.value = ''
   if (!files.length) {
@@ -746,6 +751,7 @@ async function uploadRepairFiles(defect, event) {
     return
   }
 
+  draft.preparing = true
   try {
     const processedFiles = await Promise.all(files.map((file) =>
       file.type.startsWith('image/') ? convertImageToWebp(file) : file))
@@ -755,7 +761,6 @@ async function uploadRepairFiles(defect, event) {
       throw new Error(`Фото «${oversizedImage.name}» после конвертации превышает 8 МБ.`)
     }
 
-    const draft = repairDraft(defect)
     draft.files.push(...processedFiles)
     draft.previews.push(...processedFiles.map((file) => ({
       file,
@@ -765,12 +770,15 @@ async function uploadRepairFiles(defect, event) {
     errorMessage.value = ''
   } catch (error) {
     errorMessage.value = error.message || 'Не удалось подготовить файлы к загрузке.'
+  } finally {
+    draft.preparing = false
   }
 }
 
 /** Проверяет отчёт о работе, сохраняет этап ремонта и загружает его вложения. */
 async function completeRepair(defect) {
   const draft = repairDraft(defect)
+  if (isSaving.value || draft.preparing) return
   const description = draft.description.trim()
   if (!draft.location) {
     errorMessage.value = 'Укажите место работ: КАРЬЕР или РММ.'
@@ -785,58 +793,57 @@ async function completeRepair(defect) {
   errorMessage.value = ''
   successMessage.value = ''
   try {
-    const status = draft.status === 'done'
-      ? 'repaired'
-      : draft.status === 'waiting'
-        ? 'awaiting_parts'
-        : draft.status === 'queue'
-          ? 'faulty'
-          : 'faulty'
-    const response = await fetch(`/api/vehicles/${defect.vehicleId}/works`, {
-      method: 'POST',
-      headers: authHeaders(true),
-      body: JSON.stringify({
-        defectId: defect.id,
-        cause: defect.failureReason || 'Неисправность техники',
-        description,
-        location: draft.location,
-        status,
-        operationalState: draft.status === 'done' ? 'operating' : draft.operationalState,
-        downtimeStartedAt: draft.status !== 'done' && draft.operationalState === 'stopped' ? new Date(draft.downtimeStartedAt).toISOString() : null,
-        requiredParts: status === 'awaiting_parts' ? 'Требуется определить' : null,
-      }),
-    })
-    const result = await response.json().catch(() => null)
-    if (!response.ok) {
-      const validation = result?.errors
-        ? Object.values(result.errors).flat()[0]
-        : null
-      throw new Error(
-        validation ??
-        result?.detail ??
-        result?.message ??
-        result?.title ??
-        'Не удалось сохранить отчёт.',
-      )
+    if (!draft.savedWorkId) {
+      const status = draft.status === 'done'
+        ? 'repaired'
+        : draft.status === 'waiting'
+          ? 'awaiting_parts'
+          : draft.status === 'queue'
+            ? 'faulty'
+            : 'faulty'
+      const response = await fetch(`/api/vehicles/${defect.vehicleId}/works`, {
+        method: 'POST',
+        headers: authHeaders(true),
+        body: JSON.stringify({
+          defectId: defect.id,
+          cause: defect.failureReason || 'Неисправность техники',
+          description,
+          location: draft.location,
+          status,
+          operationalState: draft.status === 'done' ? 'operating' : draft.operationalState,
+          downtimeStartedAt: draft.status !== 'done' && draft.operationalState === 'stopped' ? new Date(draft.downtimeStartedAt).toISOString() : null,
+          requiredParts: status === 'awaiting_parts' ? 'Требуется определить' : null,
+        }),
+      })
+      const result = await response.json().catch(() => null)
+      if (!response.ok) {
+        const validation = result?.errors
+          ? Object.values(result.errors).flat()[0]
+          : null
+        throw new Error(
+          validation ??
+          result?.detail ??
+          result?.message ??
+          result?.title ??
+          'Не удалось сохранить отчёт.',
+        )
+      }
+      draft.savedWorkId = result.id
     }
-    await uploadFiles(
-      'works',
-      result.id,
-      'photos',
-      draft.files.filter((file) => file.type.startsWith('image/')),
-    )
-    await uploadFiles(
-      'works',
-      result.id,
-      'videos',
-      draft.files.filter((file) => file.type.startsWith('video/')),
-    )
+    // Keep the saved stage and remove only acknowledged files from the retry queue.
+    while (draft.files.length) {
+      const file = draft.files[0]
+      await uploadFiles('works', draft.savedWorkId, file.type.startsWith('image/') ? 'photos' : 'videos', [file])
+      draft.files.shift()
+    }
     draft.previews.forEach(({ url }) => URL.revokeObjectURL(url))
     delete repairDrafts.value[defect.id]
     successMessage.value = 'Отчёт о ремонтных работах сохранён.'
     await loadRepairDefects()
   } catch (error) {
-    errorMessage.value = error.message
+    errorMessage.value = draft.savedWorkId
+      ? `Этап сохранён, но не все вложения загружены. ${error.message} Нажмите «Повторить загрузку».`
+      : error.message
   } finally {
     isSaving.value = false
   }
@@ -1047,7 +1054,7 @@ async function uploadFiles(category, entryId, type, files) {
     )
     if (!response.ok) {
       const result = await response.json().catch(() => null)
-      throw new Error(result?.detail ?? `Не удалось загрузить файл «${file.name}».`)
+      throw new Error(result?.detail ?? result?.message ?? `Не удалось загрузить файл «${file.name}».`)
     }
 
   }
@@ -1217,7 +1224,7 @@ function formatDateTime(value) {
     <section class="vehicle-content">
       <VehicleHours v-if="props.section === 'hours'" :token="token" />
       <ShiftReport v-if="props.section === 'report'" :token="token" />
-      <MaintenancePlans v-if="props.section === 'maintenanceExecution'" :token="token" />
+      <MaintenancePlans v-if="props.section === 'maintenanceExecution'" :token="token" @materials="emit('maintenance-materials',$event)" />
       <GtoForecast v-if="props.section === 'gtoForecast'" :token="token" />
       <RepairHistory
         v-if="props.section === 'repairHistory'"
@@ -1515,16 +1522,16 @@ function formatDateTime(value) {
               <form class="repair-new-stage-form" @submit.prevent="completeRepair(defect)">
                 <div class="repair-new-stage-description">
                   <label :for="`repair-description-${defect.id}`">Описание выполненных работ</label>
-                  <textarea :id="`repair-description-${defect.id}`" v-model="repairDraft(defect).description" rows="4" placeholder="Что было сделано?" required :disabled="isSaving"></textarea>
+                  <textarea :id="`repair-description-${defect.id}`" v-model="repairDraft(defect).description" rows="4" placeholder="Что было сделано?" required :disabled="isSaving || !!repairDraft(defect).savedWorkId"></textarea>
                   <div class="repair-file-upload">
-                    <button class="secondary-button repair-upload-button" type="button" :disabled="isSaving" @click="repairFileInputs.get(defect.id)?.click()"><span aria-hidden="true">+</span> Добавить фото или видео</button>
-                    <input :ref="element => element ? repairFileInputs.set(defect.id, element) : repairFileInputs.delete(defect.id)" type="file" accept="image/*,video/*" multiple hidden :disabled="isSaving" @change="uploadRepairFiles(defect, $event)" />
+                    <button class="secondary-button repair-upload-button" type="button" :disabled="isSaving || repairDraft(defect).preparing" @click="repairFileInputs.get(defect.id)?.click()"><span aria-hidden="true">+</span> Добавить фото или видео</button>
+                    <input :ref="element => element ? repairFileInputs.set(defect.id, element) : repairFileInputs.delete(defect.id)" type="file" accept="image/*,video/*" multiple hidden :disabled="isSaving || repairDraft(defect).preparing" @change="uploadRepairFiles(defect, $event)" />
                   </div>
                   <div v-if="repairDraft(defect).previews.length" class="repair-card-file-list" aria-live="polite"><span v-for="item in repairDraft(defect).previews" :key="item.url">{{ item.file.name }}</span></div>
                 </div>
                 <div class="repair-new-stage-actions">
-                  <label class="vehicle-field" :for="`repair-location-${defect.id}`"><span>Место работ</span><select :id="`repair-location-${defect.id}`" aria-label="Место работ" v-model="repairDraft(defect).location" required :disabled="isSaving"><option disabled value="">Выберите место</option><option>КАРЬЕР</option><option>РММ</option></select></label>
-                  <fieldset class="repair-status-options" :disabled="isSaving">
+                  <label class="vehicle-field" :for="`repair-location-${defect.id}`"><span>Место работ</span><select :id="`repair-location-${defect.id}`" aria-label="Место работ" v-model="repairDraft(defect).location" required :disabled="isSaving || !!repairDraft(defect).savedWorkId"><option disabled value="">Выберите место</option><option>КАРЬЕР</option><option>РММ</option></select></label>
+                  <fieldset class="repair-status-options" :disabled="isSaving || !!repairDraft(defect).savedWorkId">
                     <legend>Статус заявки после выполнения</legend>
                     <label><input v-model="repairDraft(defect).status" :name="`repair-status-${defect.id}`" type="radio" value="repair" /> В работе</label>
                     <label><input v-model="repairDraft(defect).status" :name="`repair-status-${defect.id}`" type="radio" value="waiting" /> Ожидает запчасти</label>
@@ -1532,12 +1539,12 @@ function formatDateTime(value) {
                   </fieldset>
                   <label v-if="repairDraft(defect).status !== 'done'" class="vehicle-field">
                     <span>Эксплуатация машины</span>
-                    <select v-model="repairDraft(defect).operationalState" :disabled="isSaving"><option value="operating">Эксплуатация продолжается</option><option value="stopped">Машина остановлена</option></select>
+                    <select v-model="repairDraft(defect).operationalState" :disabled="isSaving || !!repairDraft(defect).savedWorkId"><option value="operating">Эксплуатация продолжается</option><option value="stopped">Машина остановлена</option></select>
                   </label>
                   <label v-if="repairDraft(defect).status !== 'done' && repairDraft(defect).operationalState === 'stopped'" class="vehicle-field">
-                    <span>Начало простоя</span><input v-model="repairDraft(defect).downtimeStartedAt" type="datetime-local" required :disabled="isSaving" />
+                    <span>Начало простоя</span><input v-model="repairDraft(defect).downtimeStartedAt" type="datetime-local" required :disabled="isSaving || !!repairDraft(defect).savedWorkId" />
                   </label>
-                  <button class="primary-button repair-save-stage" type="submit" :disabled="isSaving">{{ isSaving ? 'Сохранение…' : 'Сохранить этап' }}</button>
+                  <button class="primary-button repair-save-stage" type="submit" :disabled="isSaving || repairDraft(defect).preparing">{{ isSaving ? 'Сохранение…' : repairDraft(defect).preparing ? 'Подготовка фото…' : repairDraft(defect).savedWorkId ? 'Повторить загрузку' : 'Сохранить этап' }}</button>
                 </div>
               </form>
             </details>

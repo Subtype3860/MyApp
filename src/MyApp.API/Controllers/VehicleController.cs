@@ -521,6 +521,10 @@ public class VehicleController : ControllerBase
             return Unauthorized();
         }
 
+        // A stream ticket identifies its owner even when the browser sends no Authorization header.
+        // Recheck region access after relocation or grant revocation.
+        if (HttpContext.RequestServices?.GetService<MyApp.Infrastructure.Db.AppDbContext>() is { } scopeDb)
+            await scopeDb.SetFleetScopeAsync(streamTicket.UserId, cancellationToken);
         var video = streamTicket.IsWorkVideo
             ? await service.GetWorkVideoStreamAsync(
                 streamTicket.VideoId,

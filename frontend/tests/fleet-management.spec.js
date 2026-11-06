@@ -23,6 +23,8 @@ async function setup(page, { width = 1440, manager = true, denied = false } = {}
       return route.fulfill({ status: 204 })
     }
     if (path === '/api/vehicles') return route.fulfill({ json: vehicles })
+    if (path === '/api/fleet-regions') return route.fulfill({ json: { regions: [] } })
+    if (path === '/api/fleet-regions/vehicles') return route.fulfill({ json: [] })
     if (path === '/api/vehicles/fleet-options') return route.fulfill({ json: options })
     if (path === '/api/profile') return route.fulfill({ json: { id: 'mechanic', position: manager ? 'Механик' : 'Слесарь', hasAvatar: false } })
     return route.fulfill({ status: path.endsWith('/avatar') ? 404 : 200, json: [] })

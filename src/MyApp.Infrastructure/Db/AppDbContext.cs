@@ -5,7 +5,7 @@ using MyApp.Infrastructure.Db.Entities;
 
 namespace MyApp.Infrastructure.Db {
     /// <summary>Контекст Entity Framework Core для таблиц и представлений приложения.</summary>
-    public class AppDbContext : DbContext {
+    public partial class AppDbContext : DbContext {
         public DbSet<RepairOperationReceipt> RepairOperationReceipts => Set<RepairOperationReceipt>();
         public DbSet<VehicleShiftOutcome> VehicleShiftOutcomes => Set<VehicleShiftOutcome>();
         public DbSet<VehicleMaintenancePlan> VehicleMaintenancePlans => Set<VehicleMaintenancePlan>();
@@ -70,6 +70,8 @@ namespace MyApp.Infrastructure.Db {
         public AppDbContext(DbContextOptions<AppDbContext> options) : base(options) {}
         /// <summary>Настраивает таблицы, ключи, связи и ограничения моделей Entity Framework Core.</summary>
         protected override void OnModelCreating(ModelBuilder modelBuilder) {
+            ConfigureMaintenanceCards(modelBuilder);
+            ConfigureFleetRegions(modelBuilder);
             modelBuilder.Entity<RepairOperationReceipt>(e => {
                 e.ToTable("repair_operation_receipts"); e.HasKey(x => x.Id);
                 e.Property(x => x.Id).HasColumnName("id"); e.Property(x => x.Owner).HasColumnName("owner");
@@ -190,7 +192,8 @@ namespace MyApp.Infrastructure.Db {
                 entity.HasIndex(x => new { x.VehicleId, x.Revision }).IsUnique();
             });
             modelBuilder.Entity<GtoReport>(entity => {
-                entity.ToTable("gto_reports"); entity.HasKey(x => new { x.ReportDate, x.Shift });
+                entity.ToTable("gto_reports"); entity.HasKey(x => new { x.RegionId, x.ReportDate, x.Shift });
+                entity.Property(x => x.RegionId).HasColumnName("region_id");
                 entity.Property(x => x.ReportDate).HasColumnName("report_date");
                 entity.Property(x => x.Shift).HasColumnName("shift");
                 entity.Property(x => x.Revision).HasColumnName("revision");
@@ -448,6 +451,10 @@ namespace MyApp.Infrastructure.Db {
                 entity.HasKey(x => x.Id);
                 entity.Property(x => x.Id).HasColumnName("id");
                 entity.Property(x => x.RetentionDays).HasColumnName("retention_days");
+                entity.Property(x => x.PermanentRetentionDays)
+                    .HasColumnName("permanent_retention_days");
+                entity.Property(x => x.MaxStorageBytes)
+                    .HasColumnName("max_storage_bytes");
                 entity.Property(x => x.UpdatedAt)
                     .HasColumnName("updated_at")
                     .HasDefaultValueSql("NOW()");

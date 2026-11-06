@@ -43,6 +43,7 @@ onBeforeUnmount(() => { controller.abort(); dialog.value?.close() })
     <form @submit.prevent="save">
       <header><h2>{{ vehicle ? 'Редактировать технику' : 'Добавить технику' }}</h2><button type="button" class="secondary-button" aria-label="Закрыть редактор техники" :disabled="busy" @click="close">×</button></header>
       <p>Выберите группу, тип и модель из подсказок или введите новые названия.</p>
+      <p v-if="!vehicle">После создания закрепите технику за участком через меню «Участок». Это доступно Администратору, Старшему механику и Главному механику.</p>
       <div class="fleet-editor__fields">
         <label>Группа техники<input v-model="draft.groupName" list="fleet-groups" required maxlength="50" :disabled="busy" /></label>
         <datalist id="fleet-groups"><option v-for="item in options.groups || []" :key="item.id" :value="item.name" /></datalist>

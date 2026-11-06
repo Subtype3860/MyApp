@@ -69,7 +69,7 @@ public sealed class VehicleRepository(
             vehicle = existing;
         } else vehicle = new NumberCarRecord { Id = Guid.NewGuid() };
         if (!string.IsNullOrWhiteSpace(request.Vin) && request.Vin is not ("-" or "—") &&
-            await dbContext.Vehicles.AnyAsync(item => !item.IsArchived && item.Id != vehicle.Id &&
+            await dbContext.Vehicles.IgnoreQueryFilters().AnyAsync(item => !item.IsArchived && item.Id != vehicle.Id &&
                 item.Vin != null && item.Vin.Trim().ToUpper() == request.Vin.ToUpperInvariant(), cancellationToken))
             return ServiceResult<Guid>.Conflict("Техника с таким VIN уже есть в парке.");
         var groupKey = request.GroupName.ToLowerInvariant();

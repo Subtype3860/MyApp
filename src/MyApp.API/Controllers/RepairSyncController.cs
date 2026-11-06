@@ -40,6 +40,7 @@ public sealed class RepairSyncController(AppDbContext db, IVehicleService servic
         if (!Allowed) return Forbid();
         if (!Guid.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub"), out var actor)) return Unauthorized();
         if (!Valid(command)) return BadRequest(new { message = "Некорректная команда ремонта." });
+        if (!await db.Vehicles.AnyAsync(v => v.Id == command.VehicleId, ct)) return NotFound();
         var hash = RepairSyncSchema.Hash(command);
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
         // The old web APIs do not use version tokens. Table locks also serialize their writes

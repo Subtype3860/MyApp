@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -10,7 +11,7 @@ using MyApp.Infrastructure.Db.Entities;
 
 namespace MyApp.API.Controllers;
 
-/// <summary>Общие для пользователей снимки отчётов ГТО с контролем одновременного редактирования.</summary>
+/// <summary>Снимки прогнозов по участку, дате и смене.</summary>
 [ApiController]
 [Route("api/gto-reports")]
 [Authorize(Policy = Permissions.VehiclesView)]
@@ -18,49 +19,90 @@ public sealed class GtoReportsController(AppDbContext db, IVehicleService servic
 {
     public sealed record SaveRequest(int Revision, JsonElement Snapshot);
 
+    private async Task<FleetRegion?> Region(Guid regionId, CancellationToken ct)
+    {
+        if (regionId == Guid.Empty) return null;
+        var actor = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub");
+        if (db.RestrictFleet && (!Guid.TryParse(actor, out var id) ||
+            !await db.FleetRegionGrants.AnyAsync(g => g.UserId == id && g.RegionId == regionId, ct))) return null;
+        return await db.FleetRegions.AsNoTracking().SingleOrDefaultAsync(r => r.Id == regionId, ct);
+    }
+    private async Task<HashSet<Guid>> VehicleIds(Guid regionId, CancellationToken ct) =>
+        (await db.VehicleRegionAssignments.Where(a => a.RegionId == regionId && a.EndedAt == null)
+            .Select(a => a.VehicleId).ToArrayAsync(ct)).ToHashSet();
+
+    private static JsonObject Snapshot(string source, FleetRegion region, HashSet<Guid> ids)
+    {
+        var data = FleetReportScope.Filter(source, ids);
+        data["regionId"] = region.Id.ToString();
+        data["organisation"] = region.Name;
+        data["site"] = region.Name;
+        return data;
+    }
+
     [HttpGet]
-    public async Task<IActionResult> List([FromQuery] int offset = 0, CancellationToken ct = default)
+    public async Task<IActionResult> List([FromQuery] Guid regionId, [FromQuery] int offset = 0, CancellationToken ct = default)
     {
         if (offset < 0) return BadRequest();
-        return Ok(await db.GtoReports.AsNoTracking().OrderByDescending(x => x.ReportDate).ThenByDescending(x => x.Shift)
-            .Skip(offset).Take(100).Select(x => new { Date = x.ReportDate, x.Shift, x.Revision, x.UpdatedAt }).ToArrayAsync(ct));
+        if (await Region(regionId, ct) is null) return NotFound();
+        // Original reports remain available as a fallback; a regional snapshot takes precedence.
+        return Ok(await db.GtoReports.AsNoTracking().Where(x => x.RegionId == regionId ||
+            (x.RegionId == Guid.Empty && !db.GtoReports.Any(r => r.RegionId == regionId && r.ReportDate == x.ReportDate && r.Shift == x.Shift)))
+            .OrderByDescending(x => x.ReportDate).ThenByDescending(x => x.Shift).Skip(offset).Take(100)
+            .Select(x => new { Date = x.ReportDate, x.Shift, Revision = x.RegionId == Guid.Empty ? 0 : x.Revision, x.UpdatedAt }).ToArrayAsync(ct));
     }
 
     [HttpGet("{date}/{shift:int}")]
-    public async Task<IActionResult> Get(DateOnly date, int shift, CancellationToken ct)
+    public async Task<IActionResult> Get(DateOnly date, int shift, [FromQuery] Guid regionId, CancellationToken ct)
     {
-        var report = await db.GtoReports.AsNoTracking().SingleOrDefaultAsync(x => x.ReportDate == date && x.Shift == shift, ct);
-        return report is null ? NotFound() : Ok(new { report.Revision, report.UpdatedAt, Snapshot = JsonSerializer.Deserialize<JsonElement>(report.Snapshot) });
+        var region = await Region(regionId, ct);
+        if (region is null) return NotFound();
+        var report = await db.GtoReports.AsNoTracking().Where(x => x.ReportDate == date && x.Shift == shift &&
+            (x.RegionId == regionId || x.RegionId == Guid.Empty)).OrderByDescending(x => x.RegionId == regionId).FirstOrDefaultAsync(ct);
+        return report is null ? NotFound() : Ok(new { Revision = report.RegionId == Guid.Empty ? 0 : report.Revision,
+            report.UpdatedAt, Snapshot = Snapshot(report.Snapshot, region, await VehicleIds(regionId, ct)) });
     }
 
     [HttpGet("defaults")]
-    public async Task<IActionResult> Defaults(DateOnly date, int shift, CancellationToken ct)
+    public async Task<IActionResult> Defaults(DateOnly date, int shift, [FromQuery] Guid regionId, CancellationToken ct)
     {
-        var previous = await db.GtoReports.AsNoTracking().Where(x => x.ReportDate < date || (x.ReportDate == date && x.Shift < shift))
-            .OrderByDescending(x => x.ReportDate).ThenByDescending(x => x.Shift).Select(x => x.Snapshot).FirstOrDefaultAsync(ct);
-        return Ok(previous is null ? (object)new { rows = Array.Empty<object>() } : JsonSerializer.Deserialize<JsonElement>(previous));
+        var region = await Region(regionId, ct);
+        if (region is null) return NotFound();
+        var previous = await db.GtoReports.AsNoTracking().Where(x => (x.RegionId == regionId || x.RegionId == Guid.Empty) &&
+            (x.ReportDate < date || (x.ReportDate == date && x.Shift < shift)))
+            .OrderByDescending(x => x.ReportDate).ThenByDescending(x => x.Shift).ThenByDescending(x => x.RegionId == regionId)
+            .Select(x => x.Snapshot).FirstOrDefaultAsync(ct);
+        return Ok(previous is null ? (object)new { rows = Array.Empty<object>() } : Snapshot(previous, region, await VehicleIds(regionId, ct)));
     }
 
     [HttpPut("{date}/{shift:int}")]
     [RequestSizeLimit(5_000_000)]
-    public async Task<IActionResult> Save(DateOnly date, int shift, SaveRequest request, CancellationToken ct)
+    public async Task<IActionResult> Save(DateOnly date, int shift, [FromQuery] Guid regionId, SaveRequest request, CancellationToken ct)
     {
         if (!Guid.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub"), out var actor)) return Unauthorized();
+        var region = await Region(regionId, ct);
+        if (region is null) return NotFound();
+        if (region.IsArchived) return BadRequest(new { message = "Участок находится в архиве." });
         if (!(await service.GetVehicleCatalogOptionsAsync(actor, ct)).CanManage) return Forbid();
         if (!ValidSnapshot(date, shift, request)) return BadRequest(new { message = "Некорректные данные отчёта или КТГ. Проверьте дату, смену и значения от 0 до 100%." });
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
-        // Serialize create/update for a single report and compare the revision inside the lock.
-        var key = $"gto:{date:yyyy-MM-dd}:{shift}";
+        // Coordinate assignment changes with validation of the submitted fleet.
+        await db.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock(740410119)", ct);
+        var ids = await VehicleIds(regionId, ct);
+        if (request.Snapshot.GetProperty("rows").EnumerateArray().Any(row =>
+            !Guid.TryParse(row.GetProperty("vehicle").GetProperty("id").GetString(), out var id) || !ids.Contains(id)))
+            return BadRequest(new { message = "В отчёте есть техника другого участка. Обновите прогноз." });
+        var key = $"gto:{regionId}:{date:yyyy-MM-dd}:{shift}";
         await db.Database.ExecuteSqlInterpolatedAsync($"SELECT pg_advisory_xact_lock(hashtextextended({key}, 113))", ct);
-        var report = await db.GtoReports.SingleOrDefaultAsync(x => x.ReportDate == date && x.Shift == shift, ct);
+        var report = await db.GtoReports.SingleOrDefaultAsync(x => x.RegionId == regionId && x.ReportDate == date && x.Shift == shift, ct);
         if ((report?.Revision ?? 0) != request.Revision)
             return Conflict(new { message = "Отчёт изменён другим пользователем. Откройте сохранённую версию перед продолжением." });
         if (report is null) {
-            report = new GtoReport { ReportDate = date, Shift = shift };
+            report = new GtoReport { RegionId = regionId, ReportDate = date, Shift = shift };
             db.GtoReports.Add(report);
         }
         report.Revision++;
-        report.Snapshot = request.Snapshot.GetRawText();
+        report.Snapshot = Snapshot(request.Snapshot.GetRawText(), region, ids).ToJsonString();
         report.UpdatedBy = actor;
         report.UpdatedAt = DateTime.UtcNow;
         await db.SaveChangesAsync(ct);

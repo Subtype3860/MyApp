@@ -727,13 +727,26 @@ public sealed class DatabaseInitializer(AppDbContext db) : IDatabaseInitializer
                 id smallint PRIMARY KEY CHECK (id = 1),
                 retention_days integer NOT NULL
                     CHECK (retention_days BETWEEN 1 AND 180),
+                permanent_retention_days integer NOT NULL DEFAULT 180
+                    CHECK (permanent_retention_days BETWEEN 1 AND 3650),
+                max_storage_bytes bigint NOT NULL DEFAULT 21474836480
+                    CHECK (max_storage_bytes BETWEEN 1048576 AND 1099511627776),
                 updated_at timestamptz NOT NULL DEFAULT NOW()
             );
+
+            ALTER TABLE media_storage_settings
+                ADD COLUMN IF NOT EXISTS permanent_retention_days integer NOT NULL
+                    DEFAULT 180
+                    CHECK (permanent_retention_days BETWEEN 1 AND 3650),
+                ADD COLUMN IF NOT EXISTS max_storage_bytes bigint NOT NULL
+                    DEFAULT 21474836480
+                    CHECK (max_storage_bytes BETWEEN 1048576 AND 1099511627776);
             """,
             cancellationToken);
         await MaintenancePlanSchema.EnsureAsync(db, cancellationToken);
         await db.Database.ExecuteSqlRawAsync(LocalAdviceSchema.Sql, cancellationToken);
         await db.Database.ExecuteSqlRawAsync(RepairSyncSchema.Sql, cancellationToken);
+        await FleetRegionSchema.EnsureAsync(db, cancellationToken);
         if (!await db.MediaStorageSettings.AnyAsync(
                 settings => settings.Id == 1,
                 cancellationToken))
@@ -742,6 +755,8 @@ public sealed class DatabaseInitializer(AppDbContext db) : IDatabaseInitializer
             {
                 Id = 1,
                 RetentionDays = 1,
+                PermanentRetentionDays = 180,
+                MaxStorageBytes = 21474836480,
                 UpdatedAt = DateTimeOffset.UtcNow
             });
             await db.SaveChangesAsync(cancellationToken);

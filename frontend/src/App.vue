@@ -10,6 +10,7 @@ import ProfileView from './components/ProfileView.vue'
 import RequirementsJournalView from './components/RequirementsJournalView.vue'
 import SelectedComponentsView from './components/SelectedComponentsView.vue'
 import SettingsView from './components/SettingsView.vue'
+import FleetRegionsView from './components/FleetRegionsView.vue'
 import TablesView from './components/TablesView.vue'
 import VehicleJournalView from './components/VehicleJournalView.vue'
 import AuxiliaryWorksView from './components/AuxiliaryWorksView.vue'
@@ -305,7 +306,9 @@ function updateSelectedComponentRows(rows) {
         :navigation-collapsed="isNavigationCollapsed"
         :section="currentVehicleSection"
         :token="token"
+        @maintenance-materials="rows => { applyMaintenanceTemplate(rows); openSelectedComponents() }"
       />
+      <FleetRegionsView v-else-if="currentPage === 'fleet-regions'" :token="token" :navigation-collapsed="isNavigationCollapsed" />
       <SettingsView
         v-else-if="
           currentPage === 'settings' &&

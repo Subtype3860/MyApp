@@ -548,7 +548,7 @@ public sealed class VehicleService(
         }
         if (!await CanManageWorkAsync(workId, userId, cancellationToken))
         {
-            return ServiceResult<IReadOnlyList<Guid>>.Unauthorized();
+            return ServiceResult<IReadOnlyList<Guid>>.Forbidden("Нет права добавлять вложения к этой работе.");
         }
         var validation = await ValidatePhotosAsync(
             photos,
@@ -1087,7 +1087,7 @@ public sealed class VehicleService(
         }
         if (!await canManage(parentId, userId, cancellationToken))
         {
-            return ServiceResult<IReadOnlyList<Guid>>.Unauthorized();
+            return ServiceResult<IReadOnlyList<Guid>>.Forbidden("Нет права добавлять видео к этой записи.");
         }
         if (videos.Count == 0 ||
             await count(parentId, cancellationToken) + videos.Count >
@@ -1178,7 +1178,6 @@ public sealed class VehicleService(
         var user = await userRepository.FindByIdAsync(userId, cancellationToken);
         return user is not null &&
             (IsAdministrator(user) ||
-             await repository.AuxiliaryWorkExistsAsync(workId, cancellationToken) &&
              await repository.IsWorkCreatorAsync(workId, userId, cancellationToken) ||
              ExecutorProfessions.Contains(user.Profession.Name.Trim()) &&
              await repository.IsWorkPerformerAsync(workId, userId, cancellationToken));

@@ -16,11 +16,11 @@ public sealed class DailyHoursPlannerTests
     /// <summary>Запускает проверку ежедневного импорта на подготовленных тестовых данных.</summary>
     private static DailyHoursPreview Plan(DailyHoursRow[] rows, params DailyHoursHistory[] history) => DailyHoursPlanner.Build(rows, [Truck, Excavator], history);
 
-    /// <summary>Проверяет сортировку дат и независимый перенос показаний каждого двигателя при простое.</summary>
-    [Fact] public void Sorts_dates_and_carries_each_engine_independently()
+    /// <summary>Проверяет сортировку дат, согласование двигателей и перенос согласованной пары при простое.</summary>
+    [Fact] public void Sorts_dates_and_carries_synchronized_engines()
     {
         var result = Plan([Row(3, null), Row(2, 110), Row(2, null, 2), Row(3, null, 2)], History(1, 100), History(1, 500, 2));
-        Assert.Equal(new decimal?[] {110, 500, 110, 500}, result.Rows.Select(r => r.EngineHours));
+        Assert.Equal(new decimal?[] {110, 510, 110, 510}, result.Rows.Select(r => r.EngineHours));
         Assert.All(result.Rows, r => Assert.Equal("ready", r.Status));
         Assert.Equal(new TimeOnly(8, 0), result.ReadingTime);
     }
@@ -36,11 +36,11 @@ public sealed class DailyHoursPlannerTests
         var result = Plan([Row(2, null, invalid:true), Row(3, null), Row(4, 120), Row(5, null)], History(1, 100));
         Assert.Equal(new[] {"error", "error", "ready", "ready"}, result.Rows.Select(r => r.Status));
     }
-    /// <summary>Проверяет блокировку переноса при уменьшении счётчика без влияния на другой двигатель.</summary>
-    [Fact] public void Decrease_blocks_carry_but_not_other_engine()
+    /// <summary>Проверяет запрет согласования пустой пары после ошибочного показания двигателя.</summary>
+    [Fact] public void Decrease_blocks_following_blank_pair()
     {
         var result = Plan([Row(2, 99), Row(3, null), Row(3, null, 2)], History(1, 100), History(1, 500, 2));
-        Assert.Equal(new[] {"error", "error", "ready"}, result.Rows.Select(r => r.Status));
+        Assert.Equal(new[] {"error", "error", "error"}, result.Rows.Select(r => r.Status));
     }
     /// <summary>Проверяет отклонение дублей в файле и отсутствие новых записей при повторном импорте.</summary>
     [Fact] public void Duplicate_input_is_rejected_and_repeat_import_is_unchanged()
@@ -52,7 +52,7 @@ public sealed class DailyHoursPlannerTests
     /// <summary>Проверяет обнаружение чрезмерного прироста моточасов и конфликта с будущим показанием.</summary>
     [Fact] public void Detects_unreasonable_growth_and_future_conflict()
     {
-        Assert.Equal("warning", Assert.Single(Plan([Row(2, 125)], History(1, 100)).Rows).Status);
+        Assert.Equal("error", Assert.Single(Plan([Row(2, 125)], History(1, 100)).Rows).Status);
         Assert.Equal("error", Assert.Single(Plan([Row(2, 125)], History(3, 120)).Rows).Status);
     }
     /// <summary>Проверяет сопоставление по бортовому номеру и отклонение неоднозначных совпадений.</summary>
@@ -89,5 +89,67 @@ public sealed class DailyHoursPlannerTests
         var result = Plan(rows, History(1, 100, 0), new(Excavator.Id, new(2026,10,1), 0, 500, DateTimeOffset.UtcNow));
         Assert.Equal(500, result.Rows.Single(r=>r.GarageNumber==91).EngineHours);
         Assert.Equal("error", result.Rows.Single(r=>r.GarageNumber==901).Status);
+    }
+
+    [Theory]
+    [InlineData(14907)]
+    [InlineData(4520)]
+    public void Uses_larger_increment_for_both_counters(decimal second)
+    {
+        var result = Plan([Row(24, 20374), Row(24, second, 2)], History(23, 20351), History(23, 14896, 2));
+        Assert.Equal(new decimal?[] {20374, 14919}, result.Rows.Select(r => r.EngineHours));
+        Assert.All(result.Rows, r => { Assert.Equal("ready", r.Status); Assert.Contains("Исходные", r.Message); });
+    }
+
+    [Theory]
+    [InlineData(24, 24)]
+    [InlineData(25, 22)]
+    [InlineData(500, 22)]
+    public void Uses_22_only_when_larger_increment_exceeds_24(decimal delta, decimal expected)
+    {
+        var result = Plan([Row(2, 100 + delta), Row(2, 511, 2)], History(1, 100), History(1, 500, 2));
+        Assert.Equal(new decimal?[] {100 + expected, 500 + expected}, result.Rows.Select(r => r.EngineHours));
+        Assert.All(result.Rows, r => Assert.Equal("ready", r.Status));
+        if (delta > 24) Assert.All(result.Rows, r => Assert.Contains("норма 22", r.Message));
+    }
+
+    [Fact] public void Scales_threshold_and_estimate_by_elapsed_days_without_creating_missing_dates()
+    {
+        var result = Plan([Row(3, 149), Row(3, 510, 2)], History(1, 100), History(1, 500, 2));
+        Assert.Equal(new decimal?[] {144, 544}, result.Rows.Select(r => r.EngineHours));
+        Assert.All(result.Rows, r => Assert.Equal(new DateOnly(2026, 10, 3), r.ReadingDate));
+    }
+
+    [Fact] public void Subsequent_dates_use_corrected_baseline_and_reimport_is_idempotent()
+    {
+        var rows = new[] {Row(2, 125), Row(2, 511, 2), Row(3, 145), Row(3, 530, 2)};
+        var result = Plan(rows, History(1, 100), History(1, 500, 2));
+        Assert.Equal(new decimal?[] {122, 522, 145, 545}, result.Rows.Select(r => r.EngineHours));
+        var saved = result.Rows.Select(r => History(r.ReadingDate.Day, r.EngineHours!.Value, r.EngineNumber));
+        var repeated = Plan(rows, new[] {History(1, 100), History(1, 500, 2)}.Concat(saved).ToArray());
+        Assert.All(repeated.Rows, r => Assert.Equal("unchanged", r.Status));
+    }
+
+    [Fact] public void Rejects_pair_when_comparison_periods_differ()
+    {
+        var result = Plan([Row(3, 130), Row(3, 520, 2)], History(1, 100), History(2, 500, 2));
+        Assert.All(result.Rows, r => Assert.Equal("error", r.Status));
+    }
+
+    [Fact] public void Rejects_both_decreasing_counters_and_invalid_text()
+    {
+        Assert.All(Plan([Row(2, 90), Row(2, 490, 2)], History(1, 100), History(1, 500, 2)).Rows,
+            r => Assert.Equal("error", r.Status));
+        Assert.All(Plan([Row(2, 110), Row(2, null, 2, true)], History(1, 100), History(1, 500, 2)).Rows,
+            r => Assert.Equal("error", r.Status));
+    }
+
+    [Fact] public void Rejects_entire_pair_when_corrected_counter_conflicts_with_saved_history()
+    {
+        var rows = new[] {Row(2, 123), Row(2, 511, 2)};
+        Assert.All(Plan(rows, History(1, 100), History(1, 500, 2), History(3, 520, 2)).Rows,
+            r => Assert.Equal("error", r.Status));
+        Assert.All(Plan(rows, History(1, 100), History(1, 500, 2), History(2, 511, 2)).Rows,
+            r => Assert.Equal("error", r.Status));
     }
 }

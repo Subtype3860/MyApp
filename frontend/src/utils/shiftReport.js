@@ -125,6 +125,42 @@ export function workPerformersLabel(work) {
   return performers.length ? `Исполнители: ${performers.join('; ')}` : 'Исполнители пока не подтверждены'
 }
 
+/** Объединяет подтверждённых исполнителей карточки по профессиям. */
+export function cardPerformers(card) {
+  const groups = new Map(), seen = new Set()
+  let unconfirmed = false
+  for (const work of card.works) {
+    const participants = Array.isArray(work.participants)
+      ? work.participants.filter(person => person.status === 'approved')
+      : work.performerName ? [{ name: work.performerName, position: work.performerPosition }] : []
+    if (!participants.length) unconfirmed = true
+    for (const person of participants) {
+      const name = String(person.name || '').trim().replace(/\s+/g, ' ')
+      if (!name) continue
+      const position = String(person.position || '').trim() || 'Профессия не указана'
+      const key = person.userId || `${position}\u0000${name}`
+      if (seen.has(key)) continue
+      seen.add(key)
+      const [surname, ...names] = name.split(' ')
+      const shortName = [surname, ...names.map(part => `${Array.from(part)[0]}.`)].join(' ')
+      if (!groups.has(position)) groups.set(position, [])
+      groups.get(position).push(shortName)
+    }
+  }
+  return { groups: [...groups].map(([position, names]) => ({ position, names })), unconfirmed }
+}
+
+/** Отбирает вспомогательные работы выбранной смены. */
+export function cardWorkSections(card) {
+  const confirmed = [], unconfirmed = []
+  for (const work of card.works) {
+    (cardPerformers({ works: [work] }).groups.length ? confirmed : unconfirmed).push(work)
+  }
+  return [confirmed, unconfirmed].filter(works => works.length).map(works => ({
+    works, performers: cardPerformers({ works }),
+  }))
+}
+
 /** Отбирает вспомогательные работы выбранной смены. */
 export function selectAuxiliaryWorks(works, date, shift) {
   const { start, end } = shiftBounds(date, shift)

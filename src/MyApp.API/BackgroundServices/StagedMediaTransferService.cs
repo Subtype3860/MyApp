@@ -45,7 +45,8 @@ public sealed class StagedMediaTransferService(
         await using var scope = scopeFactory.CreateAsyncScope();
         var repository = scope.ServiceProvider
             .GetRequiredService<IMediaStorageAdministrationRepository>();
-        var retentionDays = await repository.GetRetentionDaysAsync(cancellationToken);
+        var settings = await repository.GetSettingsAsync(cancellationToken);
+        var retentionDays = settings.StagingRetentionDays;
         while (true)
         {
             var files = await repository.GetExpiredFilesAsync(

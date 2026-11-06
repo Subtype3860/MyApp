@@ -12,6 +12,8 @@ function server() {
     }, editor)
     await page.route('**/api/**', route => {
       const req=route.request(),url=new URL(req.url()),path=url.pathname
+      if(path==='/api/fleet-regions')return route.fulfill({json:{regions:[{id:'r1',name:'Участок 1'}]}})
+      if(path==='/api/fleet-regions/vehicles')return route.fulfill({json:[{vehicleId:'v1',regionId:'r1'}]})
       if(path==='/api/gto-reports')return route.fulfill({json:[...reports.entries()].map(([key,value])=>({date:key.split('/')[0],shift:Number(key.split('/')[1]),revision:value.revision,updatedAt:value.updatedAt})).reverse()})
       if(path==='/api/gto-reports/defaults') {
         const key=url.searchParams.get('date')+'/'+url.searchParams.get('shift')

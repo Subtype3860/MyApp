@@ -1,10 +1,12 @@
 <script setup>
 import { computed,onMounted,ref } from 'vue'
 import MaintenanceDateReadings from './MaintenanceDateReadings.vue'
+import MaintenanceCards from './MaintenanceCards.vue'
 import FleetActionMenu from './FleetActionMenu.vue'
 import { maintenancePresets,stepLabel,hoursText } from '../utils/maintenance'
 import { localDate,vehicleTitle } from '../utils/shiftReport'
 const props=defineProps({token:{type:String,required:true}})
+const emit=defineEmits(['materials'])
 const rows=ref([]), canManage=ref(false), loading=ref(false),busy=ref(false),error=ref(''),message=ref(''),query=ref('')
 const selectedId=ref(''),draft=ref(null),revision=ref(0),initialStep=ref(0),history=ref([])
 const completion=ref(null),completionDialog=ref(null),conflict=ref(false)
@@ -124,6 +126,7 @@ onMounted(load)
     <button v-if="canManage" type="button" class="primary-button" :disabled="busy" @click="openCompletion">Зарегистрировать выполнение ТО</button>
    </template>
   </section>
+  <MaintenanceCards :key="selectedId" :token="token" :vehicle="selected.vehicle" :plan="selected.plan" :plan-revision="revision" @completed="reload" @materials="emit('materials',$event)" />
   <form @submit.prevent="save" class="maintenance-form">
    <fieldset :disabled="!canManage || busy">
     <legend>{{selected.plan?'Редактирование графика':'Начальные данные'}}</legend>

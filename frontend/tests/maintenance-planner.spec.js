@@ -8,6 +8,8 @@ test('nearest five use signed remaining and exclude missing data',()=>{
  expect(list.map(r=>r.vehicle.id)).toEqual(['2','5','3','6','1'])
  expect(maintenancePresets[1].steps.map(s=>s.interval)).toEqual([350,350,300,350,350,300,350,350,300,350,350,300])
  expect(maintenancePresets[1].steps.reduce((n,s)=>n+s.interval,0)).toBe(4000)
+ expect(maintenancePresets[1].steps.slice(5).map(s=>s.name)).toEqual(['ТО-2000','ТО-350','ТО-700','ТО-1000','ТО-350','ТО-700','ТО-4000'])
+ expect(maintenancePresets[0].steps[11]).toEqual({name:'ТО-1000',interval:250})
 })
 async function auth(page){
  await page.addInitScript(()=>{localStorage.setItem('myapp.authToken','test');localStorage.setItem('myapp.userRole','administrator')})

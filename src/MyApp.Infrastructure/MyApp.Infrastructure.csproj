@@ -2,6 +2,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\MyApp.Application\MyApp.Application.csproj" />
+    <EmbeddedResource Include="Db/Seeds/maintenance-cards.json" />
   </ItemGroup>
   <ItemGroup>
     <EmbeddedResource Include="../../scripts/migrations/20261012_csv_to_database.sql" LogicalName="MyApp.Infrastructure.CsvDatabaseMigration.sql" />

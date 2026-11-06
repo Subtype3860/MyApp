@@ -14,6 +14,8 @@ builder.Services.AddOpenApi();
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")
     ?? throw new InvalidOperationException(
         "Connection string 'DefaultConnection' is required.");
+var initializeDatabase = builder.Configuration.GetValue(
+    "Database:Initialize", true);
 var jwtSection = builder.Configuration.GetRequiredSection("Jwt");
 var jwtKey = jwtSection.GetValue<string>("Key");
 if (string.IsNullOrWhiteSpace(jwtKey))
@@ -52,6 +54,10 @@ builder.Services.AddInfrastructure(
     jwtOptions,
     mediaStorageOptions);
 builder.Services.AddHostedService<StagedMediaTransferService>();
+if (builder.Configuration.GetValue("MediaStorage:RetentionEnabled", true))
+{
+    builder.Services.AddHostedService<MediaRetentionService>();
+}
 builder.Services.AddJwtAuthentication(builder.Configuration);
 builder.Services.AddAuthorization(options =>
 {
@@ -94,6 +100,7 @@ app.UseHttpsRedirection();
 app.UseAuthentication();
 app.UseRateLimiter();
 app.UseAuthorization();
+app.UseMiddleware<MyApp.API.FleetRegionMiddleware>();
 var gameSockets = new WebSocketOptions { KeepAliveInterval = TimeSpan.FromSeconds(15), KeepAliveTimeout = TimeSpan.FromSeconds(15) };
 foreach (var origin in builder.Configuration.GetSection("Tanks:AllowedOrigins").Get<string[]>() ?? ["https://boora.ru", "https://www.boora.ru"])
     gameSockets.AllowedOrigins.Add(origin);
@@ -101,7 +108,10 @@ if (app.Environment.IsDevelopment())
     foreach (var origin in new[] { "http://localhost:5150", "http://127.0.0.1:5150", "http://localhost:5296" }) gameSockets.AllowedOrigins.Add(origin);
 app.UseWebSockets(gameSockets);
 
-await app.Services.InitializeDatabaseAsync();
+if (initializeDatabase)
+{
+    await app.Services.InitializeDatabaseAsync();
+}
 
 app.MapControllers();
 

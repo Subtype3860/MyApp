@@ -27,7 +27,8 @@ const approved = { id: 'p-approved', userId: 'worker1', name: 'Иванов Ив
 const pending = { id: 'p-pending', userId: 'worker2', name: 'Петров Пётр Петрович', position: 'Электрослесарь', status: 'pending' }
 const journals = [{ vehicle: { id: 'v1', modelName: 'SANY SY1250H', garageNumber: 94, typeName: 'Экскаваторы' }, works: [
   { id: 'w1', completedAt: '2026-10-11T21:00:00+06:00', description: 'Обвязка ДВС, сборка системы выпуска, замена масляных фильтров.', participants: [approved, pending], location: 'КАРЬЕР', operationalState: 'stopped', photos: [{ id: 'p1', fileName: 'Ремонт.jpg' }], videos: [{ id: 'vid1', fileName: 'Проверка.mp4' }] },
-  { id: 'w2', completedAt: '2026-10-12T00:42:00+06:00', description: 'Проверка электрооборудования ДВС.', participants: [approved], location: 'КАРЬЕР', operationalState: 'stopped' },
+  { id: 'w2', completedAt: '2026-10-12T00:42:00+06:00', description: 'Проверка электрооборудования ДВС.', photos: [{ id: 'p2', fileName: 'Электрооборудование.webp' }], participants: [approved], location: 'КАРЬЕР', operationalState: 'stopped' },
+  { id: 'w4', completedAt: '2026-10-12T01:00:00+06:00', description: 'Чистка контактных групп', participants: [pending], location: 'КАРЬЕР', operationalState: 'stopped', photos: [{ id: 'p3', fileName: 'Контакты.webp' }] },
   { id: 'out', completedAt: '2026-10-12T08:00:00+06:00', description: 'Следующая смена', location: 'КАРЬЕР' },
 ] }, { vehicle: { id: 'v2', modelName: 'SANY SET 150S', garageNumber: 903, typeName: 'Автосамосвалы' }, works: [
   { id: 'w3', completedAt: '2026-10-11T23:00:00+06:00', description: 'Подготовка к демонтажу ГСТ № 2', participants: [approved], location: 'РММ', operationalState: 'stopped' },
@@ -42,8 +43,9 @@ async function prepare(page) {
   })
   await page.route('**/api/**', route => {
     const path = new URL(route.request().url()).pathname
+    if (path === '/api/report-media/links') return route.fulfill({ json: route.request().postDataJSON().map(item => ({ ...item, url: `/api/report-media/${item.type}/${item.id}/signed-test-link` })) })
     if (path === '/api/vehicles/repair-journal') return route.fulfill({ json: journals })
-    if (path === '/api/vehicles/work-photos/p1') return route.fulfill({ body: photo, contentType: 'image/webp' })
+    if (['/api/vehicles/work-photos/p1', '/api/vehicles/work-photos/p2', '/api/vehicles/work-photos/p3'].includes(path)) return route.fulfill({ body: photo, contentType: 'image/webp' })
     if (path === '/api/profile') return route.fulfill({ json: { hasAvatar: false } })
     return route.fulfill({ json: [] })
   })
@@ -62,8 +64,21 @@ for (const width of [390, 1440]) {
     await expect(page.locator('.shift-report__card')).toHaveCount(2)
     await expect(page.locator('.shift-report__paper')).toContainText('Проверка электрооборудования ДВС.')
     await expect(page.locator('.shift-report__paper')).not.toContainText('Следующая смена')
-    await expect(page.locator('.shift-report__performers').first()).toContainText('Слесарь · Иванов Иван Иванович')
+    await expect(page.locator('.shift-report__performers').first()).toContainText('Иванов И. И.')
     await expect(page.locator('.shift-report__paper')).not.toContainText('Петров Пётр Петрович')
+    const card = page.locator('.shift-report__card').first()
+    await expect(card.locator('.shift-report__work-section')).toHaveCount(2)
+    await expect(card.locator('.shift-report__work-section').first().locator('.shift-report__work')).toHaveCount(2)
+    await expect(card.locator('.shift-report__work-section').last()).toContainText('Чистка контактных групп')
+    await expect(card.locator('.shift-report__work-section').last()).toContainText('Исполнители пока не подтверждены')
+    await expect(card.locator('.shift-report__photos img')).toHaveCount(3)
+    await expect(card.locator('.shift-report__photos a').first()).toHaveAttribute('href', /\/api\/report-media\/image\/p1\//)
+    await expect(card.locator('.shift-report__links a').first()).toHaveAttribute('href', /\/api\/report-media\/video\/vid1\//)
+    for (const work of await card.locator('.shift-report__work').all()) {
+      const photo = await work.locator('.shift-report__photos').boundingBox()
+      const description = await work.locator('.shift-report__description').boundingBox()
+      expect(photo.y + photo.height).toBeLessThanOrEqual(description.y)
+    }
     const downloadEvent = page.waitForEvent('download')
   if(await page.getByLabel('Меню отчёта за смену',{exact:true}).getAttribute('aria-expanded') !== 'true') await page.getByLabel('Меню отчёта за смену',{exact:true}).click()
     await page.getByRole('button', { name: 'Скачать PDF', exact: true }).click()
@@ -72,6 +87,13 @@ for (const width of [390, 1440]) {
     await download.saveAs(`test-results/shift-report-${width}.pdf`)
     const document = await PDFDocument.load(await readFile(await download.path()))
     expect(document.getPageCount()).toBeGreaterThan(0)
+    const urls = document.getPages().flatMap(sheet => {
+      const annotations = sheet.node.Annots()
+      return annotations ? Array.from({ length: annotations.size() }, (_, index) => annotations.lookup(index).lookup(PDFName.of('A')).lookup(PDFName.of('URI')).decodeText()) : []
+    })
+    expect(urls.length).toBeGreaterThan(0)
+    expect(urls.every(url => url.includes('/api/report-media/'))).toBe(true)
+    expect(urls.some(url => url.includes('/video/vid1/'))).toBe(true)
     expect(document.getPages().some(p => p.node.get(PDFName.of('Annots')))).toBe(true)
     expect(document.getPages().some(p => p.node.Resources().get(PDFName.of('XObject')))).toBe(true)
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)

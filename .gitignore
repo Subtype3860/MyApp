@@ -370,3 +370,7 @@ FodyWeavers.xsd
 /test-results/
 /frontend/test-results/
 /frontend/playwright-report/
+
+# Local release staging, logs and generated previews
+/tmp/
+/gto_preview.png

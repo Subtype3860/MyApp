@@ -5,8 +5,9 @@ namespace MyApp.Infrastructure.Db;
 /// <summary>Добавляет таблицы графиков ТО без изменения существующих данных.</summary>
 public static class MaintenancePlanSchema
 {
-    public static Task EnsureAsync(AppDbContext db, CancellationToken ct = default) =>
-        db.Database.ExecuteSqlRawAsync(
+    public static async Task EnsureAsync(AppDbContext db, CancellationToken ct = default)
+    {
+        await db.Database.ExecuteSqlRawAsync(
             """
             CREATE TABLE IF NOT EXISTS vehicle_maintenance_plans (
             vehicle_id uuid PRIMARY KEY REFERENCES number_car(id) ON DELETE RESTRICT,
@@ -31,4 +32,6 @@ public static class MaintenancePlanSchema
             );
             ALTER TABLE vehicle_maintenance_events ADD COLUMN IF NOT EXISTS request_hash text;
             """, ct);
+        await MaintenanceCardSchema.EnsureAsync(db, ct);
+    }
 }

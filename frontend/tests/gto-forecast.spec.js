@@ -37,6 +37,8 @@ for (const width of [390,1440]) {
   const writes=[]
   await page.route('**/api/**',route=>{
    const request=route.request(),path=new URL(request.url()).pathname
+   if(path==='/api/fleet-regions')return route.fulfill({json:{regions:[{id:'r1',name:'Участок 1'}]}})
+   if(path==='/api/fleet-regions/vehicles')return route.fulfill({json:[{vehicleId:'v1',regionId:'r1'},{vehicleId:'v2',regionId:'r1'}]})
    if(path.startsWith('/api/gto-reports'))return mockReport(route)
    if(request.method()!=='GET')writes.push(path)
    if(path==='/api/vehicles/repair-journal')return route.fulfill({json:journals})
@@ -75,7 +77,7 @@ for (const width of [390,1440]) {
     await exported.saveAs(`test-results/gto-export-${width}.${extension}`)
   }
   expect(writes).toEqual([])
-  const draft=await page.evaluate(()=>JSON.parse(localStorage.getItem('myapp.gtoDraft.mechanic')))
+  const draft=await page.evaluate(()=>JSON.parse(localStorage.getItem('myapp.gtoDraft.mechanic.r1')))
   expect(draft.rows.v1.forecast).toBe('healthy');expect(draft).not.toHaveProperty('date');expect(draft).not.toHaveProperty('shift')
   await page.getByLabel('Поиск техники',{exact:true}).fill('')
   await page.getByLabel('Меню Выход ГТО',{exact:true}).click();await page.getByRole('button',{name:'Обновить данные ремонта',exact:true}).click()
@@ -255,7 +257,7 @@ test('overflow summary moves as a whole without a table header', async ({page}) 
  const {writeFile}=await import('node:fs/promises')
  await writeFile('test-results/gto-summary-pages.pdf',Uint8Array.from(bytes))
  const {execFileSync}=await import('node:child_process')
- const pages=execFileSync('pdftotext',['-layout','test-results/gto-summary-pages.pdf','-'],{encoding:'utf8'}).split('\f')
+ const pages=execFileSync('pdftotext',['-enc','UTF-8','-layout','test-results/gto-summary-pages.pdf','-'],{encoding:'utf8'}).split('\f')
  const summary=pages.findIndex(text=>text.includes('СВОДКА ВЫХОДА'))
  expect(summary).toBeGreaterThanOrEqual(0)
  for(let i=0;i<6;i++)expect(pages[summary]).toContain(`Проверочная группа ${i}:`)
@@ -270,7 +272,9 @@ test('persistent preferences and vehicle data, unrestricted search and healthy m
  const writes=[]
  await page.route('**/api/**',route=>{
   const req=route.request(),path=new URL(req.url()).pathname
-  if(path.startsWith('/api/gto-reports'))return mockReport(route)
+  if(path==='/api/fleet-regions')return route.fulfill({json:{regions:[{id:'r1',name:'Участок 1'}]}})
+   if(path==='/api/fleet-regions/vehicles')return route.fulfill({json:[{vehicleId:'v1',regionId:'r1'},{vehicleId:'v2',regionId:'r1'}]})
+   if(path.startsWith('/api/gto-reports'))return mockReport(route)
   if(req.method()==='PUT') {
    const body=req.postDataJSON();writes.push({path,body})
    if(path.endsWith('/user'))preferences={...preferences,...body}
@@ -288,16 +292,13 @@ test('persistent preferences and vehicle data, unrestricted search and healthy m
  await page.goto('/')
  await page.getByRole('button', { name: 'Отчёты', exact: true }).click()
  await page.getByRole('button',{name:'Выход ГТО',exact:true}).click()
- await expect(page.getByLabel('Организация',{exact:true})).toHaveValue('Организация пользователя')
+ await expect(page.getByLabel('Организация / участок',{exact:true})).toHaveValue('r1')
  await expect(page.getByLabel('Плановый выход из ремонта',{exact:true})).toHaveValue('15.10.2026')
- await page.getByLabel('Организация',{exact:true}).fill('Новая организация')
- await page.getByLabel('Организация',{exact:true}).blur()
- await expect.poll(()=>writes.length).toBe(1)
  await page.getByLabel('Кондиционирование и отопление',{exact:true}).selectOption('faulty')
- await expect.poll(()=>writes.length).toBe(2)
+ await expect.poll(()=>writes.length).toBe(1)
  await page.getByLabel('Плановый выход из ремонта',{exact:true}).fill('16.10.2026')
  await page.getByLabel('Плановый выход из ремонта',{exact:true}).blur()
- await expect.poll(()=>writes.length).toBe(3)
+ await expect.poll(()=>writes.length).toBe(2)
  await page.getByLabel('Состояние к смене',{exact:true}).selectOption('healthy')
  await expect(page.getByLabel('Плановый выход из ремонта',{exact:true})).toHaveCount(0)
  await expect(page.locator('.gto-current-notes')).toHaveCount(1)
@@ -307,11 +308,11 @@ test('persistent preferences and vehicle data, unrestricted search and healthy m
  await expect(page.locator('.gto-row')).toHaveCount(1)
  await expect(page.locator('.gto-row')).toContainText('Самосвал')
  await page.getByLabel('Кондиционирование и отопление',{exact:true}).selectOption('absent')
- await expect.poll(()=>writes.length).toBe(4)
+ await expect.poll(()=>writes.length).toBe(3)
  await page.getByLabel('Поиск техники',{exact:true}).fill('')
  await page.getByLabel('Меню Выход ГТО',{exact:true}).click();await page.getByRole('button',{name:'Обновить данные ремонта',exact:true}).click()
- await expect(page.getByLabel('Участок',{exact:true})).toHaveValue('Участок пользователя')
- await expect(page.getByLabel('Организация',{exact:true})).toHaveValue('Новая организация')
+ await expect(page.getByLabel('Организация / участок',{exact:true})).toHaveValue('r1')
+ expect(writes.some(item=>item.path.endsWith('/user'))).toBe(false)
  await expect(page.getByLabel('Кондиционирование и отопление',{exact:true})).toHaveValue('absent')
  closed=true
  await page.getByLabel('Меню Выход ГТО',{exact:true}).click();await page.getByRole('button',{name:'Обновить данные ремонта',exact:true}).click()
@@ -382,7 +383,9 @@ test('two engine input values persist independently and appear as slash pairs in
  const values=new Map([[1,{engineNumber:1,engineHours:875,readingDate:'2026-10-12'}],[2,{engineNumber:2,engineHours:852,readingDate:'2026-10-12'}]]),replacements=new Map(),writes=[]
  await page.route('**/api/**',route=>{
   const req=route.request(),path=new URL(req.url()).pathname
-  if(path.startsWith('/api/gto-reports'))return mockReport(route)
+  if(path==='/api/fleet-regions')return route.fulfill({json:{regions:[{id:'r1',name:'Участок 1'}]}})
+   if(path==='/api/fleet-regions/vehicles')return route.fulfill({json:[{vehicleId:'v1',regionId:'r1'},{vehicleId:'v2',regionId:'r1'}]})
+   if(path.startsWith('/api/gto-reports'))return mockReport(route)
   if(req.method()==='PUT' && path.includes('/engines/')) {
    const number=Number(path.split('/').at(-1)),body=req.postDataJSON()
    writes.push({number,...body});if(body.engineHours!=null)values.set(number,{engineNumber:number,engineHours:body.engineHours,readingDate:body.readingDate});replacements.set(number,{vehicleId:'v1',engineNumber:number,hoursAtReplacement:body.hoursAtReplacement})
@@ -414,7 +417,7 @@ test('two engine input values persist independently and appear as slash pairs in
  await page.getByLabel('Меню Выход ГТО',{exact:true}).click();await page.getByRole('button',{name:'Скачать PDF',exact:true}).click()
  await (await downloadPromise).saveAs('test-results/gto-two-engines.pdf')
  const {execFileSync}=await import('node:child_process')
- const text=execFileSync('pdftotext',['-layout','test-results/gto-two-engines.pdf','-'],{encoding:'utf8'})
+ const text=execFileSync('pdftotext',['-enc','UTF-8','-layout','test-results/gto-two-engines.pdf','-'],{encoding:'utf8'})
  expect(text).toMatch(/875\s*\/\s*852/);expect(text).toMatch(/18225\s*\/\s*17900/)
  expect(writes.every(item=>[1,2].includes(item.number) && item.engineHours===null)).toBe(true)
 })

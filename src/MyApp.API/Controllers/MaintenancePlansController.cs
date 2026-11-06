@@ -17,7 +17,7 @@ namespace MyApp.API.Controllers;
 [ApiController]
 [Route("api/maintenance-plans")]
 [Authorize(Policy = Permissions.VehiclesView)]
-public sealed class MaintenancePlansController(AppDbContext db, IVehicleService vehicles) : ControllerBase
+public sealed partial class MaintenancePlansController(AppDbContext db, IVehicleService vehicles) : ControllerBase
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
     public sealed record SaveRequest(int Revision, MaintenancePlan Plan);
@@ -157,9 +157,10 @@ public sealed class MaintenancePlansController(AppDbContext db, IVehicleService 
         await Lock(vehicleId, ct);
         // Keep deduplication and the business write in the same transaction. A retry after
         // a lost response must return the original result, even after subsequent edits.
-        var requestHash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(
-            JsonSerializer.Serialize(new { vehicleId, Actor, request.Revision, request.Date,
-                request.Description, request.RunInId }, JsonOptions))));
+        var hashPayload = request.CardId is null
+            ? JsonSerializer.Serialize(new { vehicleId, Actor, request.Revision, request.Date, request.Description, request.RunInId }, JsonOptions)
+            : JsonSerializer.Serialize(new { vehicleId, Actor, request.Revision, request.Date, request.Description, request.RunInId, request.CardId }, JsonOptions);
+        var requestHash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(hashPayload)));
         if (request.OperationId is { } operationId)
         {
             await db.Database.ExecuteSqlInterpolatedAsync($"SELECT pg_advisory_xact_lock(hashtextextended({operationId.ToString()}, 228))", ct);
@@ -175,6 +176,22 @@ public sealed class MaintenancePlansController(AppDbContext db, IVehicleService 
         if (stored is null) return NotFound();
         if (stored.Revision != request.Revision) return VersionConflict();
         var plan = Read(stored);
+        MaintenanceCard? card = null;
+        if (request.CardId is { } cardId)
+        {
+            card = await db.MaintenanceCards.SingleOrDefaultAsync(x => x.Id == cardId && x.VehicleId == vehicleId, ct);
+            if (card is null) return NotFound();
+            if (card.Status != "submitted" || card.Revision != request.CardRevision || card.PlanRevision != stored.Revision || card.RunInId != request.RunInId)
+                return CardConflict();
+            var data = Decode<CardData>(card.Data);
+            var error = MaintenanceCardRules.Validate(Decode<CardTemplate>(card.Template), data, Today, true);
+            if (error is not null) return BadRequest(new { message = error });
+            if (data.Date != request.Date) return CardConflict();
+            if (data.Answers.Any(a => a.Status == "not-done" || a.Condition == "defect") && request.Description.Trim() == $"Карта ТО {cardId}.")
+                return BadRequest(new { message = "Укажите решение механика по невыполненным работам и дефектам." });
+        }
+        else if (await db.MaintenanceCards.AnyAsync(x => x.VehicleId == vehicleId && x.RunInId == request.RunInId && (x.Status == "draft" || x.Status == "submitted"), ct))
+            return Conflict(new { message = "Для этого ТО открыта карта. Завершите обслуживание через её приёмку." });
         var runIn = request.RunInId is { } id ? plan.RunIns.FirstOrDefault(r => r.Id == id) : null;
         if (request.RunInId is not null && runIn is null) return BadRequest(new { message = "Обкаточное ТО не найдено или уже выполнено." });
         var engines = await ReadingsOn(vehicleId, request.Date, ct);
@@ -191,6 +208,12 @@ public sealed class MaintenancePlansController(AppDbContext db, IVehicleService 
         var next = MaintenancePlanner.Complete(plan, request);
         var name = runIn is null ? plan.Steps[plan.NextStepIndex].Name : "Обкаточное ТО: " + runIn.Reason;
         Record(stored, next, runIn is null ? "scheduled" : "run-in", name + ". " + request.Description.Trim(), request.Date, request.Engines, request.OperationId, requestHash);
+        if (card is not null)
+        {
+            card.Status = "accepted"; card.AcceptedBy = Actor; card.AcceptedAt = DateTimeOffset.UtcNow;
+            card.Readings = JsonSerializer.Serialize(request.Engines, JsonOptions);
+            AuditCard(card, "accepted", request.Description);
+        }
         await db.SaveChangesAsync(ct);
         await transaction.CommitAsync(ct);
         return Ok(new { stored.Revision });

@@ -1,0 +1,12 @@
+[Unit]
+Description=Periodic replication of MyApp media files
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=10min
+RandomizedDelaySec=2min
+Persistent=true
+Unit=myapp-media-replica.service
+
+[Install]
+WantedBy=timers.target
