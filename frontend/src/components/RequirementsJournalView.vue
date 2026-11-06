@@ -1,4 +1,5 @@
 <script setup>
+import FleetActionMenu from './FleetActionMenu.vue'
 import { computed, onMounted, ref } from 'vue'
 import { createPdfDocument, renderPdfDocument } from '../utils/pdfPreview'
 import UserAvatar from './UserAvatar.vue'
@@ -68,6 +69,7 @@ const filteredRequirements = computed(() => {
   })
 })
 
+/** Нормализует номер техники для фильтрации требований. */
 function normalizeVehicleNumber(value) {
   const lookalikes = {
     А: 'A', В: 'B', Е: 'E', К: 'K', М: 'M', Н: 'H',
@@ -79,16 +81,19 @@ function normalizeVehicleNumber(value) {
     .replace(/[^A-Z0-9]/g, '')
 }
 
+/** Форматирует дату и время для отображения пользователю. */
 function formatDateTime(value) {
   const date = new Date(value)
   return Number.isNaN(date.getTime()) ? '—' : dateTimeFormatter.format(date)
 }
 
+/** Форматирует количество материала для отображения. */
 function formatQuantity(value) {
   const quantity = Number(value)
   return Number.isFinite(quantity) ? quantityFormatter.format(quantity) : value
 }
 
+/** Приводит дату к формату поля ввода даты. */
 function formatDateInputValue(value) {
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) {
@@ -101,6 +106,7 @@ function formatDateInputValue(value) {
   return `${year}-${month}-${day}`
 }
 
+/** Сбрасывает фильтры журнала требований. */
 function clearFilters() {
   dateFilter.value = ''
   itemNameFilter.value = ''
@@ -108,6 +114,7 @@ function clearFilters() {
   vehicleNumberFilter.value = ''
 }
 
+/** Загружает журнал требований с текущими фильтрами. */
 async function loadRequirements() {
   isLoading.value = true
   errorMessage.value = ''
@@ -136,6 +143,7 @@ async function loadRequirements() {
   }
 }
 
+/** Получает данные требования и открывает сформированный PDF. */
 async function openPdf(requirement) {
   errorMessage.value = ''
   const previewWindow = window.open('', '_blank')
@@ -168,6 +176,7 @@ async function openPdf(requirement) {
   }
 }
 
+/** Удаляет требование после подтверждения и обновляет журнал. */
 async function deleteRequirement(requirement) {
   if (!window.confirm(`Удалить требование для техники «${requirement.vehicleNumber}»?`)) {
     return
@@ -319,7 +328,7 @@ onMounted(loadRequirements)
                 </div>
               </td>
               <td data-label="Действия">
-                <div class="requirements-row-actions">
+                <FleetActionMenu :label="`Действия с требованием от ${formatDateTime(requirement.createdAt)}`">
                   <button
                     class="secondary-button"
                     type="button"
@@ -340,7 +349,7 @@ onMounted(loadRequirements)
                   >
                     {{ deletingId === requirement.id ? 'Удаление...' : 'Удалить' }}
                   </button>
-                </div>
+                </FleetActionMenu>
               </td>
             </tr>
             <tr v-if="filteredRequirements.length === 0">

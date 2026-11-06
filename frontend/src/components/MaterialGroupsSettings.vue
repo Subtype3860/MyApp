@@ -24,6 +24,7 @@ const selectedGroup = computed(() =>
   groups.value.find((group) => group.id === selectedGroupId.value),
 )
 
+/** Формирует заголовки авторизации и, при необходимости, JSON-запроса. */
 function authHeaders(includeContentType = false) {
   return {
     Authorization: `Bearer ${props.token}`,
@@ -31,6 +32,7 @@ function authHeaders(includeContentType = false) {
   }
 }
 
+/** Извлекает понятное сообщение об ошибке из ответа API. */
 async function readError(response, fallback) {
   const problem = await response.json().catch(() => null)
   return problem?.errors
@@ -38,6 +40,7 @@ async function readError(response, fallback) {
     : problem?.detail || problem?.message || problem?.title || fallback
 }
 
+/** Загружает группы материалов и их состав. */
 async function loadGroups() {
   isLoading.value = true
   errorMessage.value = ''
@@ -65,6 +68,7 @@ async function loadGroups() {
   }
 }
 
+/** Создаёт группу материалов по введённому названию. */
 async function createGroup() {
   isSubmitting.value = true
   errorMessage.value = ''
@@ -91,6 +95,7 @@ async function createGroup() {
   }
 }
 
+/** Удаляет выбранную группу материалов после подтверждения. */
 async function deleteGroup(group) {
   if (!window.confirm(`Удалить группу «${group.name}» и её состав?`)) {
     return
@@ -109,6 +114,7 @@ async function deleteGroup(group) {
   successMessage.value = 'Группа удалена.'
 }
 
+/** Включает найденный материал в выбранную группу. */
 async function addMaterial() {
   if (!selectedGroupId.value) {
     errorMessage.value = 'Выберите группу.'
@@ -144,6 +150,7 @@ async function addMaterial() {
   }
 }
 
+/** Исключает материал из группы и обновляет список. */
 async function deleteMaterial(item) {
   errorMessage.value = ''
   successMessage.value = ''
@@ -159,11 +166,13 @@ async function deleteMaterial(item) {
   successMessage.value = 'Материал удалён из группы.'
 }
 
+/** Запускает поиск материалов по введённому тексту. */
 function searchMaterials() {
   clearTimeout(searchTimer)
   searchTimer = setTimeout(loadMaterialSuggestions, 250)
 }
 
+/** Загружает варианты материалов для добавления в группу. */
 async function loadMaterialSuggestions() {
   const search = materialName.value.trim()
   if (search.length < 2) {

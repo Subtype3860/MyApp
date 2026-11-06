@@ -1,0 +1,25 @@
+import { test, expect } from '@playwright/test'
+
+test('Reports opens collapsed sidebar on first click and toggles its submenu', async ({page}) => {
+ await page.setViewportSize({width:1440,height:1000})
+ await page.addInitScript(()=>{
+  localStorage.setItem('myapp.authToken',`test.${btoa(JSON.stringify({sub:'admin',role:'administrator'}))}.test`)
+  localStorage.setItem('myapp.userRole','Administrator')
+ })
+ await page.route('**/api/**',route=>route.fulfill({json:[]}))
+ await page.goto('/')
+ await page.getByRole('button',{name:'Свернуть меню',exact:true}).click()
+ await expect(page.locator('.sidebar')).toHaveClass(/sidebar--collapsed/)
+ const reports=page.getByRole('button',{name:'Отчёты',exact:true})
+ await reports.click()
+ await expect(page.locator('.sidebar')).not.toHaveClass(/sidebar--collapsed/)
+ await expect(reports).toHaveAttribute('aria-expanded','true')
+ await expect(page.getByRole('button',{name:'Выход ГТО',exact:true})).toBeVisible()
+ await expect(page.getByRole('button',{name:'Отчёт за смену',exact:true})).toBeVisible()
+ await reports.click()
+ await expect(reports).toHaveAttribute('aria-expanded','false')
+ await expect(page.locator('#reports-submenu')).toHaveCount(0)
+ await page.getByRole('button',{name:'Свернуть меню',exact:true}).click()
+ await reports.click()
+ await expect(page.getByRole('button',{name:'Выход ГТО',exact:true})).toBeVisible()
+})

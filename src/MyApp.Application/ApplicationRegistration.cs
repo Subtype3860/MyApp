@@ -3,8 +3,10 @@ using MyApp.Application.Services;
 
 namespace MyApp.Application;
 
+/// <summary>Регистрация сервисов прикладного слоя в контейнере зависимостей.</summary>
 public static class ApplicationRegistration
 {
+    /// <summary>Регистрирует прикладные сервисы в контейнере зависимостей.</summary>
     public static IServiceCollection AddApplication(
         this IServiceCollection services)
     {

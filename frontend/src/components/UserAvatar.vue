@@ -18,11 +18,13 @@ const props = defineProps({
 
 const avatarUrl = ref('')
 
+/** Освобождает временный URL аватара и сбрасывает его отображение. */
 function clearAvatar() {
   if (avatarUrl.value) URL.revokeObjectURL(avatarUrl.value)
   avatarUrl.value = ''
 }
 
+/** Загружает аватар пользователя с авторизацией. */
 async function loadAvatar() {
   clearAvatar()
   const response = await fetch('/api/profile/avatar', {

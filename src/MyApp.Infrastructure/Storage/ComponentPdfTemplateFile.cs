@@ -6,6 +6,7 @@ namespace MyApp.Infrastructure.Storage;
 /// </summary>
 public static class ComponentPdfTemplateFile
 {
+    /// <summary>Проверяет PDF-шаблон и открывает его для чтения.</summary>
     public static FileStream OpenRead(string configuredPath, string contentRoot)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(configuredPath);

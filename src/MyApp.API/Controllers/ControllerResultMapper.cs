@@ -3,8 +3,10 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace MyApp.API.Controllers;
 
+/// <summary>Преобразование результатов прикладного слоя в HTTP-ответы контроллеров.</summary>
 internal static class ControllerResultMapper
 {
+    /// <summary>Преобразует результат прикладного сервиса в HTTP-ответ с подходящим статусом.</summary>
     public static IActionResult ToActionResult<T>(
         this ControllerBase controller,
         ServiceResult<T> result,
@@ -15,6 +17,7 @@ internal static class ControllerResultMapper
             ServiceResultStatus.Success when result.Value is not null => onSuccess(result.Value),
             ServiceResultStatus.Success => controller.Ok(),
             ServiceResultStatus.Unauthorized => controller.Unauthorized(),
+            ServiceResultStatus.Forbidden => controller.StatusCode(403, new { message = result.Message }),
             ServiceResultStatus.NotFound => controller.NotFound(),
             ServiceResultStatus.Conflict => controller.Conflict(new { message = result.Message }),
             ServiceResultStatus.BadRequest => controller.BadRequest(result.Message),

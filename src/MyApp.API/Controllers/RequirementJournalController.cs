@@ -5,11 +5,13 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace MyApp.API.Controllers;
 
+/// <summary>HTTP-эндпоинты журнала требований.</summary>
 [ApiController]
 [Route("api")]
 [Authorize(Policy = Permissions.RequirementsView)]
 public class RequirementJournalController : ControllerBase
 {
+    /// <summary>Возвращает последние записи журнала требований с заданными фильтрами.</summary>
     [HttpGet("/api/requirements")]
     public async Task<IActionResult> GetRecent(
         [FromServices] IRequirementJournalService service,
@@ -19,6 +21,7 @@ public class RequirementJournalController : ControllerBase
         return Ok(requirements);
     }
 
+    /// <summary>Восстанавливает данные документа требования по записи журнала.</summary>
     [HttpGet("/api/requirements/{id:guid}/document")]
     public async Task<IActionResult> GetDocument(
         Guid id,
@@ -29,6 +32,7 @@ public class RequirementJournalController : ControllerBase
         return document is null ? NotFound() : Ok(document);
     }
 
+    /// <summary>Удаляет требование.</summary>
     [HttpDelete("/api/requirements/{id:guid}")]
     public async Task<IActionResult> Delete(
         Guid id,

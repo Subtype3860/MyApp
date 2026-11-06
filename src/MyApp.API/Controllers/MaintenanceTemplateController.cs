@@ -6,10 +6,12 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace MyApp.API.Controllers;
 
+/// <summary>HTTP-эндпоинты шаблонов технического обслуживания.</summary>
 [ApiController]
 [Route("api")]
 public class MaintenanceTemplateController : ControllerBase
 {
+    /// <summary>Возвращает список шаблонов ТО.</summary>
     [HttpGet("/api/maintenance-templates")]
     [Authorize(Policy = Permissions.MaintenanceView)]
     public async Task<IActionResult> GetAll(
@@ -20,6 +22,7 @@ public class MaintenanceTemplateController : ControllerBase
         return Ok(templates);
     }
 
+    /// <summary>Создаёт вид оборудования в шаблонах технического обслуживания.</summary>
     [HttpPost("/api/admin/maintenance-templates/equipment")]
     [Authorize(Roles = "administrator")]
     public async Task<IActionResult> CreateEquipment(
@@ -31,6 +34,7 @@ public class MaintenanceTemplateController : ControllerBase
         return this.ToActionResult(result, id => Created($"/api/admin/maintenance-templates/equipment/{id}", new { id }));
     }
 
+    /// <summary>Изменяет название вида оборудования в шаблонах ТО.</summary>
     [HttpPut("/api/admin/maintenance-templates/equipment/{id:guid}")]
     [Authorize(Roles = "administrator")]
     public async Task<IActionResult> RenameEquipment(
@@ -43,6 +47,7 @@ public class MaintenanceTemplateController : ControllerBase
         return this.ToActionResult(result, _ => NoContent());
     }
 
+    /// <summary>Удаляет вид оборудования из шаблонов ТО.</summary>
     [HttpDelete("/api/admin/maintenance-templates/equipment/{id:guid}")]
     [Authorize(Roles = "administrator")]
     public async Task<IActionResult> DeleteEquipment(
@@ -54,6 +59,7 @@ public class MaintenanceTemplateController : ControllerBase
         return this.ToActionResult(result, _ => NoContent());
     }
 
+    /// <summary>Создаёт интервал обслуживания для выбранного оборудования.</summary>
     [HttpPost("/api/admin/maintenance-templates/equipment/{equipmentId:guid}/intervals")]
     [Authorize(Roles = "administrator")]
     public async Task<IActionResult> CreateInterval(
@@ -66,6 +72,7 @@ public class MaintenanceTemplateController : ControllerBase
         return this.ToActionResult(result, id => Created($"/api/admin/maintenance-templates/intervals/{id}", new { id }));
     }
 
+    /// <summary>Изменяет название интервала обслуживания.</summary>
     [HttpPut("/api/admin/maintenance-templates/intervals/{id:guid}")]
     [Authorize(Roles = "administrator")]
     public async Task<IActionResult> RenameInterval(
@@ -78,6 +85,7 @@ public class MaintenanceTemplateController : ControllerBase
         return this.ToActionResult(result, _ => NoContent());
     }
 
+    /// <summary>Удаляет интервал обслуживания.</summary>
     [HttpDelete("/api/admin/maintenance-templates/intervals/{id:guid}")]
     [Authorize(Roles = "administrator")]
     public async Task<IActionResult> DeleteInterval(
@@ -89,6 +97,7 @@ public class MaintenanceTemplateController : ControllerBase
         return this.ToActionResult(result, _ => NoContent());
     }
 
+    /// <summary>Добавляет материал и его количество в интервал ТО.</summary>
     [HttpPost("/api/admin/maintenance-templates/intervals/{intervalId:guid}/items")]
     [Authorize(Roles = "administrator")]
     public async Task<IActionResult> AddItem(
@@ -101,6 +110,7 @@ public class MaintenanceTemplateController : ControllerBase
         return this.ToActionResult(result, id => Created($"/api/admin/maintenance-templates/items/{id}", new { id }));
     }
 
+    /// <summary>Обновляет количество материала в позиции шаблона обслуживания.</summary>
     [HttpPut("/api/admin/maintenance-templates/items/{id:guid}")]
     [Authorize(Roles = "administrator")]
     public async Task<IActionResult> UpdateItem(
@@ -113,6 +123,7 @@ public class MaintenanceTemplateController : ControllerBase
         return this.ToActionResult(result, _ => NoContent());
     }
 
+    /// <summary>Удаляет позицию материала из интервала ТО.</summary>
     [HttpDelete("/api/admin/maintenance-templates/items/{id:guid}")]
     [Authorize(Roles = "administrator")]
     public async Task<IActionResult> DeleteItem(

@@ -7,11 +7,13 @@ using MyApp.Infrastructure.Db.Entities;
 
 namespace MyApp.Infrastructure.Repositories;
 
+/// <summary>Доступ к данным шаблонов технического обслуживания.</summary>
 public sealed class MaintenanceTemplateRepository(
     AppDbContext db) : IMaintenanceTemplateRepository
 {
     private const int SortLockNamespace = 4386200;
 
+    /// <summary>Возвращает список шаблонов ТО.</summary>
     public async Task<IReadOnlyList<MaintenanceEquipmentResponse>> GetAllAsync(
         CancellationToken cancellationToken)
     {
@@ -84,6 +86,7 @@ public sealed class MaintenanceTemplateRepository(
             .ToArray();
     }
 
+    /// <summary>Проверяет существование вида оборудования.</summary>
     public Task<bool> EquipmentExistsAsync(
         Guid id,
         CancellationToken cancellationToken) =>
@@ -91,6 +94,7 @@ public sealed class MaintenanceTemplateRepository(
             equipment => equipment.Id == id,
             cancellationToken);
 
+    /// <summary>Проверяет существование интервала обслуживания.</summary>
     public Task<bool> IntervalExistsAsync(
         Guid id,
         CancellationToken cancellationToken) =>
@@ -98,6 +102,7 @@ public sealed class MaintenanceTemplateRepository(
             interval => interval.Id == id,
             cancellationToken);
 
+    /// <summary>Проверяет, занято ли название вида оборудования.</summary>
     public Task<bool> EquipmentNameExistsAsync(
         string name,
         Guid? exceptId,
@@ -111,6 +116,7 @@ public sealed class MaintenanceTemplateRepository(
             cancellationToken);
     }
 
+    /// <summary>Проверяет уникальность названия интервала в пределах оборудования.</summary>
     public Task<bool> IntervalNameExistsAsync(
         Guid equipmentId,
         string name,
@@ -126,6 +132,7 @@ public sealed class MaintenanceTemplateRepository(
             cancellationToken);
     }
 
+    /// <summary>Проверяет наличие материала в доступном источнике складских данных.</summary>
     public Task<bool> MaterialExistsAsync(
         string materialName,
         CancellationToken cancellationToken)
@@ -136,6 +143,7 @@ public sealed class MaintenanceTemplateRepository(
             cancellationToken);
     }
 
+    /// <summary>Проверяет существование позиции шаблона обслуживания.</summary>
     public Task<bool> ItemExistsAsync(
         Guid intervalId,
         string materialName,
@@ -149,6 +157,7 @@ public sealed class MaintenanceTemplateRepository(
             cancellationToken);
     }
 
+    /// <summary>Создаёт вид оборудования в шаблонах технического обслуживания.</summary>
     public Task<Guid> CreateEquipmentAsync(
         string name,
         CancellationToken cancellationToken) =>
@@ -164,6 +173,7 @@ public sealed class MaintenanceTemplateRepository(
             equipment => equipment.Id,
             cancellationToken);
 
+    /// <summary>Создаёт интервал обслуживания для выбранного оборудования.</summary>
     public Task<Guid> CreateIntervalAsync(
         Guid equipmentId,
         string name,
@@ -183,6 +193,7 @@ public sealed class MaintenanceTemplateRepository(
             interval => interval.Id,
             cancellationToken);
 
+    /// <summary>Добавляет материал и его количество в интервал ТО.</summary>
     public Task<Guid> AddItemAsync(
         Guid intervalId,
         string materialName,
@@ -230,6 +241,7 @@ public sealed class MaintenanceTemplateRepository(
         return getId(entity);
     }
 
+    /// <summary>Изменяет название вида оборудования в шаблонах ТО.</summary>
     public async Task<bool> RenameEquipmentAsync(
         Guid id,
         string name,
@@ -240,6 +252,7 @@ public sealed class MaintenanceTemplateRepository(
                 setters => setters.SetProperty(equipment => equipment.Name, name),
                 cancellationToken) > 0;
 
+    /// <summary>Изменяет название интервала обслуживания.</summary>
     public async Task<bool> RenameIntervalAsync(
         Guid id,
         string name,
@@ -258,6 +271,7 @@ public sealed class MaintenanceTemplateRepository(
                 cancellationToken) > 0;
     }
 
+    /// <summary>Обновляет количество материала в позиции шаблона обслуживания.</summary>
     public async Task<bool> UpdateItemAsync(
         Guid id,
         decimal quantity,
@@ -268,6 +282,7 @@ public sealed class MaintenanceTemplateRepository(
                 setters => setters.SetProperty(item => item.Quantity, quantity),
                 cancellationToken) > 0;
 
+    /// <summary>Удаляет вид оборудования из шаблонов ТО.</summary>
     public async Task<bool> DeleteEquipmentAsync(
         Guid id,
         CancellationToken cancellationToken) =>
@@ -275,6 +290,7 @@ public sealed class MaintenanceTemplateRepository(
             .Where(equipment => equipment.Id == id)
             .ExecuteDeleteAsync(cancellationToken) > 0;
 
+    /// <summary>Удаляет интервал обслуживания.</summary>
     public async Task<bool> DeleteIntervalAsync(
         Guid id,
         CancellationToken cancellationToken) =>
@@ -282,6 +298,7 @@ public sealed class MaintenanceTemplateRepository(
             .Where(interval => interval.Id == id)
             .ExecuteDeleteAsync(cancellationToken) > 0;
 
+    /// <summary>Удаляет позицию материала из интервала ТО.</summary>
     public async Task<bool> DeleteItemAsync(
         Guid id,
         CancellationToken cancellationToken) =>
@@ -289,6 +306,7 @@ public sealed class MaintenanceTemplateRepository(
             .Where(item => item.Id == id)
             .ExecuteDeleteAsync(cancellationToken) > 0;
 
+    /// <summary>Преобразует значение складского количества в десятичное число.</summary>
     private static decimal ParseQuantity(string? value, string materialName)
     {
         if (string.IsNullOrWhiteSpace(value))

@@ -1,5 +1,6 @@
 namespace MyApp.Application.DTO;
 
+/// <summary>Исходные данные для формирования требования на материалы.</summary>
 public sealed record ComponentDocumentRequest(
     DateOnly Date,
     string VehicleNumber,
@@ -16,11 +17,13 @@ public sealed record ComponentDocumentRequest(
     public string IssuerName { get; init; } = string.Empty;
 }
 
+/// <summary>Материал и запрошенное количество в документе требования.</summary>
 public sealed record ComponentDocumentItem(
     string Name,
     string Unit,
     decimal Quantity,
     decimal AvailableQuantity);
 
+/// <summary>Данные сформированного требования и его страниц для клиента.</summary>
 public sealed record ComponentDocumentResponse(
     ComponentDocumentRequest Document);

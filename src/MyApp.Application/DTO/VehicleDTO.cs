@@ -8,7 +8,14 @@ public sealed record VehicleResponse(
     string ModelName,
     int? GarageNumber,
     string StateNumber,
-    string Vin);
+    string Vin,
+    string OperationalState = "healthy",
+    bool IsArchived = false,
+    string? TypeIconPath = null,
+    int GroupReportSortOrder = 0)
+{
+    public int EngineCount => TypeName.Contains("самосвал", StringComparison.OrdinalIgnoreCase) ? 2 : 1;
+}
 
 /// <summary>Запрос на создание заявки о закупке материалов для техники.</summary>
 public sealed record VehiclePurchaseRequest(
@@ -34,7 +41,10 @@ public sealed record VehiclePurchaseResponse(
 public sealed record VehicleDefectRequest(
     string? ErrorCode,
     string Symptoms,
-    DateTimeOffset DowntimeStartedAt);
+    DateTimeOffset? DowntimeStartedAt,
+    string OperationalState = "stopped",
+    string NodeName = "",
+    string FailureReason = "");
 
 /// <summary>
 /// Неисправность техники с прикреплёнными фото- и видеовложениями и
@@ -46,7 +56,7 @@ public sealed record VehicleDefectResponse(
     string Symptoms,
     string Status,
     DateTimeOffset CreatedAt,
-    DateTimeOffset DowntimeStartedAt,
+    DateTimeOffset? DowntimeStartedAt,
     Guid CreatedById,
     string CreatedByName,
     Guid? AssignedToId,
@@ -55,13 +65,15 @@ public sealed record VehicleDefectResponse(
     IReadOnlyList<VehicleWorkPhotoResponse> Photos,
     IReadOnlyList<VehicleMediaResponse> Videos,
     string NodeName = "",
-    string FailureReason = "");
+    string FailureReason = "",
+    string OperationalState = "stopped");
 
 /// <summary>Запрос на добавление показаний моточасов техники.</summary>
 public sealed record VehicleHoursRequest(
     DateOnly ReadingDate,
     decimal EngineHours,
-    string Note);
+    string Note,
+    int EngineNumber = 0);
 
 /// <summary>Запись показаний моточасов техники.</summary>
 public sealed record VehicleHoursResponse(
@@ -69,12 +81,15 @@ public sealed record VehicleHoursResponse(
     DateOnly ReadingDate,
     decimal EngineHours,
     string Note,
-    DateTimeOffset CreatedAt);
+    DateTimeOffset CreatedAt,
+    int EngineNumber = 0,
+    TimeOnly? ReadingTime = null);
 
 /// <summary>Одна строка данных, распознанная при импорте моточасов из файла.</summary>
 public sealed record VehicleHoursImportItem(
     Guid VehicleId,
-    decimal? EngineHours);
+    decimal? EngineHours,
+    int EngineNumber = 0);
 
 /// <summary>Ошибка, возникшая при разборе конкретной строки импортируемого файла моточасов.</summary>
 public sealed record VehicleHoursImportError(
@@ -93,7 +108,10 @@ public sealed record VehicleWorkRequest(
     string Description,
     string Status,
     string? RequiredParts,
-    DateTimeOffset? RepairDateTime = null);
+    DateTimeOffset? RepairDateTime = null,
+    string? OperationalState = null,
+    DateTimeOffset? DowntimeStartedAt = null,
+    string Location = "");
 
 /// <summary>
 /// Запись о выполненных ремонтных работах, включая заявку на закупку
@@ -113,7 +131,14 @@ public sealed record VehicleWorkResponse(
     string PerformerName = "",
     DateTimeOffset? CompletedAt = null,
     IReadOnlyList<VehiclePartsRequestResponse>? PartsRequests = null,
-    IReadOnlyList<VehicleMediaResponse>? Videos = null);
+    IReadOnlyList<VehicleMediaResponse>? Videos = null,
+    Guid CreatedById = default,
+    string PerformerPosition = "",
+    string Location = "",
+    string? OperationalState = null,
+    IReadOnlyList<VehicleWorkParticipantResponse>? Participants = null,
+    string Title = "",
+    string WorkKind = "repair");
 
 /// <summary>Метаданные загруженной фотографии (без содержимого файла).</summary>
 public sealed record VehicleWorkPhotoResponse(
@@ -159,8 +184,10 @@ public sealed record VehiclePartsRequest(
     string RequestNumber,
     DateOnly RequestDate,
     string Description = "",
-    string? RequiredParts = null);
+    string? RequiredParts = null,
+    DateOnly? CompletedDate = null);
 
+/// <summary>Реквизиты и состояние заявки на закупку запчастей.</summary>
 public sealed record VehiclePartsRequestResponse(
     Guid Id,
     Guid DefectId,
@@ -168,7 +195,8 @@ public sealed record VehiclePartsRequestResponse(
     DateOnly RequestDate,
     string Description,
     string RequiredParts,
-    DateTimeOffset CreatedAt);
+    DateTimeOffset CreatedAt,
+    DateOnly? CompletedDate = null);
 
 /// <summary>Содержимое файла заявки на закупку запчастей.</summary>
 /// <summary>
@@ -180,4 +208,30 @@ public sealed record VehicleJournalResponse(
     IReadOnlyList<VehiclePurchaseResponse> Purchases,
     IReadOnlyList<VehicleDefectResponse> Defects,
     IReadOnlyList<VehicleHoursResponse> Hours,
-    IReadOnlyList<VehicleWorkResponse> Works);
+    IReadOnlyList<VehicleWorkResponse> Works,
+    IReadOnlyList<VehiclePartsRequestResponse>? PartsRequests = null);
+
+/// <summary>Изменяемые поля записи истории техники.</summary>
+public sealed record VehicleHistoryEditRequest(string Description);
+
+/// <summary>Участие сотрудника в конкретной работе; в отчёт попадает после подтверждения механиком.</summary>
+public sealed record VehicleWorkParticipantResponse(
+    Guid Id, Guid UserId, string Name, string Position, string Status,
+    DateTimeOffset RequestedAt, Guid? ReviewedBy, DateTimeOffset? ReviewedAt,
+    string ReviewedByName = "");
+
+/// <summary>Решение механика по участию сотрудника в работе.</summary>
+public sealed record VehicleWorkParticipantReviewRequest(bool Approved);
+
+/// <summary>Работа на участке без привязки к транспорту.</summary>
+public sealed record AuxiliaryWorkRequest(string Title, string Description, string Location, DateTimeOffset PerformedAt);
+
+/// <summary>Поля карточки техники для создания или изменения.</summary>
+public sealed record VehicleCatalogRequest(string GroupName, string TypeName, string ModelName, int? GarageNumber, string StateNumber, string Vin);
+/// <summary>Значение справочника, доступное при редактировании техники.</summary>
+public sealed record VehicleCatalogOption(Guid Id, string Name, Guid? ParentId = null);
+/// <summary>Справочники парка и признаки доступных пользователю действий.</summary>
+public sealed record VehicleCatalogOptions(bool CanManage, IReadOnlyList<VehicleCatalogOption> Groups, IReadOnlyList<VehicleCatalogOption> Types, IReadOnlyList<VehicleCatalogOption> Models)
+{
+    public bool CanManageHours { get; init; }
+}

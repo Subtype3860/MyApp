@@ -13,6 +13,7 @@ const errorMessage = ref('')
 const successMessage = ref('')
 const isLoading = ref(false)
 
+/** Загружает иерархию оборудования, интервалов ТО и материалов. */
 async function loadTemplates() {
   isLoading.value = true
   errorMessage.value = ''
@@ -29,6 +30,7 @@ async function loadTemplates() {
   }
 }
 
+/** Передаёт материалы выбранного интервала ТО для формирования требования. */
 function applyInterval(equipmentItem, interval) {
   if (interval.items.length === 0) {
     errorMessage.value = 'Для этого ТО материалы ещё не настроены.'

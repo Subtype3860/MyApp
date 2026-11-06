@@ -5,11 +5,13 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace MyApp.API.Controllers;
 
+/// <summary>HTTP-эндпоинты справочника профессий.</summary>
 [ApiController]
 [Route("api/admin/professions")]
 [Authorize(Roles = "administrator")]
 public class ProfessionController : ControllerBase
 {
+    /// <summary>Возвращает список профессий.</summary>
     [HttpGet]
     public async Task<IActionResult> GetAll(
         [FromServices] IProfessionService professionService,
@@ -19,6 +21,7 @@ public class ProfessionController : ControllerBase
         return Ok(professions);
     }
 
+    /// <summary>Создаёт профессию.</summary>
     [HttpPost]
     public async Task<IActionResult> Create(
         [FromBody] ProfessionRequest request,
@@ -29,6 +32,7 @@ public class ProfessionController : ControllerBase
         return this.ToActionResult(result, value => Created($"/api/admin/professions/{value.Id}", value));
     }
 
+    /// <summary>Обновляет данные профессии.</summary>
     [HttpPut("{id:guid}")]
     public async Task<IActionResult> Update(
         Guid id,
@@ -40,6 +44,7 @@ public class ProfessionController : ControllerBase
         return this.ToActionResult(result, _ => Ok());
     }
 
+    /// <summary>Удаляет профессию.</summary>
     [HttpDelete("{id:guid}")]
     public async Task<IActionResult> Delete(
         Guid id,

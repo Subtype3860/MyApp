@@ -1,5 +1,6 @@
 <script setup>
 import { onBeforeUnmount, ref } from 'vue'
+import { themeOptions, selectedTheme, selectTheme } from '../utils/theme'
 
 const props = defineProps({
   navigationCollapsed: { type: Boolean, required: true },
@@ -19,6 +20,7 @@ const successMessage = ref('')
 const isLoading = ref(false)
 const isSubmitting = ref(false)
 
+/** Формирует заголовки запроса с токеном текущей сессии. */
 function headers(json = false) {
   return {
     Authorization: `Bearer ${props.token}`,
@@ -26,6 +28,7 @@ function headers(json = false) {
   }
 }
 
+/** Заменяет URL аватара, освобождая предыдущий адрес объекта Blob. */
 function replaceAvatarUrl(url) {
   if (avatarUrl.value?.startsWith('blob:')) {
     URL.revokeObjectURL(avatarUrl.value)
@@ -33,6 +36,7 @@ function replaceAvatarUrl(url) {
   avatarUrl.value = url
 }
 
+/** Извлекает понятное сообщение об ошибке из ответа API. */
 async function readError(response, fallback) {
   const problem = await response.json().catch(() => null)
   return problem?.errors
@@ -40,6 +44,7 @@ async function readError(response, fallback) {
     : problem?.detail || problem?.title || fallback
 }
 
+/** Загружает аватар пользователя с авторизацией. */
 async function loadAvatar() {
   if (!profile.value?.hasAvatar) {
     replaceAvatarUrl('')
@@ -51,6 +56,7 @@ async function loadAvatar() {
   }
 }
 
+/** Загружает профиль текущего пользователя. */
 async function loadProfile() {
   isLoading.value = true
   errorMessage.value = ''
@@ -69,6 +75,7 @@ async function loadProfile() {
   }
 }
 
+/** Проверяет выбранный файл аватара и готовит его предварительный просмотр. */
 function selectAvatar(event) {
   const file = event.target.files?.[0]
   selectedAvatar.value = file ?? null
@@ -79,6 +86,7 @@ function selectAvatar(event) {
   }
 }
 
+/** Отправляет выбранное изображение аватара на сервер. */
 async function uploadAvatar() {
   if (!selectedAvatar.value) return
   isSubmitting.value = true
@@ -107,6 +115,7 @@ async function uploadAvatar() {
   }
 }
 
+/** Удаляет аватар на сервере и обновляет его отображение. */
 async function deleteAvatar() {
   const response = await fetch('/api/profile/avatar', {
     method: 'DELETE',
@@ -123,6 +132,7 @@ async function deleteAvatar() {
   successMessage.value = 'Аватар удалён.'
 }
 
+/** Сохраняет изменения профиля и обрабатывает ответ сервера. */
 async function saveProfile() {
   errorMessage.value = ''
   successMessage.value = ''
@@ -144,7 +154,13 @@ async function saveProfile() {
     if (!response.ok) {
       throw new Error(await readError(response, 'Не удалось сохранить профиль.'))
     }
-    profile.value = await response.json()
+    const saved = await response.json()
+    const credentialsChanged = Boolean(newPassword.value) || saved.userName !== profile.value.userName
+    if (credentialsChanged) {
+      window.dispatchEvent(new CustomEvent('myapp:session-expired', { detail: { message: 'Данные входа изменены. Войдите снова.' } }))
+      return
+    }
+    profile.value = saved
     userName.value = profile.value.userName
     currentPassword.value = ''
     newPassword.value = ''
@@ -182,6 +198,14 @@ loadProfile()
           </div>
         </div>
 
+        <section class="profile-section theme-settings" aria-labelledby="theme-settings-title">
+          <h3 id="theme-settings-title">Оформление</h3>
+          <label for="profile-theme">Тема интерфейса</label>
+          <select id="profile-theme" :value="selectedTheme" @change="selectTheme($event.target.value)">
+            <option v-for="theme in themeOptions" :key="theme.id" :value="theme.id">{{ theme.label }}</option>
+          </select>
+          <p class="profile-hint">Применяется сразу и сохраняется в этом браузере.</p>
+        </section>
         <div class="profile-section">
           <h3>Аватар</h3>
           <input

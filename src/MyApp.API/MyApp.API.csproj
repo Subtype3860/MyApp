@@ -12,12 +12,16 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.*" />
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.10" />
-    <PackageReference Include="Microsoft.OpenApi" Version="2.12.0" />
+    <PackageReference Include="Microsoft.OpenApi" Version="2.12.2" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\MyApp.Application\MyApp.Application.csproj" />
     <ProjectReference Include="..\MyApp.Infrastructure\MyApp.Infrastructure.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="..\..\frontend\public\games\tanks\arena.json" Link="Games\tanks-arena.json" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

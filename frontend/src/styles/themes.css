@@ -1,0 +1,140 @@
+@media screen {
+:root[data-theme] { --text-muted: var(--text-secondary); --theme-hover: color-mix(in srgb, var(--accent) 12%, var(--bg-surface)); }
+:root[data-theme] { color-scheme: light; --system-green: #217a3c; --system-orange: #9c6200; --system-red: #c7312a; }
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg-main: #1e1e1e; --bg-surface: #2c2c2e;
+  --text-main: #f5f5f7; --text-secondary: #b0b0b8;
+  --accent: #0879e9; --accent-dark: #0062c4;
+  --border: rgba(255,255,255,0.18); --sidebar-bg: #131722;
+  --glass-shadow: 0 4px 30px rgba(0,0,0,0.3);
+}
+:root[data-theme="ocean"] {
+  --bg-main: #edf5fa; --bg-surface: #f8fcff;
+  --text-main: #18374a; --text-secondary: #506f80;
+  --accent: #086c9d; --accent-dark: #075579;
+  --border: #c5dce8; --sidebar-bg: #123347;
+  --glass-shadow: 0 4px 30px rgba(18,51,71,0.08);
+}
+:root[data-theme="forest"] {
+  --bg-main: #eff5ef; --bg-surface: #fafdf8;
+  --text-main: #243c2d; --text-secondary: #536f5c;
+  --accent: #287647; --accent-dark: #1e5b36;
+  --border: #cbdccc; --sidebar-bg: #1b3527;
+  --glass-shadow: 0 4px 30px rgba(27,53,39,0.08);
+}
+
+:root:is([data-theme="dark"], [data-theme="digital"], [data-theme="midnight"], [data-theme="graphite"]) {
+  color-scheme: dark;
+  --system-green: #4ddd9a; --system-orange: #ffc55b; --system-red: #ff8e9b;
+}
+:root[data-theme="digital"] {
+  --bg-main: #091827; --bg-surface: #102337;
+  --text-main: #f0f5fc; --text-secondary: #a7bcd3;
+  --accent: #49e1d2; --accent-dark: #7bece1;
+  --border: #274057; --sidebar-bg: #0b1d2e;
+  --theme-hover: #16374a;
+  --glass-shadow: 0 8px 30px #020b141c;
+}
+:root[data-theme="digital"] .sidebar,
+:root[data-theme="digital"] .mobile-topbar { background: #0b1d2e; }
+:root[data-theme="digital"] .primary-button { color: #052c32; }
+:root[data-theme="digital"] .profile-avatar { color: #062a30; }
+:root[data-theme="midnight"] {
+  --bg-main: #15152a; --bg-surface: #22223b;
+  --text-main: #f2efff; --text-secondary: #b9b4d0;
+  --accent: #a99aff; --accent-dark: #c1b6ff;
+  --border: #42415e; --sidebar-bg: #19192e;
+  --glass-shadow: 0 8px 30px #09091640;
+}
+:root[data-theme="midnight"] .primary-button,
+:root[data-theme="midnight"] .profile-avatar { color: #201b40; }
+:root[data-theme="graphite"] {
+  --bg-main: #202323; --bg-surface: #2b3030;
+  --text-main: #f1f5f3; --text-secondary: #b0beb9;
+  --accent: #85d4ae; --accent-dark: #a4e6c5;
+  --border: #495450; --sidebar-bg: #242929;
+  --glass-shadow: 0 8px 30px #0a121240;
+}
+:root[data-theme="graphite"] .primary-button,
+:root[data-theme="graphite"] .profile-avatar { color: #18392a; }
+:root[data-theme="lavender"] {
+  --bg-main: #f3effa; --bg-surface: #fcfaff;
+  --text-main: #382c4d; --text-secondary: #706180;
+  --accent: #7651a8; --accent-dark: #5f3d8d;
+  --border: #ddd0eb; --sidebar-bg: #fcfaff;
+  --glass-shadow: 0 8px 30px #45306012;
+}
+:root[data-theme="sand"] {
+  --bg-main: #f5f0e6; --bg-surface: #fffcf6;
+  --text-main: #44382b; --text-secondary: #766550;
+  --accent: #956021; --accent-dark: #764b18;
+  --border: #e0d4be; --sidebar-bg: #fffcf6;
+  --glass-shadow: 0 8px 30px #654b2712;
+}
+
+
+:root[data-theme="macos"] {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --bg-main: #eef0f6; --bg-surface: rgba(255, 255, 255, 0.88);
+  --text-main: #202124; --text-secondary: #626671;
+  --accent: #0069d9; --accent-dark: #0056b3;
+  --border: rgba(80, 88, 115, 0.18); --sidebar-bg: rgba(244, 246, 252, 0.82);
+  --theme-hover: #e0ebfb; --glass-blur: blur(24px);
+  --glass-shadow: 0 12px 36px rgba(42, 50, 85, 0.09), 0 1px 3px rgba(42, 50, 85, 0.06);
+}
+:root[data-theme="macos"] .home-page,
+:root[data-theme="macos"] .auth-page {
+  background:
+    radial-gradient(ellipse at 90% 5%, #dddaf580, transparent 55%),
+    radial-gradient(ellipse at 10% 90%, #cce8f780, transparent 50%),
+    var(--bg-main);
+}
+:root[data-theme="macos"] .sidebar,
+:root[data-theme="macos"] .mobile-topbar {
+  background: var(--sidebar-bg);
+  backdrop-filter: blur(24px) saturate(140%);
+  -webkit-backdrop-filter: blur(24px) saturate(140%);
+}
+:root[data-theme="macos"] .macos-glass-panel,
+:root[data-theme="macos"] .dashboard-panel {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  box-shadow: var(--glass-shadow);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+}
+:root[data-theme="macos"] .nav-link,
+:root[data-theme="macos"] .nav-submenu-link { border-radius: 10px; }
+:root[data-theme="macos"] .nav-link--active { box-shadow: none; background: #dce8f9; }
+:root[data-theme="macos"] .primary-button {
+  border-radius: 10px;
+  background: linear-gradient(#0879ef, #0062cd);
+  box-shadow: inset 0 1px 0 #ffffff40, 0 2px 5px #0062cd20;
+  color: #fff;
+}
+:root[data-theme="macos"] .primary-button:hover:not(:disabled) {
+  background: linear-gradient(#006cdd, #0056b3);
+}
+:root[data-theme="macos"] .secondary-button {
+  border-radius: 10px;
+  background: #ffffffd9;
+  box-shadow: 0 1px 3px #2021240d;
+}
+:root[data-theme="macos"] .fleet-action-menu__items {
+  background: #fafbfef5;
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  box-shadow: var(--glass-shadow);
+}
+
+.theme-settings label { display: block; margin-bottom: 8px; font-weight: 600; }
+.theme-settings select {
+  width: 100%; max-width: 360px; min-height: 44px; padding: 10px 12px;
+  border: 1px solid var(--border); border-radius: 10px;
+  color: var(--text-main); background: var(--bg-surface); font: inherit;
+}
+.theme-settings select:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+
+}

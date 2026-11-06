@@ -4,6 +4,7 @@ using MyApp.Application.DTO;
 
 namespace MyApp.Application.Services;
 
+/// <summary>Прикладные операции просмотра табличных данных.</summary>
 public sealed class TableViewService(
     ITableViewRepository tableViewRepository) : ITableViewService
 {
@@ -24,6 +25,7 @@ public sealed class TableViewService(
             "all"
         };
 
+    /// <summary>Возвращает данные табличного представления.</summary>
     public async Task<ServiceResult<TableViewResponse>> GetAsync(
         TableViewRequest request,
         CancellationToken cancellationToken)
@@ -55,6 +57,7 @@ public sealed class TableViewService(
         return ServiceResult<TableViewResponse>.Success(response);
     }
 
+    /// <summary>Нормализует параметры поиска и страницы табличного представления.</summary>
     private static string? Normalize(string? value)
     {
         var normalized = value?.Trim();

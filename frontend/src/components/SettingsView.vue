@@ -27,6 +27,8 @@ const editingUserId = ref(null)
 const editingProfessionId = ref(null)
 const professionName = ref('')
 const mediaRetentionDays = ref(1)
+const permanentRetentionDays = ref(180)
+const maxStorageGb = ref(20)
 const isLoading = ref(false)
 const isSubmitting = ref(false)
 const errorMessage = ref('')
@@ -88,6 +90,7 @@ const transliterationMap = {
   я: 'ya',
 }
 
+/** Преобразует кириллицу в латиницу для формирования логина. */
 function transliterate(value) {
   return [...value.toLocaleLowerCase('ru')]
     .map((character) => transliterationMap[character] ?? character)
@@ -95,17 +98,20 @@ function transliterate(value) {
     .replace(/[^a-z0-9]/g, '')
 }
 
+/** Формирует логин из имени сотрудника. */
 function buildUserName(firstName, middleName, lastName) {
   return [firstName, middleName, lastName]
     .map((part) => transliterate([...part.trim()].slice(0, 2).join('')))
     .join('.')
 }
 
+/** Формирует временный пароль для нового пользователя. */
 function buildTemporaryPassword(date = new Date()) {
-  const pad = (value) => String(value).padStart(2, '0')
+  const /** Дополняет числовую часть даты ведущим нулём. */ pad = (value) => String(value).padStart(2, '0')
   return `${pad(date.getDate())}${pad(date.getMonth() + 1)}${date.getFullYear()}${pad(date.getMinutes())}`
 }
 
+/** Формирует заголовки авторизации и, при необходимости, JSON-запроса. */
 function authHeaders(includeContentType = false) {
   return {
     Authorization: `Bearer ${props.token}`,
@@ -113,6 +119,7 @@ function authHeaders(includeContentType = false) {
   }
 }
 
+/** Извлекает понятное сообщение об ошибке из ответа API. */
 async function readError(response, fallback) {
   const problem = await response.json().catch(() => null)
   return problem?.errors
@@ -120,6 +127,7 @@ async function readError(response, fallback) {
     : problem?.message || fallback
 }
 
+/** Загружает список пользователей для администрирования. */
 async function loadUsers() {
   isLoading.value = true
   errorMessage.value = ''
@@ -141,6 +149,7 @@ async function loadUsers() {
   }
 }
 
+/** Загружает каталог доступных разрешений пользователя. */
 async function loadPermissionCatalog() {
   try {
     const response = await fetch('/api/admin/users/permissions', {
@@ -154,6 +163,7 @@ async function loadPermissionCatalog() {
   }
 }
 
+/** Создаёт учётную запись по данным регистрационной формы. */
 async function registerUser() {
   isSubmitting.value = true
   errorMessage.value = ''
@@ -183,6 +193,7 @@ async function registerUser() {
   }
 }
 
+/** Заполняет форму редактирования выбранным пользователем. */
 function editUser(user) {
   editingUserId.value = user.id
   Object.assign(editUserForm, {
@@ -199,11 +210,13 @@ function editUser(user) {
   successMessage.value = ''
 }
 
+/** Сбрасывает форму редактирования пользователя. */
 function cancelUserEdit() {
   editingUserId.value = null
   editUserForm.password = ''
 }
 
+/** Сохраняет изменения учётной записи и её прав доступа. */
 async function saveUser() {
   isSubmitting.value = true
   errorMessage.value = ''
@@ -230,6 +243,7 @@ async function saveUser() {
   }
 }
 
+/** Загружает справочник профессий. */
 async function loadProfessions() {
   isLoading.value = true
   errorMessage.value = ''
@@ -251,6 +265,7 @@ async function loadProfessions() {
   }
 }
 
+/** Загружает срок хранения временных медиафайлов. */
 async function loadMediaStorageSettings() {
   isLoading.value = true
   errorMessage.value = ''
@@ -263,6 +278,8 @@ async function loadMediaStorageSettings() {
     }
     const settings = await response.json()
     mediaRetentionDays.value = settings.retentionDays
+    permanentRetentionDays.value = settings.permanentRetentionDays
+    maxStorageGb.value = settings.maxStorageGb
   } catch (error) {
     errorMessage.value =
       error instanceof Error ? error.message : 'Не удалось загрузить настройки хранения медиа.'
@@ -271,6 +288,7 @@ async function loadMediaStorageSettings() {
   }
 }
 
+/** Проверяет и сохраняет срок хранения временных медиафайлов. */
 async function saveMediaStorageSettings() {
   isSubmitting.value = true
   errorMessage.value = ''
@@ -279,12 +297,16 @@ async function saveMediaStorageSettings() {
     const response = await fetch('/api/admin/media-storage', {
       method: 'PUT',
       headers: authHeaders(true),
-      body: JSON.stringify({ retentionDays: mediaRetentionDays.value }),
+      body: JSON.stringify({
+        retentionDays: mediaRetentionDays.value,
+        permanentRetentionDays: permanentRetentionDays.value,
+        maxStorageGb: maxStorageGb.value,
+      }),
     })
     if (!response.ok) {
       throw new Error(await readError(response, 'Не удалось сохранить настройки хранения медиа.'))
     }
-    successMessage.value = 'Срок хранения медиафайлов сохранён.'
+    successMessage.value = 'Настройки хранения медиафайлов сохранены.'
   } catch (error) {
     errorMessage.value =
       error instanceof Error ? error.message : 'Не удалось сохранить настройки хранения медиа.'
@@ -293,12 +315,14 @@ async function saveMediaStorageSettings() {
   }
 }
 
+/** Загружает профессии, если справочник ещё не подготовлен. */
 async function ensureProfessionsLoaded() {
   if (professions.value.length === 0) {
     await loadProfessions()
   }
 }
 
+/** Создаёт или изменяет профессию по данным формы. */
 async function saveProfession() {
   isSubmitting.value = true
   errorMessage.value = ''
@@ -331,6 +355,7 @@ async function saveProfession() {
   }
 }
 
+/** Переносит выбранную профессию в форму редактирования. */
 function editProfession(item) {
   editingProfessionId.value = item.id
   professionName.value = item.profession
@@ -338,11 +363,13 @@ function editProfession(item) {
   successMessage.value = ''
 }
 
+/** Сбрасывает форму редактирования профессии. */
 function cancelProfessionEdit() {
   editingProfessionId.value = null
   professionName.value = ''
 }
 
+/** Удаляет выбранную профессию после подтверждения. */
 async function deleteProfession(item) {
   if (!window.confirm(`Удалить профессию «${item.profession}»?`)) {
     return
@@ -371,6 +398,7 @@ async function deleteProfession(item) {
   }
 }
 
+/** Возвращает заголовок активного раздела настроек. */
 function sectionTitle(section) {
   return {
     users: 'Пользователи',
@@ -378,7 +406,7 @@ function sectionTitle(section) {
     professions: 'Профессии',
     'material-groups': 'Группы материалов',
     maintenance: 'Шаблоны ТО',
-    'csv-files': 'Загрузка CSV',
+    'csv-files': 'Импорт CSV / Excel',
     'media-storage': 'Хранение медиафайлов',
   }[section]
 }
@@ -483,7 +511,9 @@ watch(
         </label>
         <fieldset class="user-permissions">
           <legend>Что пользователь может просматривать</legend>
-          <template v-for="menu in permissionCatalog" :key="menu.key">
+          <small>Главная страница и собственный профиль доступны всем. Настройки доступны только администратору.</small>
+          <small>Допуск «Танки — доступ к сетевой игре» выдаётся отдельно. Снятие права отключает пользователя от арены; после изменения прав потребуется повторный вход.</small>
+          <div v-for="menu in permissionCatalog" :key="menu.key" class="permission-group" role="group" :aria-label="menu.label">
             <label class="permission-option permission-option--menu">
               <input
                 v-model="editUserForm.permissions"
@@ -506,7 +536,7 @@ watch(
               />
               <span>{{ item.label }}</span>
             </label>
-          </template>
+          </div>
           <small v-if="editUserForm.role === 'administrator'">
             Администратор получает доступ ко всем разделам.
           </small>
@@ -730,10 +760,14 @@ watch(
     >
       <div class="settings-section-header">
         <div>
-          <h2>Временное хранение медиафайлов</h2>
+          <h2>Хранение медиафайлов</h2>
           <p>
             После загрузки фото и видео хранятся на локальном диске, чтобы не ждать записи
             на сетевое хранилище. Затем фоновая задача переносит их в постоянные папки.
+          </p>
+          <p>
+            Постоянные файлы старше указанного срока удаляются. Если суммарный объём
+            превышает лимит, первыми удаляются самые старые файлы.
           </p>
         </div>
       </div>
@@ -745,6 +779,26 @@ watch(
             type="number"
             min="1"
             max="180"
+            required
+          />
+        </label>
+        <label>
+          <span>Хранить постоянно, дней (от 1 до 3650)</span>
+          <input
+            v-model.number="permanentRetentionDays"
+            type="number"
+            min="1"
+            max="3650"
+            required
+          />
+        </label>
+        <label>
+          <span>Максимальный объём медиа, ГБ (от 1 до 1024)</span>
+          <input
+            v-model.number="maxStorageGb"
+            type="number"
+            min="1"
+            max="1024"
             required
           />
         </label>

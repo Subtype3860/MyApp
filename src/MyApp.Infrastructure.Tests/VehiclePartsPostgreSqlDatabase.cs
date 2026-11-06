@@ -14,6 +14,7 @@ internal sealed class VehiclePartsPostgreSqlDatabase : IAsyncDisposable
     private readonly string schema;
     private readonly string scopedConnectionString;
 
+    /// <summary>Подготавливает объект тестового окружения с заданными зависимостями.</summary>
     private VehiclePartsPostgreSqlDatabase(string connectionString, string schema)
     {
         adminConnectionString = connectionString;
@@ -24,10 +25,12 @@ internal sealed class VehiclePartsPostgreSqlDatabase : IAsyncDisposable
         }.ConnectionString;
     }
 
+    /// <summary>Создаёт контекст EF Core, подключённый к изолированной тестовой схеме.</summary>
     public AppDbContext CreateContext() =>
         new(new DbContextOptionsBuilder<AppDbContext>()
             .UseNpgsql(scopedConnectionString).Options);
 
+    /// <summary>Создаёт изолированную схему PostgreSQL и подготавливает данные теста.</summary>
     public static async Task<VehiclePartsPostgreSqlDatabase> CreateAsync()
     {
         var connectionString = Environment.GetEnvironmentVariable("MYAPP_TEST_POSTGRES");
@@ -62,28 +65,34 @@ internal sealed class VehiclePartsPostgreSqlDatabase : IAsyncDisposable
         }
     }
 
+    /// <summary>Создаёт таблицы и исходные данные изолированной тестовой схемы.</summary>
     private async Task InitializeAsync()
     {
         await ExecuteAsync(
             """
             CREATE TABLE app_users (id uuid PRIMARY KEY);
-            CREATE TABLE number_car (id uuid PRIMARY KEY);
+            CREATE TABLE number_car (id uuid PRIMARY KEY, is_archived boolean NOT NULL DEFAULT false);
             CREATE TABLE vehicle_defects (
                 id uuid PRIMARY KEY,
                 vehicle_id uuid NOT NULL REFERENCES number_car(id),
-                created_by uuid NOT NULL REFERENCES app_users(id)
+                created_by uuid NOT NULL REFERENCES app_users(id),
+                operational_state text NOT NULL DEFAULT 'stopped',
+                downtime_started_at timestamptz
             );
             CREATE TABLE vehicle_works (
                 id uuid PRIMARY KEY,
                 vehicle_id uuid NOT NULL REFERENCES number_car(id),
                 defect_id uuid REFERENCES vehicle_defects(id),
                 repair_status varchar(30) NOT NULL,
-                created_by uuid NOT NULL REFERENCES app_users(id)
+                created_by uuid NOT NULL REFERENCES app_users(id),
+                operational_state text NOT NULL DEFAULT 'stopped',
+                downtime_started_at timestamptz
             );
             CREATE TABLE vehicle_parts_requests (
                 id uuid PRIMARY KEY,
                 defect_id uuid NOT NULL REFERENCES vehicle_defects(id) ON DELETE CASCADE,
                 request_date date NOT NULL,
+                completed_date date,
                 request_number varchar(100) NOT NULL DEFAULT '',
                 description text NOT NULL DEFAULT '',
                 required_parts text NOT NULL DEFAULT '',
@@ -96,6 +105,7 @@ internal sealed class VehiclePartsPostgreSqlDatabase : IAsyncDisposable
             """);
     }
 
+    /// <summary>Заполняет изолированную схему исходными данными теста.</summary>
     public async Task<(Guid Vehicle, Guid Defect, Guid User)> SeedAsync(
         string workStatus = "awaiting_parts")
     {
@@ -123,6 +133,7 @@ internal sealed class VehiclePartsPostgreSqlDatabase : IAsyncDisposable
         return (vehicle, defect, user);
     }
 
+    /// <summary>Выполняет SQL-команду в изолированной тестовой схеме.</summary>
     public async Task ExecuteAsync(string sql, params (string Name, object Value)[] parameters)
     {
         await using var dataSource = NpgsqlDataSource.Create(scopedConnectionString);
@@ -132,6 +143,7 @@ internal sealed class VehiclePartsPostgreSqlDatabase : IAsyncDisposable
         await command.ExecuteNonQueryAsync();
     }
 
+    /// <summary>Возвращает количество записей для проверки состояния тестовой базы.</summary>
     public async Task<long> CountAsync()
     {
         await using var dataSource = NpgsqlDataSource.Create(scopedConnectionString);
@@ -140,6 +152,7 @@ internal sealed class VehiclePartsPostgreSqlDatabase : IAsyncDisposable
         return (long)(await cmd.ExecuteScalarAsync())!;
     }
 
+    /// <summary>Удаляет изолированную схему после завершения теста.</summary>
     public async ValueTask DisposeAsync()
     {
         await using var connection = new NpgsqlConnection(adminConnectionString);

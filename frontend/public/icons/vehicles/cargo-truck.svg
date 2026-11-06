@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="320" height="256" viewBox="0 0 320 256" role="img" aria-labelledby="title">
+<title id="title">Грузовой автомобиль</title>
+<g stroke="#151716" stroke-width="6" stroke-linecap="round" stroke-linejoin="round">
+<path d="M32 155H278V190H32Z" fill="#505B60"/>
+<rect x="27" y="64" width="168" height="99" rx="5" fill="#F7BE16"/>
+<path d="M42 80V146M178 80V146M29 146H193" fill="none"/>
+<path d="M207 190V94Q207 88 214 88H253Q260 88 264 96L283 132V187H274Z" fill="#F7BE16"/>
+<path d="M222 102H252L269 133H222Z" fill="#505B60"/>
+<path d="M219 147H231M209 174H232" fill="none"/>
+<rect x="128" y="178" width="45" height="23" rx="3" fill="#505B60"/>
+<rect x="274" y="151" width="10" height="15" rx="2" fill="#FFF0AA"/>
+<rect x="278" y="182" width="15" height="13" rx="2" fill="#505B60"/>
+<path d="M33 177H27V186H37" fill="#E9A11B"/>
+<circle cx="76" cy="191" r="28" fill="#505B60"/>
+<circle cx="76" cy="191" r="15" fill="#F7BE16"/>
+<circle cx="243" cy="191" r="28" fill="#505B60"/>
+<circle cx="243" cy="191" r="15" fill="#F7BE16"/>
+</g></svg>

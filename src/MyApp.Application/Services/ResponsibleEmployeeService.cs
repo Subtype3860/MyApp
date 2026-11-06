@@ -4,9 +4,11 @@ using MyApp.Application.DTO;
 
 namespace MyApp.Application.Services;
 
+/// <summary>Прикладные операции выбора ответственных сотрудников.</summary>
 public sealed class ResponsibleEmployeeService(
     IResponsibleEmployeeRepository repository) : IResponsibleEmployeeService
 {
+    /// <summary>Возвращает данные ответственного сотрудника.</summary>
     public async Task<ServiceResult<IReadOnlyList<ResponsibleEmployeeResponse>>> GetAsync(
         string sourceTable,
         CancellationToken cancellationToken)
@@ -24,6 +26,7 @@ public sealed class ResponsibleEmployeeService(
                 cancellationToken));
     }
 
+    /// <summary>Проверяет выбранных ответственных и подготавливает их данные для документа.</summary>
     public async Task<ServiceResult<ResponsibleEmployeeResponse>> ResolveAsync(
         string sourceTable,
         ResponsibleEmployeeSelection employee,
@@ -57,6 +60,7 @@ public sealed class ResponsibleEmployeeService(
                 profession));
     }
 
+    /// <summary>Определяет профессию, соответствующую роли ответственного в документе.</summary>
     private static string? GetProfession(string sourceTable) =>
         sourceTable.ToLowerInvariant() switch
         {

@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="ru">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#121c25"><title>Смена • Симулятор механика</title><link rel="stylesheet" href="./style.css"></head>
+<body>
+<header><a class="wordmark" href="./index.html">⌁ СМЕНА<span>СИМУЛЯТОР МЕХАНИКА</span></a><div class="stats"><div>КАССА<strong id="money"></strong></div><div>РЕПУТАЦИЯ<strong id="reputation"></strong></div><div>ЗАКАЗЫ<strong id="completed"></strong></div></div><button id="sound" class="quiet" aria-pressed="false">Звук: выкл.</button></header>
+<main>
+<section class="heading"><div><p class="eyebrow">ВАША МАСТЕРСКАЯ / ПЕРВАЯ СМЕНА</p><h1>Верните технику в строй.</h1><p class="muted">Найдите неисправность. Подберите деталь. Сделайте работу точно.</p></div><button id="upgrade" class="secondary"></button></section>
+<div class="layout"><section class="workshop panel" aria-label="Ремонтный бокс"><div class="bay-label"><span class="live-dot"></span> БОКС 01 <span id="bay-status">СВОБОДЕН</span></div>
+<svg class="scene" viewBox="0 0 900 560" role="img" aria-label="Жёлтый внедорожник в освещённой мастерской">
+<defs><linearGradient id="wall" x2="0" y2="1"><stop stop-color="#263541"/><stop offset="1" stop-color="#17222d"/></linearGradient><linearGradient id="body" x2="0" y2="1"><stop stop-color="#f7c85d"/><stop offset="1" stop-color="#c68731"/></linearGradient><linearGradient id="glass" x2="1" y2="1"><stop stop-color="#759295"/><stop offset="1" stop-color="#243b49"/></linearGradient><radialGradient id="light"><stop stop-color="#e4e7bc" stop-opacity=".15"/><stop offset="1" stop-color="#e4e7bc" stop-opacity="0"/></radialGradient><pattern id="grid" width="100" height="60" patternUnits="userSpaceOnUse"><path d="M100 0H0V60" fill="none" stroke="#71838a" stroke-opacity=".12"/></pattern></defs>
+<path fill="url(#wall)" d="M0 0H900V560H0Z"/><path fill="#15212b" d="M0 415H900V560H0Z"/><path fill="url(#grid)" d="M0 415H900V560H0Z"/>
+<rect x="222" y="58" width="470" height="335" rx="4" fill="#101b24" stroke="#3a4953" stroke-width="8"/><g stroke="#30404c" stroke-width="3"><path d="M227 100H687M227 142H687M227 184H687M227 226H687M227 268H687M227 310H687M227 352H687"/></g>
+<path d="M42 60H169V218H42Z" fill="#34434b" stroke="#495962"/><g stroke="#70818a" stroke-width="5"><path d="M66 90V145M91 90V167M116 90V137M142 90V164"/></g><g fill="#aeb8ad"><circle cx="66" cy="89" r="8"/><circle cx="116" cy="89" r="8"/></g>
+<rect x="30" y="300" width="155" height="113" rx="5" fill="#99523e"/><path d="M38 326H177M38 355H177M38 385H177" stroke="#613f34" stroke-width="3"/><path d="M82 316H129M82 345H129M82 375H129" stroke="#d9b79a" stroke-width="4"/>
+<rect x="748" y="174" width="105" height="230" fill="#1d2b35" stroke="#42525b" stroke-width="5"/><path d="M752 237H849M752 303H849M752 366H849" stroke="#637078" stroke-width="5"/><g fill="#ba8d48"><rect x="765" y="203" width="30" height="30"/><rect x="803" y="271" width="32" height="28"/><rect x="766" y="336" width="57" height="26"/></g>
+<ellipse cx="458" cy="270" rx="370" ry="260" fill="url(#light)"/><path d="M190 27H710" stroke="#09131b" stroke-width="18"/><path d="M210 29H690" stroke="#dce9d8" stroke-width="7"/>
+<ellipse cx="459" cy="458" rx="290" ry="30" fill="#080f15" opacity=".6"/>
+<g id="vehicle-art"><path d="M209 343 247 330 294 236Q300 222 321 222H511Q531 222 546 243L605 312 691 329 714 366V408H194V368Z" fill="url(#body)" stroke="#16242b" stroke-width="5"/>
+<path d="M314 240H393V311H277ZM409 240H505L564 311H409Z" fill="url(#glass)" stroke="#4f564a" stroke-width="5"/><path d="M325 245 285 305M420 245 456 307" stroke="#a2b8b7" stroke-opacity=".22" stroke-width="9"/>
+<path d="M400 227V406M581 318V406M225 350H677" fill="none" stroke="#a2732e" stroke-width="3"/><path d="M423 332H451" stroke="#24323b" stroke-width="6" stroke-linecap="round"/><path d="M281 217H506" stroke="#182833" stroke-width="9"/><path d="M299 204V218M487 204V218" stroke="#172730" stroke-width="6"/>
+<rect x="674" y="346" width="29" height="25" rx="3" fill="#eff1cc"/><rect x="200" y="351" width="14" height="24" rx="2" fill="#b85034"/><path d="M189 400H718" stroke="#30424a" stroke-width="20"/>
+<g fill="#111c25" stroke="#25333c" stroke-width="8"><circle cx="304" cy="410" r="55"/><circle cx="606" cy="410" r="55"/></g><g fill="#7b8a8d" stroke="#485b66" stroke-width="7"><circle cx="304" cy="410" r="29"/><circle cx="606" cy="410" r="29"/></g><g fill="#263842"><circle cx="304" cy="410" r="11"/><circle cx="606" cy="410" r="11"/></g>
+<rect x="450" y="361" width="83" height="23" rx="3" fill="#263641"/><text x="491" y="377" text-anchor="middle" font-size="12" font-family="monospace" fill="#eed18a">SERVICE 01</text></g>
+<g id="fault-marker"><circle cx="639" cy="300" r="18" fill="#eabb5f"/><text x="639" y="307" text-anchor="middle" font-size="23" font-weight="bold" fill="#14222a">?</text></g>
+<path d="M116 488H215M691 488H790" stroke="#c0974f" stroke-width="5" stroke-dasharray="16 10"/>
+</svg>
+<div class="scene-caption"><div><span class="eyebrow">ТЕХНИКА В БОКСЕ</span><h2 id="vehicle-name">Готовы к первому заказу?</h2></div><span id="plate" class="plate">— — —</span></div><div class="progress"><span id="progress-bar"></span></div><div class="steps"><span>01 Приёмка</span><span>02 Диагностика</span><span>03 Ремонт</span><span>04 Выдача</span></div>
+</section>
+<section class="panel order"><div class="section-title"><span class="eyebrow">ЗАКАЗ-НАРЯД</span><span id="job-id">ОЖИДАНИЕ</span></div><div id="order-content"></div></section></div>
+<section class="bottom-grid"><div class="panel journal"><div class="section-title"><h2>Журнал мастерской</h2><span class="muted">Последние события</span></div><ol id="journal"></ol></div><div class="panel goal"><span class="eyebrow">ЦЕЛЬ СМЕНЫ</span><h2 id="goal-title">Пять машин. Одна репутация.</h2><p id="goal-text">Выполните 5 заказов. За точную работу и сдачу в срок получите премию.</p><div id="goal-dots" class="goal-dots"></div></div></section>
+<footer><span id="save-status">Прогресс сохраняется в этом браузере · Игровая диагностика условная</span><button class="quiet" id="reset">Новая игра</button></footer>
+</main><div id="notice" role="status" aria-live="polite"></div>
+<dialog id="reset-dialog"><h2>Начать новую игру?</h2><p>Деньги, улучшения и текущий заказ будут сброшены.</p><div class="dialog-actions"><button id="cancel-reset" class="secondary">Продолжить игру</button><button id="confirm-reset" class="primary">Начать заново</button></div></dialog>
+<script type="module" src="./game.js"></script>
+</body></html>

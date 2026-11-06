@@ -4,9 +4,11 @@ using MyApp.Application.DTO;
 
 namespace MyApp.Application.Services;
 
+/// <summary>Прикладные операции подписей сотрудников.</summary>
 public sealed class EmployeeSignatureService(
     IEmployeeSignatureRepository repository) : IEmployeeSignatureService
 {
+    /// <summary>Возвращает данные подписи сотрудника.</summary>
     public async Task<ServiceResult<EmployeeSignatureResponse>> GetAsync(
         EmployeeSignatureKey employee,
         CancellationToken cancellationToken)
@@ -19,6 +21,7 @@ public sealed class EmployeeSignatureService(
             : ServiceResult<EmployeeSignatureResponse>.Success(signature);
     }
 
+    /// <summary>Сохраняет подпись сотрудника.</summary>
     public async Task<ServiceResult<bool>> SaveAsync(
         EmployeeSignatureKey employee,
         byte[] content,
@@ -44,6 +47,7 @@ public sealed class EmployeeSignatureService(
         return ServiceResult<bool>.Success(true);
     }
 
+    /// <summary>Удаляет подпись сотрудника.</summary>
     public async Task<ServiceResult<bool>> DeleteAsync(
         EmployeeSignatureKey employee,
         CancellationToken cancellationToken)
@@ -56,6 +60,7 @@ public sealed class EmployeeSignatureService(
             : ServiceResult<bool>.NotFound();
     }
 
+    /// <summary>Нормализует ключ сотрудника перед поиском или сохранением подписи.</summary>
     private static EmployeeSignatureKey Normalize(EmployeeSignatureKey employee) =>
         new(
             employee.LastName.Trim(),

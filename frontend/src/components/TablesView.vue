@@ -79,12 +79,14 @@ const responsibleProfession = computed(() =>
   props.selectedTableId === 'v_full_ost' ? 'Кладовщик' : 'Старший механик',
 )
 const selectedResponsibleKey = computed({
+  /** Возвращает ключ выбранного ответственного для текущего табличного источника. */
   get() {
     if (props.selectedResponsibleEmployee?.sourceTable !== props.selectedTableId) {
       return ''
     }
     return getEmployeeKey(props.selectedResponsibleEmployee)
   },
+  /** Передаёт родителю изменение выбранного ответственного сотрудника. */
   set(key) {
     const employee = responsibleEmployees.value.find(
       (item) => getEmployeeKey(item) === key,
@@ -124,10 +126,12 @@ const columnLabels = {
   Роспись: 'Роспись',
 }
 
+/** Формирует ключ сотрудника для поиска его подписи. */
 function getWorkerKey(row) {
   return JSON.stringify([row.LastName, row.FirstName, row.Patronymic ?? ''])
 }
 
+/** Строит параметры запроса подписи сотрудника. */
 function getWorkerQuery(row) {
   return new URLSearchParams({
     lastName: row.LastName,
@@ -136,11 +140,13 @@ function getWorkerQuery(row) {
   })
 }
 
+/** Освобождает временные URL загруженных подписей. */
 function clearSignatureUrls() {
   signatureUrls.value.forEach((url) => URL.revokeObjectURL(url))
   signatureUrls.value.clear()
 }
 
+/** Загружает сохранённую подпись сотрудника. */
 async function loadSignature(row) {
   const key = getWorkerKey(row)
   const currentUrl = signatureUrls.value.get(key)
@@ -161,6 +167,7 @@ async function loadSignature(row) {
   }
 }
 
+/** Отправляет файл подписи для выбранного сотрудника. */
 async function uploadSignature(row, event) {
   const file = event.target.files?.[0]
   event.target.value = ''
@@ -185,6 +192,7 @@ async function uploadSignature(row, event) {
   await loadSignature(row)
 }
 
+/** Удаляет подпись сотрудника и обновляет строку таблицы. */
 async function deleteSignature(row) {
   const response = await fetch(`/api/employees/signature?${getWorkerQuery(row)}`, {
     method: 'DELETE',
@@ -199,6 +207,7 @@ async function deleteSignature(row) {
   await loadSignature(row)
 }
 
+/** Приводит значение ячейки к отображаемому тексту. */
 function formatCell(value) {
   if (value === null || value === undefined || value === '') {
     return '—'
@@ -207,6 +216,7 @@ function formatCell(value) {
   return typeof value === 'object' ? JSON.stringify(value) : String(value)
 }
 
+/** Формирует устойчивый ключ сотрудника в списке выбора. */
 function getEmployeeKey(employee) {
   return JSON.stringify([
     employee.firstName,
@@ -215,12 +225,14 @@ function getEmployeeKey(employee) {
   ])
 }
 
+/** Собирает отображаемое имя сотрудника. */
 function getEmployeeName(employee) {
   return [employee.lastName, employee.firstName, employee.patronymic]
     .filter(Boolean)
     .join(' ')
 }
 
+/** Загружает сотрудников для выбора ответственных в требовании. */
 async function loadResponsibleEmployees() {
   responsibleEmployees.value = []
   responsibleEmployeeError.value = ''
@@ -250,6 +262,7 @@ async function loadResponsibleEmployees() {
   }
 }
 
+/** Формирует ключ строки для отслеживания выбранных материалов. */
 function getRowKey(row) {
   const sourceTable = row.__sourceTable ?? props.selectedTableId
   return JSON.stringify(
@@ -263,21 +276,25 @@ function getRowKey(row) {
   )
 }
 
+/** Находит выбранную позицию, соответствующую строке таблицы. */
 function getSelectedRow(row) {
   const key = getRowKey(row)
   return props.selectedComponentRows.find((selectedRow) => getRowKey(selectedRow) === key)
 }
 
+/** Возвращает выбранные позиции текущего табличного источника. */
 function getCurrentTableSelections() {
   return props.selectedComponentRows.filter(
     (row) => row.__sourceTable === props.selectedTableId,
   )
 }
 
+/** Возвращает выбранное количество материала. */
 function getQuantity(row) {
   return getSelectedRow(row)?.__requestedQuantity ?? 1
 }
 
+/** Возвращает доступный остаток материала в строке. */
 function getAvailableQuantity(row) {
   const key = Object.keys(row).find((column) =>
     ['amount', 'количество'].includes(column.trim().toLowerCase()),
@@ -286,6 +303,7 @@ function getAvailableQuantity(row) {
   return Number.isFinite(quantity) ? Math.max(quantity, 0) : 0
 }
 
+/** Формирует позицию требования из строки складской таблицы. */
 function createSelectedRow(row, requestedQuantity) {
   const availableQuantity = getAvailableQuantity(row)
   const quantity = Math.min(availableQuantity, requestedQuantity)
@@ -299,10 +317,12 @@ function createSelectedRow(row, requestedQuantity) {
   }
 }
 
+/** Проверяет наличие материала среди выбранных позиций. */
 function isRowSelected(row) {
   return selectedRowKeys.value.has(getRowKey(row))
 }
 
+/** Добавляет материал в выбор или исключает его. */
 function toggleRow(row) {
   const key = getRowKey(row)
   const nextRows = isRowSelected(row)
@@ -316,6 +336,7 @@ function toggleRow(row) {
   emit('update:selected-component-rows', nextRows)
 }
 
+/** Обновляет количество выбранного материала с учётом доступного остатка. */
 function updateQuantity(row, value) {
   const parsedValue = Number(String(value).replace(',', '.'))
   const quantity = Number.isFinite(parsedValue) && parsedValue > 0 ? parsedValue : 1
@@ -333,6 +354,7 @@ function updateQuantity(row, value) {
   emit('update:selected-component-rows', nextRows)
 }
 
+/** Переключает выбор доступных строк текущей страницы. */
 function toggleVisibleRows() {
   const visibleKeys = new Set(rows.value.map((row) => getRowKey(row)))
   if (areAllVisibleRowsSelected.value) {
@@ -357,6 +379,7 @@ function toggleVisibleRows() {
   emit('update:selected-component-rows', nextRows)
 }
 
+/** Загружает страницу таблицы с текущим поиском, сортировкой и размером страницы. */
 async function loadTable() {
   isLoading.value = true
   errorMessage.value = ''
@@ -416,6 +439,7 @@ async function loadTable() {
   onBeforeUnmount(clearSignatureUrls)
 }
 
+/** Переключает страницу табличного представления. */
 function changePage(nextPage) {
   if (nextPage < 1 || nextPage > totalPages.value || nextPage === currentPage.value) {
     return
@@ -425,6 +449,7 @@ function changePage(nextPage) {
   loadTable()
 }
 
+/** Меняет число строк на странице и обновляет таблицу. */
 function changePageSize() {
   currentPage.value = 1
   loadTable()

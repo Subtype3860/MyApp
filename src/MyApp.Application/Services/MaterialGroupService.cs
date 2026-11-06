@@ -4,6 +4,7 @@ using MyApp.Application.DTO;
 
 namespace MyApp.Application.Services;
 
+/// <summary>Прикладные операции групп материалов.</summary>
 public sealed class MaterialGroupService(
     IMaterialGroupRepository repository) : IMaterialGroupService
 {
@@ -14,10 +15,12 @@ public sealed class MaterialGroupService(
             "v_meh_ost"
         };
 
+    /// <summary>Возвращает список групп материалов.</summary>
     public Task<IReadOnlyList<MaterialGroupResponse>> GetAllAsync(
         CancellationToken cancellationToken) =>
         repository.GetAllAsync(cancellationToken);
 
+    /// <summary>Возвращает соответствия материалов их группам.</summary>
     public async Task<ServiceResult<IReadOnlyList<MaterialGroupMappingResponse>>>
         GetMappingsAsync(
             string sourceTable,
@@ -33,6 +36,7 @@ public sealed class MaterialGroupService(
             await repository.GetMappingsAsync(sourceTable, cancellationToken));
     }
 
+    /// <summary>Создаёт группу материалов.</summary>
     public async Task<ServiceResult<Guid>> CreateGroupAsync(
         MaterialGroupRequest request,
         CancellationToken cancellationToken)
@@ -58,6 +62,7 @@ public sealed class MaterialGroupService(
             await repository.CreateGroupAsync(name, cancellationToken));
     }
 
+    /// <summary>Включает материал в выбранную группу.</summary>
     public async Task<ServiceResult<Guid>> AddItemAsync(
         Guid groupId,
         MaterialGroupItemRequest request,
@@ -110,6 +115,7 @@ public sealed class MaterialGroupService(
                 cancellationToken));
     }
 
+    /// <summary>Удаляет группу материалов.</summary>
     public async Task<ServiceResult<Guid>> DeleteGroupAsync(
         Guid id,
         CancellationToken cancellationToken) =>
@@ -117,6 +123,7 @@ public sealed class MaterialGroupService(
             ? ServiceResult<Guid>.Success(id)
             : ServiceResult<Guid>.NotFound();
 
+    /// <summary>Исключает материал из группы.</summary>
     public async Task<ServiceResult<Guid>> DeleteItemAsync(
         Guid id,
         CancellationToken cancellationToken) =>

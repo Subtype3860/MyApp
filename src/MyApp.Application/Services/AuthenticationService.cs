@@ -5,11 +5,13 @@ using MyApp.Application.Security;
 
 namespace MyApp.Application.Services;
 
+/// <summary>Прикладные операции аутентификации.</summary>
 public sealed class AuthenticationService(
     IUserRepository userRepository,
     IPasswordHasher passwordHasher,
     ITokenProvider tokenProvider) : IAuthenticationService
 {
+    /// <summary>Проверяет учётные данные и возвращает результат входа с токеном доступа.</summary>
     public async Task<ServiceResult<AuthResponse>> LoginAsync(
         LoginRequest request,
         CancellationToken cancellationToken)
@@ -25,13 +27,7 @@ public sealed class AuthenticationService(
             return ServiceResult<AuthResponse>.Unauthorized();
         }
 
-        var permissions = user.Role.Equals(
-            "administrator",
-            StringComparison.OrdinalIgnoreCase)
-            ? Permissions.All
-            : Permissions.Expand(user.Permissions.Split(
-                ',',
-                StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+        var permissions = UserAccess.EffectivePermissions(user);
 
         return ServiceResult<AuthResponse>.Success(
             new AuthResponse(tokenProvider.Create(user), user.Role, permissions));

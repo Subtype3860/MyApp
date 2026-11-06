@@ -5,8 +5,10 @@ using Npgsql;
 
 namespace MyApp.Infrastructure.Tests;
 
+/// <summary>Тесты выдачи и возврата материалов в PostgreSQL.</summary>
 public sealed class RequirementCurrentModelPostgreSqlTests
 {
+    /// <summary>Формирует запрос выдачи материалов для теста.</summary>
     private static ComponentDocumentRequest Request(
         params ComponentDocumentItem[] items) =>
         new(
@@ -16,10 +18,12 @@ public sealed class RequirementCurrentModelPostgreSqlTests
             new ResponsibleEmployeeSelection("Ivan", "", "Ivanov"),
             items);
 
+    /// <summary>Формирует позицию материала тестового требования.</summary>
     private static ComponentDocumentItem Item(
         string name, decimal quantity, decimal clientBalance = 999m) =>
         new(name, "pcs", quantity, clientBalance);
 
+    /// <summary>Проверяет списание актуального остатка, объединение одинаковых материалов и однократный возврат.</summary>
     [Xunit.Fact]
     [Xunit.Trait("Category", "Integration")]
     public async Task Uses_actual_stock_aggregates_duplicates_and_restores_once()
@@ -48,6 +52,7 @@ public sealed class RequirementCurrentModelPostgreSqlTests
         Xunit.Assert.Equal(10m, await fixture.StockAsync());
     }
 
+    /// <summary>Проверяет выдачу и возврат материалов через складские представления с числовыми остатками.</summary>
     [Xunit.Fact]
     [Xunit.Trait("Category", "Integration")]
     public async Task Numeric_stock_views_are_accepted_when_issuing_and_restoring()
@@ -80,6 +85,7 @@ public sealed class RequirementCurrentModelPostgreSqlTests
         Xunit.Assert.Equal(0L, await fixture.CountAsync());
     }
 
+    /// <summary>Проверяет отклонение превышения остатка до записи в числовой складской источник.</summary>
     [Xunit.Fact]
     [Xunit.Trait("Category", "Integration")]
     public async Task Numeric_stock_views_reject_overdraw_before_writing()
@@ -101,6 +107,7 @@ public sealed class RequirementCurrentModelPostgreSqlTests
         Xunit.Assert.Equal(0L, await fixture.CountAsync());
     }
 
+    /// <summary>Проверяет невозможность превысить остаток по устаревшим данным клиента.</summary>
     [Xunit.Fact]
     [Xunit.Trait("Category", "Integration")]
     public async Task Stale_client_balance_cannot_overdraw_stock()
@@ -121,6 +128,7 @@ public sealed class RequirementCurrentModelPostgreSqlTests
         Xunit.Assert.Equal(0L, await fixture.CountAsync());
     }
 
+    /// <summary>Проверяет отказ без изменения склада при отсутствии одного из материалов требования.</summary>
     [Xunit.Fact]
     [Xunit.Trait("Category", "Integration")]
     public async Task Missing_second_material_fails_before_mutating_any_stock()
@@ -141,6 +149,7 @@ public sealed class RequirementCurrentModelPostgreSqlTests
         Xunit.Assert.Equal(0L, await fixture.CountAsync());
     }
 
+    /// <summary>Проверяет отказ ограничения базы для неверного автора до изменения складского источника.</summary>
     [Xunit.Fact]
     [Xunit.Trait("Category", "Integration")]
     public async Task Invalid_author_fails_on_database_constraint_before_csv_update()
@@ -160,6 +169,7 @@ public sealed class RequirementCurrentModelPostgreSqlTests
         Xunit.Assert.Equal(0L, await fixture.CountAsync());
     }
 
+    /// <summary>Проверяет невозможность превысить остаток при параллельной выдаче материалов.</summary>
     [Xunit.Fact]
     [Xunit.Trait("Category", "Integration")]
     public async Task Concurrent_issues_cannot_overdraw_one_stock_source()
@@ -170,6 +180,7 @@ public sealed class RequirementCurrentModelPostgreSqlTests
             "INSERT INTO app_users(id) VALUES (@id)", ("id", user));
         var request = Request(Item("Filter", 7m));
 
+        /** Пытается выдать материалы и возвращает результат конкурентной операции. */
         async Task<bool> TryIssueAsync()
         {
             await using var db = fixture.CreateContext();
@@ -193,6 +204,7 @@ public sealed class RequirementCurrentModelPostgreSqlTests
         Xunit.Assert.Equal(1L, await fixture.CountAsync());
     }
 
+    /// <summary>Проверяет однократный возврат материалов при параллельном удалении требования.</summary>
     [Xunit.Fact]
     [Xunit.Trait("Category", "Integration")]
     public async Task Concurrent_deletions_do_not_restore_stock_twice()
@@ -212,6 +224,7 @@ public sealed class RequirementCurrentModelPostgreSqlTests
                 await repo.GetRecentAsync(CancellationToken.None)).Id;
         }
 
+        /** Удаляет тестовое требование для проверки возврата остатков. */
         async Task<bool> DeleteAsync()
         {
             await using var db = fixture.CreateContext();

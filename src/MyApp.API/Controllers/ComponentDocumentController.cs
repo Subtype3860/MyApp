@@ -8,11 +8,13 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace MyApp.API.Controllers;
 
+/// <summary>HTTP-эндпоинты документов требований на материалы.</summary>
 [ApiController]
 [Route("api")]
 [Authorize]
 public class ComponentDocumentController : ControllerBase
 {
+    /// <summary>Возвращает предварительные данные требования без его сохранения.</summary>
     [HttpPost("/api/documents/components/preview")]
     public async Task<IActionResult> Preview(
         [FromBody] ComponentDocumentRequest request,
@@ -28,6 +30,7 @@ public class ComponentDocumentController : ControllerBase
         return this.ToActionResult(result, value => Ok(value));
     }
 
+    /// <summary>Формирует данные документа требования по выбранным материалам.</summary>
     [HttpPost("/api/documents/components")]
     public async Task<IActionResult> Generate(
         [FromBody] ComponentDocumentRequest request,
@@ -43,6 +46,7 @@ public class ComponentDocumentController : ControllerBase
         return this.ToActionResult(result, value => Ok(value));
     }
 
+    /// <summary>Возвращает PDF-шаблон для формирования требования.</summary>
     [HttpGet("/api/documents/components/template")]
     [Produces("application/pdf")]
     public IActionResult GetTemplate(
@@ -128,6 +132,7 @@ public class ComponentDocumentController : ControllerBase
         }
     }
 
+    /// <summary>Извлекает идентификатор пользователя из утверждений текущей сессии.</summary>
     private bool TryGetUserId(out Guid userId)
     {
         var userIdValue = User.FindFirstValue(ClaimTypes.NameIdentifier)

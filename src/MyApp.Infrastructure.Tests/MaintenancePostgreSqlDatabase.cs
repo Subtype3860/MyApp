@@ -14,6 +14,7 @@ internal sealed class MaintenancePostgreSqlDatabase : IAsyncDisposable
     private readonly string schema;
     private readonly string scopedConnectionString;
 
+    /// <summary>Подготавливает объект тестового окружения с заданными зависимостями.</summary>
     private MaintenancePostgreSqlDatabase(string connectionString, string schema)
     {
         adminConnectionString = connectionString;
@@ -24,6 +25,7 @@ internal sealed class MaintenancePostgreSqlDatabase : IAsyncDisposable
         }.ConnectionString;
     }
 
+    /// <summary>Создаёт контекст EF Core, подключённый к изолированной тестовой схеме.</summary>
     public AppDbContext CreateContext()
     {
         var options = new DbContextOptionsBuilder<AppDbContext>()
@@ -32,6 +34,7 @@ internal sealed class MaintenancePostgreSqlDatabase : IAsyncDisposable
         return new AppDbContext(options);
     }
 
+    /// <summary>Создаёт изолированную схему PostgreSQL и подготавливает данные теста.</summary>
     public static async Task<MaintenancePostgreSqlDatabase> CreateAsync(
         bool numericStockView = false)
     {
@@ -72,6 +75,7 @@ internal sealed class MaintenancePostgreSqlDatabase : IAsyncDisposable
         }
     }
 
+    /// <summary>Создаёт таблицы и исходные данные изолированной тестовой схемы.</summary>
     private async Task InitializeAsync(bool numericStockView)
     {
         await using var dataSource = NpgsqlDataSource.Create(scopedConnectionString);
@@ -113,8 +117,11 @@ internal sealed class MaintenancePostgreSqlDatabase : IAsyncDisposable
                        {stockColumn} AS "Количество";
             """);
         await cmd.ExecuteNonQueryAsync();
+        await using var db = CreateContext();
+        await CsvDatabaseMigration.InitializeAsync(db);
     }
 
+    /// <summary>Выполняет проверочный SQL-запрос и возвращает целое значение.</summary>
     public async Task<long> ScalarLongAsync(string commandText)
     {
         await using var dataSource = NpgsqlDataSource.Create(scopedConnectionString);
@@ -122,6 +129,7 @@ internal sealed class MaintenancePostgreSqlDatabase : IAsyncDisposable
         return Convert.ToInt64(await cmd.ExecuteScalarAsync());
     }
 
+    /// <summary>Читает порядок сортировки элементов тестовой схемы.</summary>
     public async Task<int[]> SortOrdersAsync(string table, string keyColumn = "",
         Guid? keyValue = null)
     {
@@ -140,6 +148,7 @@ internal sealed class MaintenancePostgreSqlDatabase : IAsyncDisposable
         return (int[]?)await cmd.ExecuteScalarAsync() ?? [];
     }
 
+    /// <summary>Удаляет изолированную схему после завершения теста.</summary>
     public async ValueTask DisposeAsync()
     {
         await using var connection = new NpgsqlConnection(adminConnectionString);
