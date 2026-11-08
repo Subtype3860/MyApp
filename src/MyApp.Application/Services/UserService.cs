@@ -298,7 +298,8 @@ public sealed class UserService(
             user.LastName,
             user.UserName,
             user.Profession.Name,
-            user.AvatarContent is not null);
+            user.AvatarContent is not null,
+            MyApp.Application.Security.MaintenanceLibraryAccess.Allows(user.Profession.Name));
 
     /// <summary>Проверяет поля запроса создания пользователя.</summary>
     private static Dictionary<string, string[]> ValidateCreateRequest(

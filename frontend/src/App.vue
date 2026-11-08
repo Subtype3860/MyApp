@@ -284,7 +284,7 @@ function updateSelectedComponentRows(rows) {
         @show-selected="openSelectedComponents"
       />
       <section
-        v-else-if="currentPage === 'maintenance-templates' && String(role).toLowerCase() === 'administrator'"
+        v-else-if="currentPage === 'maintenance-templates'"
         class="macos-glass-panel settings-panel"
       >
         <MaintenanceTemplatesSettings :token="token" />

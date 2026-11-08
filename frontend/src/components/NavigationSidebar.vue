@@ -333,7 +333,7 @@ function toggleGames() {
           :class="{ 'nav-submenu-link--active': activePage === 'maintenance' }" type="button"
           :aria-current="activePage === 'maintenance' ? 'page' : undefined"
           @click="$emit('navigate', 'maintenance')">Техническое обслуживание</button>
-        <button v-if="isAdmin" class="nav-submenu-link"
+        <button v-if="isAdmin || profile?.canUseMaintenanceLibrary" class="nav-submenu-link"
           :class="{ 'nav-submenu-link--active': activePage === 'maintenance-templates' }" type="button"
           :aria-current="activePage === 'maintenance-templates' ? 'page' : undefined"
           @click="$emit('navigate', 'maintenance-templates')">Шаблоны ТО</button>

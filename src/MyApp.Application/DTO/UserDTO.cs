@@ -27,7 +27,8 @@ public sealed record UserProfileResponse(
     string LastName,
     string UserName,
     string Position,
-    bool HasAvatar);
+    bool HasAvatar,
+    bool CanUseMaintenanceLibrary = false);
 
 /// <summary>Изменения личных данных и пароля пользователя.</summary>
 public sealed record UpdateProfileRequest(
