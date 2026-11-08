@@ -83,9 +83,9 @@ async function save(){
  }catch(e){error.value=e.message}finally{busy.value=false}
 }
 async function reload(){if(busy.value)return;const id=selectedId.value;await load();await selectVehicle(id)}
-function openCompletion(){
+function openCompletion(runInId = ''){
  const plan=selected.value.plan
- completion.value={date:localDate(new Date()),description:'',runInId:'',
+ completion.value={date:localDate(new Date()),description:'',runInId:runInId || '',
   engines:plan.engines.map(engine=>({number:engine.number,hours:''}))}
  completionDialog.value.showModal()
 }
@@ -129,7 +129,13 @@ onMounted(load)
    <p v-if="!selected.plan">Начните с графика и данных последнего ТО.</p>
    <template v-else>
     <p>Последнее плановое ТО: {{selected.plan.lastService}} · {{selected.plan.lastDate.split('-').reverse().join('.')}}</p>
-    <ul><li v-for="due in selected.due" :key="due.runInId || 'scheduled'">{{due.name}}: {{due.remaining<0?'просрочено на '+hoursText(-due.remaining):'осталось '+hoursText(due.remaining)}} м/ч · ДВС № {{due.engineNumber}} · план {{hoursText(due.dueHours)}} м/ч</li></ul>
+    <ul class="maintenance-due-list">
+     <li v-for="due in selected.due" :key="due.runInId || 'scheduled'" class="maintenance-due" :class="{ 'maintenance-due--overdue': due.remaining<0, 'maintenance-due--runin': !!due.runInId }">
+      <span v-if="due.runInId" class="maintenance-runin-badge">обкатка</span>
+      <span class="maintenance-due-text">{{due.name}}: {{due.remaining<0?'просрочено на '+hoursText(-due.remaining):'осталось '+hoursText(due.remaining)}} м/ч · ДВС № {{due.engineNumber}} · план {{hoursText(due.dueHours)}} м/ч</span>
+      <button v-if="due.runInId && canManage" type="button" class="secondary-button maintenance-due-close" @click="openCompletion(due.runInId)">Закрыть обкатку</button>
+     </li>
+    </ul>
     <p v-if="selected.incomplete">Недостаточно корректных показаний для расчёта всех ТО. Проверьте даты и наработку каждого ДВС.</p>
     <button v-if="canManage" type="button" class="primary-button" :disabled="busy" @click="openCompletion">Зарегистрировать выполнение ТО</button>
    </template>
@@ -187,9 +193,9 @@ onMounted(load)
    <div class="maintenance-toolbar"><button type="submit" class="primary-button">Использовать график</button><button type="button" class="secondary-button" @click="graphDialog.close()">Отмена</button></div>
   </form>
  </dialog>
- <dialog ref="completionDialog" class="maintenance-dialog" @cancel="busy && $event.preventDefault()">
+ <dialog ref="completionDialog" class="maintenance-dialog" aria-labelledby="completion-title" @cancel="busy && $event.preventDefault()">
   <form v-if="completion" @submit.prevent="complete">
-   <h2>Выполнение ТО</h2><p>{{vehicleTitle(selected.vehicle)}}</p>
+   <h2 id="completion-title">Выполнение ТО</h2><p>{{vehicleTitle(selected.vehicle)}}</p>
    <label>Какое ТО выполнено<select v-model="completion.runInId" :disabled="busy"><option value="">Плановое: {{selected.plan.steps[selected.plan.nextStepIndex].name}}</option><option v-for="item in selected.plan.runIns" :key="item.id" :value="item.id">Обкаточное: {{item.reason}}</option></select></label>
    <label>Дата выполнения<input v-model="completion.date" type="date" :max="localDate(new Date())" required :disabled="busy" /></label>
    <MaintenanceDateReadings :token="token" :vehicle-id="selectedId" :date="completion.date" v-model="completion.engines" />
@@ -213,5 +219,10 @@ onMounted(load)
 .maintenance-runin{display:grid;gap:12px;padding:14px;border:1px solid var(--border);border-radius:10px}.maintenance-runin-engine{display:flex;gap:10px;align-items:end}.maintenance-runin-engine>label{flex:1}.maintenance-history details{padding:12px 0;border-bottom:1px solid var(--border)}.maintenance-history summary{cursor:pointer;line-height:1.6}
 .maintenance-dialog{width:min(620px,calc(100vw - 24px));max-height:90dvh;overflow:auto;padding:24px;border:1px solid var(--border);border-radius:14px;background:var(--bg-main);color:var(--text-main)}.maintenance-dialog::backdrop{background:#0008}.maintenance-dialog form{display:grid;gap:14px}
 @media(max-width:600px){.maintenance-toolbar>label{min-width:100%}.maintenance-summary,.maintenance-form,.maintenance-history{padding:12px}.maintenance-steps li{grid-template-columns:16px minmax(0,1fr) 36px;gap:4px}.maintenance-steps button{padding:6px}.maintenance-runin-engine{flex-wrap:wrap}}
+.maintenance-due-list{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+.maintenance-due{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;padding:8px 10px;border:1px solid var(--border);border-radius:8px}
+.maintenance-due--overdue{border-color:#d9534f;background:color-mix(in srgb,#d9534f 6%,var(--bg-surface))}
+.maintenance-runin-badge{padding:2px 8px;border-radius:999px;background:color-mix(in srgb,#c58e32 18%,var(--bg-surface));color:#a06f1c;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em}
+.maintenance-due-text{min-width:0;flex:1 1 260px;font-size:13px}
+.maintenance-due-close{min-height:36px;padding:6px 10px;font-size:12px}
 </style>
-
