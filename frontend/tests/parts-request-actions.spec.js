@@ -55,6 +55,14 @@ test('procurement lists every vehicle and reports API errors', async ({ page }) 
   const state = await setup(page)
   await expect(page.locator('.parts-request-card')).toHaveCount(2)
   await expect(state.row('v1')).toContainText('Заявок пока нет.')
+  const search = page.getByLabel('Поиск по заявкам на закупку', { exact: true })
+  await search.fill('901')
+  await expect(page.locator('.parts-request-card')).toHaveCount(1)
+  await search.fill('экскаватор')
+  await expect(page.locator('.parts-request-card')).toHaveCount(1)
+  await expect(state.row('v2')).toBeVisible()
+  await search.fill('')
+  await expect(page.locator('.parts-request-card')).toHaveCount(2)
 
   let fail = false
   await page.route('**/api/vehicles/repair-journal', route =>

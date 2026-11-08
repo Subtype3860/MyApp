@@ -3754,3 +3754,19 @@ button {
 
 .repair-state-badges { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
 .vehicle-field select { width: 100%; padding: 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-surface); color: var(--text-main); font: inherit; }
+
+/* Заявки на закупку ЗЧ: компактный список и поиск */
+.parts-request-cards { gap: 10px; }
+.parts-request-toolbar { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: 10px; }
+.parts-request-search { display: grid; gap: 4px; flex: 1 1 260px; min-width: 0; color: var(--text-secondary); font-size: 12px; }
+.parts-request-search input { width: 100%; min-width: 0; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-main); color: var(--text-main); font: inherit; }
+.parts-request-table th { padding: 8px 12px; }
+.parts-request-table td { padding: 10px 12px; }
+.parts-request-vehicle-line { margin: 0; font-size: 14px; line-height: 1.4; }
+.parts-request-vehicle-type { margin: 2px 0 6px; font-size: 12px; }
+.parts-request-card__status { padding: 3px 6px; }
+.parts-request-cause-text { margin: 0; font-size: 13px; }
+.parts-request-history { gap: 6px; }
+.parts-request-history__item { gap: 4px; padding-bottom: 6px; }
+.parts-request-history__content p { font-size: 13px; line-height: 1.45; }
+.parts-request-history__item time { margin-bottom: 2px; }

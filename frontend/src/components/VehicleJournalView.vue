@@ -128,6 +128,20 @@ const selectedVehicle = computed(() =>
   ),
 )
 const partsRequests = ref([])
+const partsRequestQuery = ref('')
+/** Фильтрует заявки по технике и тексту заявки. */
+const visiblePartsRequests = computed(() => {
+  const term = partsRequestQuery.value.trim().toLocaleLowerCase('ru')
+  if (!term) return partsRequests.value
+  return partsRequests.value.filter(row => [
+    row.vehicleName,
+    row.vehicleTypeName,
+    row.vehicleGarageNumber,
+    row.vehicleStateNumber,
+    row.description,
+    ...(row.partsRequests ?? []).flatMap(item => [item.requestNumber, item.description]),
+  ].some(value => String(value ?? '').toLocaleLowerCase('ru').includes(term)))
+})
 const partsRequestDrafts = ref({})
 const partsRequestEditDrafts = ref({})
 
@@ -1329,23 +1343,21 @@ function formatDateTime(value) {
 
       <section v-if="props.section === 'partsRequest'" class="parts-request-cards">
         <div class="parts-request-toolbar">
-          <p>Заявки на закупку запчастей <span class="parts-request-count">{{ partsRequests.length }}</span></p>
-
+          <p>Заявки на закупку запчастей <span class="parts-request-count">{{ visiblePartsRequests.length }}</span></p>
+          <label class="parts-request-search">Поиск
+            <input v-model="partsRequestQuery" type="search" aria-label="Поиск по заявкам на закупку" placeholder="Техника, гаражный номер или текст заявки" />
+          </label>
         </div>
         <p v-if="isLoading" class="table-message">Загрузка заявок...</p>
-        <div v-else-if="partsRequests.length" class="parts-request-table-wrap">
+        <div v-else-if="visiblePartsRequests.length" class="parts-request-table-wrap">
           <table class="parts-request-table">
             <colgroup><col class="parts-request-col-vehicle" /><col class="parts-request-col-cause" /><col class="parts-request-col-orders" /></colgroup>
             <thead><tr><th scope="col">Техника</th><th scope="col">Требуется</th><th scope="col">Заявки</th></tr></thead>
             <tbody>
-              <tr v-for="request in partsRequests" :key="request.id" class="parts-request-card">
+              <tr v-for="request in visiblePartsRequests" :key="request.id" class="parts-request-card">
                 <td class="parts-request-cell-vehicle" data-label="Техника">
-                  <h3>{{ request.vehicleName || 'Модель не указана' }}</h3>
+                  <p class="parts-request-vehicle-line"><strong>{{ request.vehicleName || 'Модель не указана' }}</strong> · № {{ request.vehicleGarageNumber ?? '—' }}<template v-if="request.vehicleStateNumber"> · {{ request.vehicleStateNumber }}</template></p>
                   <p class="parts-request-vehicle-type">{{ request.vehicleTypeName || 'Тип не указан' }}</p>
-                  <dl class="parts-request-card__vehicle-details">
-                    <div><dt>Гаражный №</dt><dd>{{ request.vehicleGarageNumber ?? '—' }}</dd></div>
-                    <div><dt>Госномер</dt><dd>{{ request.vehicleStateNumber || '—' }}</dd></div>
-                  </dl>
                   <span class="parts-request-card__status" :class="`parts-request-card__status--${repairStatus(request.status)}`">{{ operationalStateLabel(request.vehicleOperationalState) }}</span>
                 </td>
                 <td class="parts-request-cell-cause" data-label="Требуется">
