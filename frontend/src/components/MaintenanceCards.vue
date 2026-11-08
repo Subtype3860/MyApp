@@ -1,6 +1,7 @@
 <script setup>
 import { computed, ref, watch, onBeforeUnmount } from 'vue'
 import { localDate } from '../utils/shiftReport'
+import { convertImageToWebp } from '../utils/mediaUpload'
 import MaintenanceDateReadings from './MaintenanceDateReadings.vue'
 import MaintenanceOperationRow from './MaintenanceOperationRow.vue'
 const props=defineProps({token:String,vehicle:Object,plan:Object,planRevision:Number})
@@ -32,8 +33,10 @@ const readingsText=computed(()=>{
 const groups=computed(()=>[...new Set(card.value?.template.operations.map(o=>o.section)||[])])
 const localKey=()=>{let user='';try{user=JSON.parse(atob(props.token.split('.')[1].replace(/-/g,'+').replace(/_/g,'/'))).sub||JSON.parse(atob(props.token.split('.')[1].replace(/-/g,'+').replace(/_/g,'/')))['http://schemas.xmlsoap.org/ws/2005/05/identity/claims/nameidentifier']||''}catch{};return 'atlas.to-card.'+user+'.'+card.value?.id}
 async function request(path,options={}){
- const response=await fetch('/api/maintenance-plans/'+path,{...options,headers:{Authorization:'Bearer '+props.token,...(!(options.body instanceof FormData)?{'Content-Type':'application/json'}:{}),...options.headers}})
- const result=await response.json();if(!response.ok)throw Error(result.message||'Не удалось выполнить действие. Проверьте соединение.');return result
+ const response=await fetch('/api/maintenance-plans/'+path,{...options,headers:{Authorization:'Bearer '+props.token,...(!(options.body instanceof FormData)?{'Content-Type':'application/json'}:{}),...options.headers},signal:options.signal??AbortSignal.timeout(60000)})
+ const result=await response.json().catch(()=>null)
+ if(!response.ok)throw Error(result?.message||'Сервер не выполнил действие. Проверьте связь и повторите.')
+ return result
 }
 async function load(){
  const current=++generation; error.value=''
@@ -112,11 +115,23 @@ function finishTimeEdit(key,input){
 
 function normalizeNumbers(){for(const m of data.value.materials)if(m.actual==='')m.actual=null;for(const a of data.value.answers)if(a.measurement==='')a.measurement=null;if(data.value.mileage==='')data.value.mileage=null;changed()}
 async function addPhoto(event,id){
- const file=event.target.files[0];if(!file)return
- if(file.size>(file.type.startsWith('video/')?25_000_000:4_000_000)){error.value='Фото до 4 МБ, видео до 25 МБ.';event.target.value='';return}
- if(!await save())return
+ let file=event.target.files[0];if(!file)return
+ const isVideo=file.type.startsWith('video/')
+ if(!isVideo&&!file.type.startsWith('image/')){error.value='Допустимы фото JPEG/PNG и видео MP4/WebM.';event.target.value='';return}
+ if(isVideo&&file.size>25_000_000){error.value='Видео до 25 МБ.';event.target.value='';return}
+ if(!await save()){event.target.value='';return}
  busy.value=true;error.value=''
- try{const form=new FormData();form.append('file',file);form.append('operationId',id);await request('cards/'+card.value.id+'/photos/'+crypto.randomUUID(),{method:'POST',body:form});const key=card.value.id;await load();await open(cards.value.find(c=>c.id===key))}catch(e){error.value=e.message}finally{busy.value=false;event.target.value=''}
+ try{
+  if(!isVideo){
+   try{file=await convertImageToWebp(file,{maxSide:1600})}
+   catch{ /* HEIC и другие форматы без поддержки декодирования отправляем как есть. */ }
+  }
+  if(!isVideo&&file.size>4_000_000)throw Error('Фото до 4 МБ. Выберите снимок меньшего размера или сделайте фото в JPEG.')
+  const form=new FormData();form.append('file',file);form.append('operationId',id)
+  await request('cards/'+card.value.id+'/photos/'+crypto.randomUUID(),{method:'POST',body:form,signal:AbortSignal.timeout(180000)})
+  const key=card.value.id;await load();await open(cards.value.find(c=>c.id===key))
+ }catch(e){error.value=e.name==='TimeoutError'?'Сервер не ответил при загрузке. Проверьте связь и повторите.':(e.message||'Не удалось загрузить медиа.')}
+ finally{busy.value=false;event.target.value=''}
 }
 function closeMedia(){previewGeneration++;if(mediaPreview.value)URL.revokeObjectURL(mediaPreview.value.url);mediaPreview.value=null;mediaDialog.value?.close()}
 async function viewPhoto(photo){

@@ -256,10 +256,10 @@ public sealed partial class MaintenancePlansController
     public async Task<IActionResult> AddCardPhoto(Guid id, Guid photoId, [FromForm] string operationId, IFormFile file, CancellationToken ct)
     {
         if (!await CanFill(ct)) return Forbid();
-        if (photoId == Guid.Empty || file.Length is < 8 or > MaintenanceCardMedia.VideoLimit) return BadRequest(new { message = "Фото JPEG/PNG до 4 МБ, видео MP4/WebM до 25 МБ." });
+        if (photoId == Guid.Empty || file.Length is < 8 or > MaintenanceCardMedia.VideoLimit) return BadRequest(new { message = "Фото JPEG/PNG/WebP до 4 МБ, видео MP4/WebM до 25 МБ." });
         using var buffer = new MemoryStream(); await file.CopyToAsync(buffer, ct); var bytes = buffer.ToArray();
         var type = MaintenanceCardMedia.ContentType(bytes);
-        if (type is null) return BadRequest(new { message = "Допустимы фото JPEG/PNG до 4 МБ и видео MP4/WebM до 25 МБ." });
+        if (type is null) return BadRequest(new { message = "Допустимы фото JPEG/PNG/WebP до 4 МБ и видео MP4/WebM до 25 МБ." });
         var card = await db.MaintenanceCards.SingleOrDefaultAsync(x => x.Id == id, ct); if (card is null) return NotFound();
         await using var tx = await db.Database.BeginTransactionAsync(ct); await Lock(card.VehicleId, ct); await db.Entry(card).ReloadAsync(ct);
         var old = await db.MaintenanceCardPhotos.SingleOrDefaultAsync(x => x.Id == photoId, ct);

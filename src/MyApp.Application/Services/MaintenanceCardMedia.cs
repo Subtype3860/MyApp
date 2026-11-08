@@ -13,6 +13,8 @@ public static class MaintenanceCardMedia
         {
             if (bytes[..8].SequenceEqual(new byte[] {137,80,78,71,13,10,26,10})) return "image/png";
             if (bytes[0] == 255 && bytes[1] == 216 && bytes[2] == 255) return "image/jpeg";
+            if (bytes.Length >= 12 && bytes[..4].SequenceEqual("RIFF"u8) && bytes.Slice(8,4).SequenceEqual("WEBP"u8))
+                return "image/webp";
         }
         if (bytes.Length >= 12 && bytes.Slice(4,4).SequenceEqual("ftyp"u8))
         {
