@@ -125,8 +125,8 @@ watch(() => [props.token, props.profileVersion], loadProfile, {
 watch(
   () => props.activePage,
   (page) => {
-    if (!['vehicles', 'maintenance', 'auxiliary-works'].includes(page)) isVehiclesExpanded.value = false
-    if (page !== 'tables' && page !== 'selected-components') {
+    if (!['vehicles', 'auxiliary-works'].includes(page)) isVehiclesExpanded.value = false
+    if (!['tables', 'selected-components', 'maintenance', 'maintenance-templates'].includes(page)) {
       isTablesExpanded.value = false
     }
     if (page !== 'settings') isSettingsExpanded.value = false
@@ -251,8 +251,12 @@ function toggleGames() {
         v-if="canView('menu.tables')"
         class="nav-link"
         :class="{
-          'nav-link--active':
-            activePage === 'tables' || activePage === 'selected-components',
+          'nav-link--active': [
+            'tables',
+            'selected-components',
+            'maintenance',
+            'maintenance-templates',
+          ].includes(activePage),
         }"
         type="button"
         :aria-expanded="isTablesExpanded"
@@ -312,8 +316,7 @@ function toggleGames() {
         >
           Работники
         </button>
-        <button
-          v-if="canView('tables.selected_components')"
+        <button v-if="canView('tables.selected_components')"
           class="nav-submenu-link"
           :class="{
             'nav-submenu-link--active': activePage === 'selected-components',
@@ -326,6 +329,14 @@ function toggleGames() {
             {{ selectedComponentsCount }}
           </span>
         </button>
+        <button v-if="canView('menu.maintenance')" class="nav-submenu-link"
+          :class="{ 'nav-submenu-link--active': activePage === 'maintenance' }" type="button"
+          :aria-current="activePage === 'maintenance' ? 'page' : undefined"
+          @click="$emit('navigate', 'maintenance')">Техническое обслуживание</button>
+        <button v-if="isAdmin" class="nav-submenu-link"
+          :class="{ 'nav-submenu-link--active': activePage === 'maintenance-templates' }" type="button"
+          :aria-current="activePage === 'maintenance-templates' ? 'page' : undefined"
+          @click="$emit('navigate', 'maintenance-templates')">Шаблоны ТО</button>
       </div>
       <button
         v-if="(canView('menu.vehicles') || canView('menu.maintenance') || canView('menu.auxiliary_works'))"
@@ -416,10 +427,6 @@ function toggleGames() {
           :class="{ 'nav-submenu-link--active': activePage === 'vehicles' && activeVehicleSection === 'maintenanceExecution' }"
           type="button" :aria-current="activePage === 'vehicles' && activeVehicleSection === 'maintenanceExecution' ? 'page' : undefined"
           @click="$emit('navigate-vehicle', 'maintenanceExecution')">Проведение ТО</button>
-        <button v-if="canView('menu.maintenance')" class="nav-submenu-link"
-          :class="{ 'nav-submenu-link--active': activePage === 'maintenance' }" type="button"
-          :aria-current="activePage === 'maintenance' ? 'page' : undefined"
-          @click="$emit('navigate', 'maintenance')">Техническое обслуживание</button>
         <button v-if="canView('menu.auxiliary_works')" class="nav-submenu-link"
           :class="{ 'nav-submenu-link--active': activePage === 'auxiliary-works' }" type="button"
           :aria-current="activePage === 'auxiliary-works' ? 'page' : undefined"
@@ -523,17 +530,6 @@ function toggleGames() {
           @click="$emit('navigate-settings', 'material-groups')"
         >
           Группы материалов
-        </button>
-        <button
-          class="nav-submenu-link"
-          :class="{
-            'nav-submenu-link--active':
-              activePage === 'settings' && activeSettings === 'maintenance',
-          }"
-          type="button"
-          @click="$emit('navigate-settings', 'maintenance')"
-        >
-          Шаблоны ТО
         </button>
         <button
           class="nav-submenu-link"

@@ -5,6 +5,7 @@ import AuthLogin from './components/AuthLogin.vue'
 import HomeView from './components/HomeView.vue'
 import HelpView from './components/HelpView.vue'
 import MaintenanceView from './components/MaintenanceView.vue'
+import MaintenanceTemplatesSettings from './components/MaintenanceTemplatesSettings.vue'
 import NavigationSidebar from './components/NavigationSidebar.vue'
 import ProfileView from './components/ProfileView.vue'
 import RequirementsJournalView from './components/RequirementsJournalView.vue'
@@ -282,6 +283,12 @@ function updateSelectedComponentRows(rows) {
         @apply-template="applyMaintenanceTemplate"
         @show-selected="openSelectedComponents"
       />
+      <section
+        v-else-if="currentPage === 'maintenance-templates' && String(role).toLowerCase() === 'administrator'"
+        class="macos-glass-panel settings-panel"
+      >
+        <MaintenanceTemplatesSettings :token="token" />
+      </section>
       <AuxiliaryWorksView v-else-if="currentPage === 'auxiliary-works'" :token="token" :navigation-collapsed="isNavigationCollapsed" />
 
       <VehicleJournalView
