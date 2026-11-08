@@ -1,8 +1,10 @@
 # Latest production deployment
 
 Site: https://boora.ru/
-Release: `20261105-fleet-site-filter`.
-Deployment date: 2026-11-05 (Asia/Sakhalin).
-Source: archived `20261105-region-menu` frontend plus the site filter in HomeView.vue. Frontend-only deployment; existing backend and self-contained .NET 10 runtime retained.
+Release: `20261108-3accd21`.
+Deployment date: 2026-11-08 (Asia/Sakhalin).
+Source: commit `3accd21` on branch `refactor/integration-deepseek` (frontend and API).
+Known issue: NAS `//10.8.8.2/shara` (`/mnt/dietpi`) is down, so staged media cannot be
+transferred to permanent storage.
 
-See [release verification and recovery](release-20261105-fleet-site-filter.md).
+See [release verification and recovery](release-20261108-3accd21.md).
