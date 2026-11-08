@@ -2,18 +2,20 @@
 import { computed,onMounted,ref } from 'vue'
 import MaintenanceDateReadings from './MaintenanceDateReadings.vue'
 import MaintenanceCards from './MaintenanceCards.vue'
+import MaintenanceTemplateLibrary from './MaintenanceTemplateLibrary.vue'
 import FleetActionMenu from './FleetActionMenu.vue'
 import { maintenancePresets,stepLabel,hoursText } from '../utils/maintenance'
 import { localDate,vehicleTitle } from '../utils/shiftReport'
 const props=defineProps({token:{type:String,required:true}})
 const emit=defineEmits(['materials'])
-const rows=ref([]), canManage=ref(false), loading=ref(false),busy=ref(false),error=ref(''),message=ref(''),query=ref('')
+const rows=ref([]), canManage=ref(false), canUseLibrary=ref(false), panel=ref('cards'), loading=ref(false),busy=ref(false),error=ref(''),message=ref(''),query=ref('')
 const selectedId=ref(''),draft=ref(null),revision=ref(0),initialStep=ref(0),history=ref([])
 const completion=ref(null),completionDialog=ref(null),conflict=ref(false)
 const graphDialog=ref(null),newGraph=ref(null),graphError=ref('')
 const selected=computed(()=>rows.value.find(row=>row.vehicle.id===selectedId.value))
 const matches=computed(()=>rows.value.filter(row=>vehicleTitle(row.vehicle).toLocaleLowerCase('ru').includes(query.value.trim().toLocaleLowerCase('ru'))))
 const engineCount=computed(()=>selected.value?.vehicle.engineCount || 1)
+const service=computed(()=>draft.value?.steps?.[draft.value.nextStepIndex]?.name || '')
 const clone=value=>JSON.parse(JSON.stringify(value))
 const headers=()=>({Authorization:'Bearer '+props.token,'Content-Type':'application/json'})
 async function request(url,options={}) {
@@ -23,7 +25,7 @@ async function request(url,options={}) {
 }
 async function load(){
  loading.value=true;error.value=''
- try{const data=await request('/api/maintenance-plans');rows.value=data.rows || [];canManage.value=data.canManage===true}
+ try{const data=await request('/api/maintenance-plans');rows.value=data.rows || [];canManage.value=data.canManage===true;canUseLibrary.value=data.canUseLibrary===true}
  catch(e){error.value=e.message}finally{loading.value=false}
 }
 async function selectVehicle(id){
@@ -115,7 +117,13 @@ onMounted(load)
  <p v-if="error" role="alert" class="form-message--error">{{error}}</p>
  <p v-if="conflict">Сохранённый график изменился. Скопируйте нужные изменения, затем нажмите «Обновить».</p>
  <p v-if="message" role="status">{{message}}</p>
- <template v-if="selected && draft">
+ <nav v-if="canManage || canUseLibrary" class="maintenance-tabs" aria-label="Разделы проведения ТО">
+  <button type="button" :class="{active:panel==='cards'}" :aria-pressed="panel==='cards'" @click="panel='cards'">ТО по картам</button>
+  <button v-if="canManage" type="button" :class="{active:panel==='schedule'}" :aria-pressed="panel==='schedule'" @click="panel='schedule'">График и история</button>
+  <button v-if="canUseLibrary" type="button" :class="{active:panel==='library'}" :aria-pressed="panel==='library'" @click="panel='library'">Библиотека шаблонов</button>
+ </nav>
+ <MaintenanceTemplateLibrary v-if="panel==='library' && canUseLibrary" :token="token" :vehicle="selected?.vehicle || null" :service="service" />
+ <template v-if="panel!=='library' && selected && draft">
   <section class="maintenance-summary">
    <h3>{{vehicleTitle(selected.vehicle)}}</h3>
    <p v-if="!selected.plan">Начните с графика и данных последнего ТО.</p>
@@ -126,8 +134,8 @@ onMounted(load)
     <button v-if="canManage" type="button" class="primary-button" :disabled="busy" @click="openCompletion">Зарегистрировать выполнение ТО</button>
    </template>
   </section>
-  <MaintenanceCards :key="selectedId" :token="token" :vehicle="selected.vehicle" :plan="selected.plan" :plan-revision="revision" @completed="reload" @materials="emit('materials',$event)" />
-  <form @submit.prevent="save" class="maintenance-form">
+  <MaintenanceCards v-if="panel==='cards'" :key="selectedId" :token="token" :vehicle="selected.vehicle" :plan="selected.plan" :plan-revision="revision" @completed="reload" @materials="emit('materials',$event)" />
+  <form v-if="panel==='schedule'" @submit.prevent="save" class="maintenance-form">
    <fieldset :disabled="!canManage || busy">
     <legend>{{selected.plan?'Редактирование графика':'Начальные данные'}}</legend>
     <p v-if="!canManage">Изменять график и регистрировать выполнение могут механики, старшие механики и администраторы.</p>
@@ -160,7 +168,7 @@ onMounted(load)
     <button v-if="canManage" type="submit" class="primary-button" :disabled="conflict">{{busy?'Сохранение…':'Сохранить график'}}</button>
    </fieldset>
   </form>
-  <section class="maintenance-history"><h3>История графика и обслуживания</h3><p v-if="!history.length">Записей пока нет.</p><details v-for="event in history" :key="event.id"><summary>{{event.date.split('-').reverse().join('.')}} · {{event.description}} · версия {{event.revision}}</summary><p>Зафиксировано: {{new Date(event.createdAt).toLocaleString('ru-RU')}}</p><p v-if="event.readings.length">Показания: {{event.readings.map(e=>'ДВС № '+e.number+': '+hoursText(e.hours)+' м/ч'+(e.isEstimated?' (расчётные, исходная дата '+e.sourceDate+')':'')).join('; ')}}</p><p>График: {{event.after.name}}</p><ol><li v-for="(step,index) in event.after.steps" :key="index">{{step.name}} — через {{hoursText(step.interval)}} м/ч</li></ol></details></section>
+  <section v-if="panel==='schedule'" class="maintenance-history"><h3>История графика и обслуживания</h3><p v-if="!history.length">Записей пока нет.</p><details v-for="event in history" :key="event.id"><summary>{{event.date.split('-').reverse().join('.')}} · {{event.description}} · версия {{event.revision}}</summary><p>Зафиксировано: {{new Date(event.createdAt).toLocaleString('ru-RU')}}</p><p v-if="event.readings.length">Показания: {{event.readings.map(e=>'ДВС № '+e.number+': '+hoursText(e.hours)+' м/ч'+(e.isEstimated?' (расчётные, исходная дата '+e.sourceDate+')':'')).join('; ')}}</p><p>График: {{event.after.name}}</p><ol><li v-for="(step,index) in event.after.steps" :key="index">{{step.name}} — через {{hoursText(step.interval)}} м/ч</li></ol></details></section>
  </template>
  <dialog ref="graphDialog" class="maintenance-dialog" aria-labelledby="new-graph-title">
   <form v-if="newGraph" @submit.prevent="applyNewGraph">
@@ -194,6 +202,9 @@ onMounted(load)
 </section>
 </template>
 <style scoped>
+.maintenance-tabs{display:flex;flex-wrap:wrap;gap:6px;padding-bottom:8px;border-bottom:1px solid var(--border)}
+.maintenance-tabs button{padding:8px 12px;min-height:40px;border:1px solid var(--border);border-radius:8px;background:var(--bg-surface);color:var(--text-main);font:inherit;cursor:pointer}
+.maintenance-tabs button.active{background:var(--accent);border-color:var(--accent);color:#fff}
 .maintenance-plans{display:grid;gap:16px}.maintenance-toolbar,.maintenance-presets{display:flex;flex-wrap:wrap;align-items:end;gap:12px}.maintenance-toolbar>label{flex:1;min-width:200px}
 .maintenance-plans label{display:grid;gap:6px;font-size:13px}.maintenance-plans input,.maintenance-plans select,.maintenance-plans textarea{width:100%;min-width:0;padding:10px;border:1px solid var(--border);border-radius:8px;color:var(--text-main);background:var(--bg-main);font:inherit}
 .maintenance-plans button{padding:10px 14px;min-height:44px;height:auto}.maintenance-summary,.maintenance-form,.maintenance-history{padding:18px;border:1px solid var(--border);border-radius:12px;background:var(--bg-surface)}

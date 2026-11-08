@@ -51,6 +51,7 @@ for(const width of [390,1440]){
   await page.getByRole('button',{name:'Транспорт',exact:true}).click()
   await page.getByRole('button',{name:'Проведение ТО',exact:true}).click()
   await page.getByLabel('Техника',{exact:true}).selectOption('1')
+  await page.getByRole('button',{name:'График и история',exact:true}).click()
   await page.getByRole('button',{name:'Действия с графиком ТО',exact:true}).click()
   await page.getByRole('button',{name:'Создать график',exact:true}).click()
   const graphDialog=page.getByRole('dialog',{name:'Создать график',exact:true})

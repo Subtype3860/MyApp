@@ -46,6 +46,7 @@ public sealed partial class MaintenancePlansController(AppDbContext db, IVehicle
         var readings = latest.ToLookup(r => r.VehicleId);
         return Ok(new {
             canManage = await CanManage(ct),
+            canUseLibrary = await CanUseLibrary(ct),
             rows = fleet.Select(vehicle => {
                 plans.TryGetValue(vehicle.Id, out var stored);
                 var plan = stored is null ? null : Read(stored);
@@ -83,6 +84,7 @@ public sealed partial class MaintenancePlansController(AppDbContext db, IVehicle
     [HttpGet("{vehicleId:guid}/history")]
     public async Task<IActionResult> History(Guid vehicleId, CancellationToken ct)
     {
+        if (!await CanManage(ct)) return Forbid();
         var events = await db.VehicleMaintenanceEvents.AsNoTracking().Where(e => e.VehicleId == vehicleId)
             .OrderByDescending(e => e.Revision).ToArrayAsync(ct);
         return Ok(events.Select(e => new { e.Id, e.Revision, e.Kind, e.Description, e.Date, e.CreatedBy, e.CreatedAt,

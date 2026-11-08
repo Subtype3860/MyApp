@@ -5,10 +5,10 @@ import MaintenanceDateReadings from './MaintenanceDateReadings.vue'
 import MaintenanceOperationRow from './MaintenanceOperationRow.vue'
 const props=defineProps({token:String,vehicle:Object,plan:Object,planRevision:Number})
 const emit=defineEmits(['completed','materials'])
-const materialSources=ref([]), canUseLibrary=ref(false)
+const canUseLibrary=ref(false)
 const templates=ref([]),cards=ref([]),card=ref(null),data=ref(null),photos=ref([]),readings=ref([])
 const canManage=ref(false),canFill=ref(false),busy=ref(false),error=ref(''),message=ref(''),filter=ref(''),onlyPending=ref(false)
-const selectedTemplate=ref(''),runInId=ref(''),editor=ref(null),showTemplates=ref(false),reason=ref(''),batchExecutor=ref(''),recovery=ref(null)
+const selectedTemplate=ref(''),runInId=ref(''),reason=ref(''),batchExecutor=ref(''),recovery=ref(null)
 const requirement=ref(null), currentExecutor=ref(''), mediaPreview=ref(null), mediaDialog=ref(null)
 let previewGeneration=0
 let timer, generation=0, editGeneration=0
@@ -39,8 +39,6 @@ async function load(){
  const current=++generation; error.value=''
  try{const [library,items]=await Promise.all([request('card-template-options'),request(props.vehicle.id+'/cards')]);if(current!==generation)return
   templates.value=library.templates||[];canManage.value=library.canManage;canFill.value=library.canFill;canUseLibrary.value=!!library.canUseLibrary;cards.value=Array.isArray(items)?items:[]
-  if(canUseLibrary.value){const full=await request('card-templates');if(current!==generation)return;templates.value=full.templates||[];materialSources.value=full.materialSources||[]}
-  else{showTemplates.value=false;editor.value=null;materialSources.value=[]}
  }catch(e){if(current===generation)error.value=e.message}
 }
 function keepLocal(){try{localStorage.setItem(localKey(),JSON.stringify({revision:card.value.revision,data:data.value}))}catch{error.value='Не удалось сохранить локальную копию. Сохраните карту на сервер.'}}
@@ -132,11 +130,6 @@ async function createDefect(id){
  if(!await save())return;busy.value=true;error.value=''
  try{await request('cards/'+card.value.id+'/defects/'+encodeURIComponent(id),{method:'POST'});const key=card.value.id;await load();await open(cards.value.find(c=>c.id===key))}catch(e){error.value=e.message}finally{busy.value=false}
 }
-function editTemplate(t){editor.value=t?clone(t):{id:crypto.randomUUID(),revision:0,published:false,template:{model:props.vehicle.modelName,service:service.value,source:'Создано в приложении',reviewNotes:'',operations:[],materials:[],materialIntervalId:null}};editor.value.template.materialIntervalId??=null}
-async function saveTemplate(published){
- busy.value=true;error.value=''
- try{const t=editor.value;t.template.materials=[];await request('card-templates/'+t.id,{method:'PUT',body:JSON.stringify({revision:t.revision,published,template:t.template})});editor.value=null;await load();message.value=published?'Шаблон утверждён':'Шаблон сохранён'}catch(e){error.value=e.message}finally{busy.value=false}
-}
 const escape=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))
 const printDate=value=>/^\d{4}-\d{2}-\d{2}$/.test(String(value||''))?String(value).split('-').reverse().join('.'):escape(value)
 const printTime=value=>{const date=new Date(value);return value&&!Number.isNaN(date.getTime())?date.toLocaleString('ru-RU',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}):''}
@@ -227,7 +220,7 @@ async function print(){
   +'</body></html>'
  w.document.write(doc);w.document.close();w.focus();w.print()
 }
-watch(()=>props.vehicle.id,()=>{clearTimeout(timer);card.value=null;data.value=null;editor.value=null;runInId.value='';load()},{immediate:true})
+watch(()=>props.vehicle.id,()=>{clearTimeout(timer);card.value=null;data.value=null;runInId.value='';load()},{immediate:true})
 watch(()=>props.token,async token=>{
  try{const response=await fetch('/api/profile',{headers:{Authorization:'Bearer '+token}});if(!response.ok)return;const profile=await response.json();if(token===props.token)currentExecutor.value=[profile.lastName,profile.firstName,profile.middleName].filter(Boolean).join(' ')}catch{}
 },{immediate:true})
@@ -236,7 +229,7 @@ onBeforeUnmount(()=>{clearTimeout(timer);generation++;closeMedia()})
 
 <template>
  <section class="to-cards">
-  <header><h3>Карты ТО</h3><div class="actions"><button v-if="canUseLibrary" type="button" @click="showTemplates=!showTemplates">Библиотека карт</button><button type="button" :disabled="busy" @click="load">Обновить список карт</button></div></header>
+  <header><h3>Карты ТО</h3><div class="actions"><button type="button" :disabled="busy" @click="load">Обновить список карт</button></div></header>
   <p v-if="error && !card" role="alert" class="form-message--error">{{error}}</p><p v-if="message" role="status">{{message}}</p>
   <div v-if="plan && canFill" class="actions">
    <label>Обслуживание для карты<select v-model="runInId"><option value="">{{plan.steps[plan.nextStepIndex].name}} · плановое</option><option v-for="r in plan.runIns" :key="r.id" :value="r.id">Обкатка: {{r.reason}}</option></select></label>
@@ -246,27 +239,6 @@ onBeforeUnmount(()=>{clearTimeout(timer);generation++;closeMedia()})
   </div>
   <p v-if="!cards.length">Заполненных карт пока нет.</p>
   <div class="card-list"><button v-for="item in cards" :key="item.id" type="button" :disabled="busy" @click="open(item)">{{item.data.date}} · {{item.template.service}} · {{statusName[item.status]}}</button></div>
-  <details v-if="showTemplates && canUseLibrary" open class="library"><summary>Библиотека шаблонов</summary>
-   <p>Исходные карты загружены как черновики. Перед утверждением проверьте состав работ, нормы, единицы и применимость к модели.</p>
-   <button v-if="canUseLibrary" type="button" @click="editTemplate(null)">Создать шаблон</button>
-   <div v-for="t in templates" :key="t.id" class="template-row"><span>{{t.template.model}} · {{t.template.service}} · {{t.published?'Утверждён':'Черновик'}} · v{{t.revision}}</span><button v-if="canUseLibrary" type="button" :aria-label="`Редактировать ${t.template.model} ${t.template.service}`" @click="editTemplate(t)">Изменить</button></div>
-  </details>
-  <form v-if="editor && canUseLibrary" class="template-editor" @submit.prevent="saveTemplate(false)">
-   <h4>Редактор шаблона</h4><p v-if="editor.template.source" class="template-source">{{editor.template.source}}</p>
-   <fieldset :disabled="busy"><div class="template-heading-fields"><label>Модель техники<input v-model.trim="editor.template.model" required /></label><label>Вид ТО шаблона<input v-model.trim="editor.template.service" required /></label></div>
-    <label>Замечания к регламенту<textarea v-model="editor.template.reviewNotes" rows="1" /></label>
-    <details open><summary>Операции ({{editor.template.operations.length}})</summary>
-     <article v-for="(o,i) in editor.template.operations" :key="o.id" class="template-operation"><label>Раздел<input v-model="o.section" required /></label><label>Описание операции<textarea v-model="o.text" rows="2" required /></label><div class="template-operation-actions"><label class="check"><input v-model="o.control" type="checkbox" /> Заключительный контроль</label><button type="button" :aria-label="`Удалить операцию ${i+1}`" @click="editor.template.operations.splice(i,1)">Удалить</button></div></article>
-     <button type="button" @click="editor.template.operations.push({id:newId(),section:'ДВС',text:'',target:'',control:false})">Добавить операцию</button>
-    </details>
-    <section class="material-source-editor">
-     <h4>Материалы из технического обслуживания</h4>
-     <p>Наименования, единицы и нормы ведутся в разделе «Техническое обслуживание». При начале ТО в карту загружается актуальный список.</p>
-     <label>Источник материалов<select v-model="editor.template.materialIntervalId"><option :value="null">Автоматически по модели / типу техники и виду ТО</option><optgroup v-for="equipment in materialSources" :key="equipment.id" :label="equipment.name"><option v-for="interval in equipment.intervals.filter(i=>normalize(i.name)===normalize(editor.template.service))" :key="interval.id" :value="interval.id">{{equipment.name}} / {{interval.name}} · {{interval.items.length}} материалов</option></optgroup></select></label>
-    </section>
-    <div class="actions"><button type="submit">Сохранить черновик шаблона</button><button type="button" class="primary-button" @click="saveTemplate(true)">Утвердить проверенный шаблон</button><button type="button" @click="editor=null">Закрыть редактор</button></div>
-   </fieldset>
-  </form>
   <section v-if="card && data" class="card-editor">
    <header><h4>{{card.template.service}} · {{statusName[card.status]}}</h4><p>{{card.vehicleLabel}} · версия шаблона {{card.templateRevision}}</p><button type="button" @click="print">Печать / PDF</button></header>
    <aside v-if="recovery"><p>На устройстве есть несохранённые изменения (версия {{recovery.revision}}; на сервере {{card.revision}}). Проверьте их перед отправкой.</p><details><summary>Посмотреть локальные изменения</summary><pre>{{JSON.stringify(recovery.data,null,2)}}</pre></details><button type="button" :disabled="recovery.revision!==card.revision" @click="restore">Восстановить черновик</button><button type="button" @click="discard">Оставить серверную версию</button></aside>
@@ -300,8 +272,7 @@ onBeforeUnmount(()=>{clearTimeout(timer);generation++;closeMedia()})
  </section>
 </template>
 <style scoped>
-.to-cards{display:grid;gap:16px;border:1px solid var(--border);border-radius:12px;padding:18px;min-width:0}.actions,.card-list,.template-row{display:flex;flex-wrap:wrap;gap:10px;align-items:center}.template-row{justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border)}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px}label{display:grid;gap:5px;font-size:13px}input,select,textarea{box-sizing:border-box;width:100%;min-width:0;padding:9px;border:1px solid var(--border);border-radius:8px;background:var(--bg-main);color:var(--text-main);font:inherit}fieldset{border:0;padding:0;min-width:0;display:grid;gap:12px;margin:12px 0}button{min-height:44px;padding:8px 12px;border:1px solid var(--border);border-radius:8px;background:var(--bg-surface);color:var(--text-main);cursor:pointer}button:disabled{opacity:.55;cursor:default}article{padding:12px 0;border-bottom:1px solid var(--border)}summary{cursor:pointer;padding:12px 0;font-weight:600}.check{display:flex;align-items:center}.check input{width:auto}pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px;max-height:350px;overflow:auto}aside{padding:14px;background:var(--bg-surface);border:1px solid var(--border)}.card-editor,.template-editor{min-width:0}h4{font-size:18px}p{overflow-wrap:anywhere}@media(max-width:600px){.to-cards{padding:10px}.grid{grid-template-columns:1fr}.actions>label{width:100%}}
+.to-cards{display:grid;gap:16px;border:1px solid var(--border);border-radius:12px;padding:18px;min-width:0}.actions,.card-list{display:flex;flex-wrap:wrap;gap:10px;align-items:center}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px}label{display:grid;gap:5px;font-size:13px}input,select,textarea{box-sizing:border-box;width:100%;min-width:0;padding:9px;border:1px solid var(--border);border-radius:8px;background:var(--bg-main);color:var(--text-main);font:inherit}fieldset{border:0;padding:0;min-width:0;display:grid;gap:12px;margin:12px 0}button{min-height:44px;padding:8px 12px;border:1px solid var(--border);border-radius:8px;background:var(--bg-surface);color:var(--text-main);cursor:pointer}button:disabled{opacity:.55;cursor:default}article{padding:12px 0;border-bottom:1px solid var(--border)}summary{cursor:pointer;padding:12px 0;font-weight:600}.check{display:flex;align-items:center}.check input{width:auto}pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px;max-height:350px;overflow:auto}aside{padding:14px;background:var(--bg-surface);border:1px solid var(--border)}.card-editor{min-width:0}h4{font-size:18px}p{overflow-wrap:anywhere}@media(max-width:600px){.to-cards{padding:10px}.grid{grid-template-columns:1fr}.actions>label{width:100%}}
 .operation-columns{display:grid;grid-template-columns:minmax(0,1.8fr) minmax(150px,1fr) minmax(170px,1fr);gap:20px;padding:10px 0;border-bottom:1px solid var(--border);font-size:12px;font-weight:600}.card-media-dialog{box-sizing:border-box;width:min(900px,calc(100vw - 24px));max-height:90dvh;padding:16px;border:1px solid var(--border);border-radius:12px;background:var(--bg-main);color:var(--text-main)}.card-media-dialog::backdrop{background:#0009}.card-media-dialog header{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;gap:12px}.card-media-dialog img,.card-media-dialog video{display:block;max-width:100%;max-height:65dvh;margin:0 auto 12px}.card-media-dialog a{color:inherit}@media(max-width:760px){.operation-columns{display:none}}
-.template-editor h4{margin:8px 0;font-size:16px}.template-editor p{margin:6px 0;font-size:12px}.template-heading-fields{display:grid;grid-template-columns:2fr 1fr;gap:10px}.template-operation{display:grid;grid-template-columns:minmax(120px,1fr) minmax(0,3fr) minmax(150px,1fr);gap:10px;align-items:start;padding:8px 0}.template-operation-actions{display:grid;gap:8px}.template-editor input,.template-editor select,.template-editor textarea{padding:6px 8px;border-radius:6px}.template-editor textarea{resize:vertical}.template-editor summary{padding:8px 0}.template-editor fieldset{gap:8px;margin:8px 0}.template-editor button{min-height:36px;padding:6px 10px}.template-editor .check{font-size:12px}.template-source{color:var(--text-secondary)}@media(max-width:700px){.template-operation,.template-heading-fields{grid-template-columns:1fr}.template-operation-actions{display:flex;justify-content:space-between;align-items:center}.template-editor button{min-height:44px}}
-.to-cards{gap:10px;padding:12px}.to-cards>header{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}.to-cards h3{margin:0;font-size:17px}.to-cards p{margin:4px 0}.actions,.card-list{gap:6px}.to-cards>header button,.library button,.card-list button{min-height:34px;padding:5px 9px;font-size:12px}.library{border:1px solid var(--border);border-radius:8px;padding:0 10px 6px}.library>summary{padding:8px 0;font-size:13px}.library>p{font-size:12px;color:var(--text-secondary);margin:0 0 6px}.template-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;padding:4px 0;font-size:12px}.template-row>span{overflow-wrap:anywhere}.template-editor{border:1px solid var(--border);border-radius:8px;padding:10px}.card-list{max-height:150px;overflow:auto}.material-source-editor{border-top:1px solid var(--border);padding-top:6px}@media(max-width:700px){.to-cards>header button,.library button,.card-list button{min-height:40px}.template-row{font-size:12px}.template-editor{padding:8px}}
+.to-cards{gap:10px;padding:12px}.to-cards>header{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}.to-cards h3{margin:0;font-size:17px}.to-cards p{margin:4px 0}.actions,.card-list{gap:6px}.to-cards>header button,.card-list button{min-height:34px;padding:5px 9px;font-size:12px}.card-list{max-height:150px;overflow:auto}@media(max-width:700px){.to-cards>header button,.card-list button{min-height:40px}}
 </style>
