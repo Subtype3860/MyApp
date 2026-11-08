@@ -75,7 +75,6 @@ test('autosave survives a separate browser, carries KTG and maintenance forward 
   await expect.poll(()=>[...api.reports.entries()].find(([key])=>key.startsWith('2099'))?.[1].snapshot.rows[0].ktg).toBe(75)
   expect(api.reports.get(firstKey)).toEqual(original)
   await page.getByLabel('История отчётов',{exact:true}).selectOption(firstKey)
-  await page.getByRole('button',{name:'Открыть отчёт',exact:true}).click()
   await expect(page.getByLabel('КТГ, %',{exact:true})).toHaveValue('87.5')
   await expect(page.getByLabel('КТГ, %',{exact:true})).toBeDisabled()
   await expect(page.getByText('Сохранённая неисправность',{exact:true})).toBeVisible()

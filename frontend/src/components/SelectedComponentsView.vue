@@ -22,7 +22,28 @@ const props = defineProps({
   },
 })
 
-const emit = defineEmits(['back', 'clear', 'update:rows'])
+const emit = defineEmits(['back', 'clear', 'update:rows', 'update:responsibleEmployee'])
+const responsibleDialog = ref(null), choosingResponsible = ref(false), employees = ref([]), employeeIndex = ref(''), loadingEmployees = ref(false), employeeError = ref('')
+const chosenEmployee = ref(null)
+const responsible = computed(() => chosenEmployee.value || props.responsibleEmployee)
+async function chooseResponsible() {
+  choosingResponsible.value = true; loadingEmployees.value = true; employeeError.value = ''; employees.value = []; employeeIndex.value = ''
+  try {
+    const query = new URLSearchParams({ sourceTable: props.rows[0]?.__sourceTable || '' })
+    const response = await fetch(`/api/employees/responsible?${query}`, { headers: { Authorization: `Bearer ${props.token}` } })
+    if (!response.ok) throw new Error('Не удалось загрузить ответственных. Попробуйте ещё раз.')
+    employees.value = await response.json()
+  } catch (e) { employeeError.value = e.message } finally { loadingEmployees.value = false }
+}
+function confirmResponsible() {
+  const employee = employees.value[Number(employeeIndex.value)]
+  if (employeeIndex.value === '' || !employee) return
+  chosenEmployee.value = { ...employee, sourceTable: props.rows[0]?.__sourceTable }
+  emit('update:responsibleEmployee', chosenEmployee.value)
+  responsibleDialog.value.close()
+  generateDocument()
+}
+function continueWithoutResponsible() { responsibleDialog.value.close(); generateDocument(true) }
 const vehicleNumber = ref('')
 const documentDate = ref(formatLocalDate(new Date()))
 const documentError = ref('')
@@ -101,7 +122,8 @@ function removeRow(index) {
 }
 
 /** Проверяет выбранные позиции и запрашивает формирование документа требования. */
-async function generateDocument() {
+async function generateDocument(withoutResponsible = false) {
+  if (isGeneratingDocument.value) return
   documentError.value = ''
   if (!vehicleNumber.value.trim()) {
     documentError.value = 'Укажите номер техники.'
@@ -118,16 +140,11 @@ async function generateDocument() {
     return
   }
 
-  if (!props.responsibleEmployee) {
-    documentError.value = 'Выберите ответственное лицо за выдачу.'
-    return
-  }
-
   const sourceTable = props.rows[0]?.__sourceTable
   if (
     !sourceTable ||
     props.rows.some((row) => row.__sourceTable !== sourceTable) ||
-    props.responsibleEmployee.sourceTable !== sourceTable
+    (responsible.value && responsible.value.sourceTable !== sourceTable)
   ) {
     documentError.value =
       'Ответственное лицо не соответствует источнику выбранных компонентов.'
@@ -150,6 +167,10 @@ async function generateDocument() {
     return
   }
 
+  if (!responsible.value && withoutResponsible !== true) {
+    choosingResponsible.value = false; employeeError.value = ''; responsibleDialog.value.showModal(); return
+  }
+
   const previewWindow = window.open('', '_blank')
   if (!previewWindow) {
     documentError.value = 'Разрешите открытие всплывающих окон для просмотра PDF.'
@@ -164,11 +185,12 @@ async function generateDocument() {
       vehicleNumber: vehicleNumber.value.trim(),
       sourceTable,
       jobName,
-      responsibleEmployee: {
-        firstName: props.responsibleEmployee.firstName,
-        patronymic: props.responsibleEmployee.patronymic,
-        lastName: props.responsibleEmployee.lastName,
-      },
+      withoutResponsibleEmployee: !responsible.value && withoutResponsible === true,
+      responsibleEmployee: responsible.value ? {
+        firstName: responsible.value.firstName,
+        patronymic: responsible.value.patronymic,
+        lastName: responsible.value.lastName,
+      } : null,
       items: props.rows.map((row) => ({
         name: String(getRowValue(row, ['name', 'Наименование']) ?? ''),
         unit: String(getRowValue(row, ['unit', 'Ед.изм.', 'Ед. изм.']) ?? ''),
@@ -326,5 +348,29 @@ async function generateDocument() {
         </p>
       </div>
     </section>
+    <dialog ref="responsibleDialog" class="responsible-dialog" aria-labelledby="responsible-dialog-title">
+      <h2 id="responsible-dialog-title">Ответственное лицо не выбрано</h2>
+      <p>Добавьте ответственного за выдачу или создайте PDF без него.</p>
+      <template v-if="choosingResponsible">
+        <p v-if="loadingEmployees" role="status">Загрузка ответственных…</p>
+        <p v-if="employeeError" role="alert">{{ employeeError }}</p>
+        <label v-if="!loadingEmployees && !employeeError">Ответственное лицо
+          <select v-model="employeeIndex" aria-label="Ответственное лицо"><option value="">Выберите сотрудника</option><option v-for="(employee, index) in employees" :key="index" :value="String(index)">{{ [employee.lastName, employee.firstName, employee.patronymic].filter(Boolean).join(' ') }}</option></select>
+        </label>
+        <p v-if="!loadingEmployees && !employeeError && !employees.length">Для этого источника ответственные не найдены.</p>
+        <button v-if="employeeError" type="button" @click="chooseResponsible">Повторить загрузку</button>
+        <button class="primary-button" type="button" :disabled="loadingEmployees || employeeIndex === ''" @click="confirmResponsible">Создать PDF с ответственным</button>
+      </template>
+      <div class="responsible-dialog__actions">
+        <button v-if="!choosingResponsible" class="primary-button" type="button" autofocus @click="chooseResponsible">Добавить ответственного</button>
+        <button class="secondary-button" type="button" @click="continueWithoutResponsible">Создать PDF без ответственного</button>
+        <button class="secondary-button" type="button" @click="responsibleDialog.close()">Отмена</button>
+      </div>
+    </dialog>
   </main>
 </template>
+
+<style scoped>
+.responsible-dialog{box-sizing:border-box;width:min(540px,calc(100vw - 24px));max-height:90dvh;overflow:auto;padding:20px;border:1px solid var(--border);border-radius:12px;background:var(--bg-surface);color:var(--text-main)}
+.responsible-dialog::backdrop{background:#0008}.responsible-dialog h2{margin:0 0 12px;font-size:20px}.responsible-dialog__actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:16px}.responsible-dialog label{display:grid;gap:8px;margin:12px 0}.responsible-dialog select{max-width:100%;padding:10px;font:inherit}.responsible-dialog button{min-height:40px}
+</style>

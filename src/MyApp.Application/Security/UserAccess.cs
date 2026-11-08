@@ -17,15 +17,17 @@ public static class UserAccess
     /// <summary>Проверяет право пользователя изменять показания моточасов.</summary>
     public static bool CanManageHours(User user) =>
         user.Role.Equals("administrator", StringComparison.OrdinalIgnoreCase) ||
-        IsMechanic(user) ||
         user.Role.Equals("user", StringComparison.OrdinalIgnoreCase) &&
-        Permissions.Expand(user.Permissions.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        EffectivePermissions(user)
             .Contains(HoursPermission, StringComparer.OrdinalIgnoreCase);
 
     /// <summary>Возвращает фактический набор разрешений с учётом правил доступа пользователя.</summary>
     public static IReadOnlyList<string> EffectivePermissions(User user) =>
         user.Role.Equals("administrator", StringComparison.OrdinalIgnoreCase)
             ? Permissions.All
-            : Permissions.Expand(user.Permissions.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-                .Concat(IsMechanic(user) ? [HoursPermission] : Array.Empty<string>()));
+            : Permissions.Expand((user.Profession?.PermissionOverride ?? user.Permissions)
+                .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Concat(user.Profession?.PermissionOverride is null && IsMechanic(user) ? [HoursPermission] : Array.Empty<string>()))
+                .Concat((user.Profession?.HiddenPageBlocks ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries)
+                    .Select(key => PageBlocks.HiddenPrefix + key)).ToArray();
 }

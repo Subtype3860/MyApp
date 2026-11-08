@@ -3,7 +3,91 @@ import { PDFDocument, PDFName } from 'pdf-lib'
 import { readFile } from 'node:fs/promises'
 
 test.use({ timezoneId: 'Asia/Omsk' })
-import { defaultReportSelection, selectShiftWorks, groupShiftWorks, stateAt, workPerformers } from '../src/utils/shiftReport.js'
+import { defaultReportSelection, selectShiftWorks, groupShiftWorks, groupReportWorks, stateAt, workPerformers, maintenanceReportGroups } from '../src/utils/shiftReport.js'
+
+test('report orders areas and vehicle types, with additional works last', () => {
+  const types = ['Вспомогательная техника', 'Карьерный самосвал', 'Бульдозер', 'Экскаватор']
+  const works = ['РММ', 'КАРЬЕР'].flatMap(location => types.flatMap(typeName => [10, 2].map(garageNumber => ({
+    id: `${location}-${typeName}-${garageNumber}`, location,
+    vehicle: { id: `${location}-${typeName}-${garageNumber}`, typeName, garageNumber },
+  }))))
+  const groups = groupReportWorks(works, [{ id: 'aux', location: 'КАРЬЕР', title: 'Уборка' }])
+  expect(groups.map(g => g.location)).toEqual(['КАРЬЕР', 'РММ', 'Дополнительные работы'])
+  for (const group of groups.slice(0, 2)) {
+    expect(group.categories.map(c => c.name)).toEqual(['Экскаватор', 'Бульдозер', 'Карьерный самосвал', 'Вспомогательная техника'])
+    for (const category of group.categories) expect(category.cards.map(c => c.vehicle.garageNumber)).toEqual([2, 10])
+  }
+  expect(groups[2].categories[0].name).toBe('КАРЬЕР')
+  expect(groups[2].categories[0].cards[0].auxiliary).toBe(true)
+  const maintenance = [{ location: 'Техническое обслуживание', categories: [] }]
+  expect(groupReportWorks([], [{ id: 'aux', location: 'РММ' }], {}, maintenance).map(g => g.location))
+    .toEqual(['Техническое обслуживание', 'Дополнительные работы'])
+})
+
+test('maintenance completion shift boundaries and duplicate cards', () => {
+  const records = ['2026-10-11T19:59:59', '2026-10-11T20:00:00', '2026-10-12T07:59:59', '2026-10-12T08:00:00']
+    .map((finishedAt, id) => ({ id, finishedAt, service: 'ТО-700' }))
+  const groups = maintenanceReportGroups([...records, records[1]], '2026-10-11', '2')
+  expect(groups[0].categories[0].cards.map(c => c.id)).toEqual(['maintenance:1', 'maintenance:2'])
+})
+
+test('area and equipment order is identical in preview and PDF', async ({ page }) => {
+  await prepare(page)
+  const types = ['Вспомогательная техника', 'Самосвалы', 'Бульдозеры', 'Экскаваторы']
+  await page.route('**/api/vehicles/repair-journal*', route => route.fulfill({ json:
+    ['РММ', 'КАРЬЕР'].flatMap(location => types.map((typeName, index) => ({
+      vehicle: { id: `${location}-${index}`, modelName: `${location} ${typeName}`, typeName, garageNumber: index + 1 },
+      works: [{ id: `${location}-${index}`, location, description: 'Проверка', completedAt: '2026-10-11T21:00:00+06:00' }],
+    })))
+  }))
+  await page.route('**/api/auxiliary-works', route => route.fulfill({ json: [{ id: 'extra', workKind: 'auxiliary', location: 'КАРЬЕР', title: 'Уборка', description: 'Убрана площадка', completedAt: '2026-10-11T21:00:00+06:00' }] }))
+  await page.goto('/?reportWork=unused&reportDate=2026-10-11&reportShift=2')
+  await expect(page.locator('.shift-report__location h3')).toHaveText(['КАРЬЕР', 'РММ', 'Дополнительные работы'])
+  const expected = ['КАРЬЕР', 'РММ'].flatMap(location => [...types].reverse().map(type => `${location} ${type}`))
+  const titles = await page.locator('.shift-report__card h5').allTextContents()
+  expected.forEach((title, i) => expect(titles[i]).toContain(title))
+  await page.getByLabel('Меню отчёта за смену', { exact: true }).click()
+  const downloadEvent = page.waitForEvent('download')
+  await page.getByRole('button', { name: 'Скачать PDF', exact: true }).click()
+  const download = await downloadEvent
+  const { getDocument } = await import('pdfjs-dist/legacy/build/pdf.mjs')
+  const task = getDocument({ data: new Uint8Array(await readFile(await download.path())), useSystemFonts: true })
+  const pdf = await task.promise
+  let text = ''
+  for (let i = 1; i <= pdf.numPages; i++) text += (await (await pdf.getPage(i)).getTextContent()).items.map(x => x.str).join(' ')
+  let position = -1
+  for (const title of [...expected, 'Дополнительные работы', 'Уборка']) {
+    const next = text.indexOf(title)
+    expect(next).toBeGreaterThan(position)
+    position = next
+  }
+  await task.destroy()
+})
+
+test('maintenance-only report contains full names in preview and PDF', async ({ page }) => {
+  await prepare(page)
+  await page.route('**/api/vehicles/repair-journal*', route => route.fulfill({ json: [] }))
+  await page.route('**/api/maintenance-plans/shift-report', route => route.fulfill({ json: [{
+    id: 'm1', vehicleLabel: 'Sany SET150 №903', service: 'ТО-700',
+    finishedAt: '2026-10-12T01:15:00+06:00', executors: ['Иванов Иван Иванович', 'Петров Пётр Петрович'],
+  }] }))
+  await page.goto('/?reportWork=missing&reportDate=2026-10-11&reportShift=2')
+  await expect(page.locator('.shift-report__paper')).toContainText('ТО-700 — проведено')
+  await expect(page.locator('.shift-report__paper')).toContainText('Иванов Иван Иванович')
+  await page.getByLabel('Меню отчёта за смену', { exact: true }).click()
+  const downloadEvent = page.waitForEvent('download')
+  await page.getByRole('button', { name: 'Скачать PDF', exact: true }).click()
+  const download = await downloadEvent
+  const { getDocument } = await import('pdfjs-dist/legacy/build/pdf.mjs')
+  const loadingTask = getDocument({ data: new Uint8Array(await readFile(await download.path())), useSystemFonts: true })
+  const pdf = await loadingTask.promise
+  let text = ''
+  for (let i = 1; i <= pdf.numPages; i++) text += (await (await pdf.getPage(i)).getTextContent()).items.map(x => x.str).join(' ')
+  expect(text).toContain('ТО-700')
+  expect(text).toContain('Иванов Иван Иванович')
+  expect(text).toContain('Петров Пётр Петрович')
+  await loadingTask.destroy()
+})
 
  test('report date uses noon boundary and shifts exclude end boundary', () => {
   expect(defaultReportSelection(new Date(2026, 9, 12, 0, 0))).toEqual({ date: '2026-10-11', shift: '2' })
@@ -26,7 +110,7 @@ import { defaultReportSelection, selectShiftWorks, groupShiftWorks, stateAt, wor
 const approved = { id: 'p-approved', userId: 'worker1', name: 'Иванов Иван Иванович', position: 'Слесарь', status: 'approved' }
 const pending = { id: 'p-pending', userId: 'worker2', name: 'Петров Пётр Петрович', position: 'Электрослесарь', status: 'pending' }
 const journals = [{ vehicle: { id: 'v1', modelName: 'SANY SY1250H', garageNumber: 94, typeName: 'Экскаваторы' }, works: [
-  { id: 'w1', completedAt: '2026-10-11T21:00:00+06:00', description: 'Обвязка ДВС, сборка системы выпуска, замена масляных фильтров.', participants: [approved, pending], location: 'КАРЬЕР', operationalState: 'stopped', photos: [{ id: 'p1', fileName: 'Ремонт.jpg' }], videos: [{ id: 'vid1', fileName: 'Проверка.mp4' }] },
+  { id: 'w1', completedAt: '2026-10-11T21:00:00+06:00', description: 'Обвязка ДВС, сборка системы выпуска, замена масляных фильтров.', participants: [approved, pending], location: 'КАРЬЕР', operationalState: 'stopped', photos: [{ id: 'p1', fileName: 'Ремонт.jpg' }, { id: 'p4', fileName: 'Ремонт 2.jpg' }, { id: 'p5', fileName: 'Ремонт 3.jpg' }], videos: [{ id: 'vid1', fileName: 'Проверка.mp4' }] },
   { id: 'w2', completedAt: '2026-10-12T00:42:00+06:00', description: 'Проверка электрооборудования ДВС.', photos: [{ id: 'p2', fileName: 'Электрооборудование.webp' }], participants: [approved], location: 'КАРЬЕР', operationalState: 'stopped' },
   { id: 'w4', completedAt: '2026-10-12T01:00:00+06:00', description: 'Чистка контактных групп', participants: [pending], location: 'КАРЬЕР', operationalState: 'stopped', photos: [{ id: 'p3', fileName: 'Контакты.webp' }] },
   { id: 'out', completedAt: '2026-10-12T08:00:00+06:00', description: 'Следующая смена', location: 'КАРЬЕР' },
@@ -45,11 +129,42 @@ async function prepare(page) {
     const path = new URL(route.request().url()).pathname
     if (path === '/api/report-media/links') return route.fulfill({ json: route.request().postDataJSON().map(item => ({ ...item, url: `/api/report-media/${item.type}/${item.id}/signed-test-link` })) })
     if (path === '/api/vehicles/repair-journal') return route.fulfill({ json: journals })
-    if (['/api/vehicles/work-photos/p1', '/api/vehicles/work-photos/p2', '/api/vehicles/work-photos/p3'].includes(path)) return route.fulfill({ body: photo, contentType: 'image/webp' })
+    if (['/api/vehicles/work-photos/p1', '/api/vehicles/work-photos/p2', '/api/vehicles/work-photos/p3', '/api/vehicles/work-photos/p4', '/api/vehicles/work-photos/p5'].includes(path)) return route.fulfill({ body: photo, contentType: 'image/webp' })
     if (path === '/api/profile') return route.fulfill({ json: { hasAvatar: false } })
     return route.fulfill({ json: [] })
   })
 }
+
+test('profession visibility removes maintenance, media and performers from preview and PDF', async ({ page }) => {
+  await prepare(page)
+  await page.addInitScript(() => {
+    const permission = ['reports.shift', 'menu.reports', 'menu.vehicles', 'ui.hidden.shift_report.maintenance', 'ui.hidden.shift_report.media', 'ui.hidden.shift_report.performers']
+    localStorage.setItem('myapp.authToken', `test.${btoa(JSON.stringify({ role: 'user', permission }))}.test`)
+    localStorage.setItem('myapp.userRole', 'user')
+    localStorage.setItem('myapp.userPermissions', JSON.stringify(permission))
+  })
+  await page.route('**/api/maintenance-plans/shift-report', route => route.fulfill({ json: [{
+    id: 'm-hidden', vehicleLabel: 'Скрытая техника', service: 'ТО-700', finishedAt: '2026-10-12T01:15:00+06:00', executors: ['Скрытый Исполнитель'],
+  }] }))
+  await page.goto('/?reportWork=w1&reportDate=2026-10-11&reportShift=2')
+  await expect(page.locator('.shift-report__paper')).toContainText('Проверка электрооборудования ДВС.')
+  await expect(page.locator('.shift-report__paper')).not.toContainText('ТО-700')
+  await expect(page.locator('.shift-report__performers')).toHaveCount(0)
+  await expect(page.locator('.shift-report__photos')).toHaveCount(0)
+  await page.getByLabel('Меню отчёта за смену', { exact: true }).click()
+  const downloaded = page.waitForEvent('download')
+  await page.getByRole('button', { name: 'Скачать PDF', exact: true }).click()
+  const download = await downloaded
+  const { getDocument } = await import('pdfjs-dist/legacy/build/pdf.mjs')
+  const loadingTask = getDocument({ data: new Uint8Array(await readFile(await download.path())), useSystemFonts: true })
+  const pdf = await loadingTask.promise
+  let text = ''
+  for (let i = 1; i <= pdf.numPages; i++) text += (await (await pdf.getPage(i)).getTextContent()).items.map(x => x.str).join(' ')
+  expect(text).not.toContain('Иванов')
+  expect(text).not.toContain('Исполнители')
+  expect(text).not.toContain('ТО-700')
+  await loadingTask.destroy()
+})
 
 for (const width of [390, 1440]) {
   test(`shift report and PDF at ${width}px`, async ({ page }) => {
@@ -67,18 +182,20 @@ for (const width of [390, 1440]) {
     await expect(page.locator('.shift-report__performers').first()).toContainText('Иванов И. И.')
     await expect(page.locator('.shift-report__paper')).not.toContainText('Петров Пётр Петрович')
     const card = page.locator('.shift-report__card').first()
-    await expect(card.locator('.shift-report__work-section')).toHaveCount(2)
-    await expect(card.locator('.shift-report__work-section').first().locator('.shift-report__work')).toHaveCount(2)
+    await expect(card.locator('.shift-report__work-section')).toHaveCount(3)
+    await expect(card.locator('.shift-report__work-section').first().locator('.shift-report__work')).toHaveCount(1)
     await expect(card.locator('.shift-report__work-section').last()).toContainText('Чистка контактных групп')
     await expect(card.locator('.shift-report__work-section').last()).toContainText('Исполнители пока не подтверждены')
-    await expect(card.locator('.shift-report__photos img')).toHaveCount(3)
+    await expect(card.locator('.shift-report__photos img')).toHaveCount(5)
     await expect(card.locator('.shift-report__photos a').first()).toHaveAttribute('href', /\/api\/report-media\/image\/p1\//)
     await expect(card.locator('.shift-report__links a').first()).toHaveAttribute('href', /\/api\/report-media\/video\/vid1\//)
     for (const work of await card.locator('.shift-report__work').all()) {
       const photo = await work.locator('.shift-report__photos').boundingBox()
       const description = await work.locator('.shift-report__description').boundingBox()
-      expect(photo.y + photo.height).toBeLessThanOrEqual(description.y)
+      expect(description.y + description.height).toBeLessThanOrEqual(photo.y)
+      await expect(work.locator('.shift-report__description')).toHaveCSS('font-weight', '700')
     }
+    await expect(card.locator('.shift-report__performers').first()).toHaveCSS('font-style', 'italic')
     const downloadEvent = page.waitForEvent('download')
   if(await page.getByLabel('Меню отчёта за смену',{exact:true}).getAttribute('aria-expanded') !== 'true') await page.getByLabel('Меню отчёта за смену',{exact:true}).click()
     await page.getByRole('button', { name: 'Скачать PDF', exact: true }).click()

@@ -184,7 +184,7 @@ test('overnight auxiliary works use the same shift boundaries', () => {
   await page.route('**/api/vehicles/work-photos/repair-photo', route => route.fulfill({ body: photo, contentType: 'image/webp' }))
   await page.goto('/?reportWork=repair&reportDate=2026-10-11&reportShift=1')
   await page.getByRole('button', { name: 'Закрыть', exact: true }).click()
-  await expect(page.locator('.shift-report__location h3')).toHaveText(['КАРЬЕР', 'РММ'])
+  await expect(page.locator('.shift-report__location h3')).toHaveText(['КАРЬЕР', 'Дополнительные работы'])
   await expect(page.locator('.shift-report__paper')).toContainText('Замена гидроцилиндра.')
   await expect(page.locator('.shift-report__paper')).toContainText('Уборка территории')
   const downloaded = page.waitForEvent('download')

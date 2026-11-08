@@ -1,5 +1,6 @@
 <script setup>
 import { expandPermissions } from "../utils/permissions"
+import { readAuth } from "../utils/authStorage"
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import BrandIdentity from './BrandIdentity.vue'
 
@@ -114,7 +115,7 @@ watch(() => [props.token, props.profileVersion], async () => {
 const avatarUrl = ref('')
 const /** Проверяет наличие разрешения на отображение раздела. */ canView = (permission) =>
   props.isAdmin ||
-  String(localStorage.getItem('myapp.userRole')).toLowerCase() ===
+  String(readAuth('role')).toLowerCase() ===
     'administrator' ||
   expandPermissions(props.permissions).includes(permission)
 

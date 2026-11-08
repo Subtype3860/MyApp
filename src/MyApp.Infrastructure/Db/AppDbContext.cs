@@ -115,6 +115,9 @@ namespace MyApp.Infrastructure.Db {
             });
 
             modelBuilder.Entity<Profession>(entity => {
+                entity.Property(x => x.PermissionOverride).HasColumnName("permission_override");
+                entity.Property(x => x.HiddenPageBlocks).HasColumnName("hidden_page_blocks");
+                entity.Property(x => x.AccessRevision).HasColumnName("access_revision").IsConcurrencyToken();
                 entity.ToTable("professions");
                 entity.HasKey(x => x.Id);
                 entity.Property(x => x.Id)

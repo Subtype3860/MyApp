@@ -13,6 +13,7 @@ const emit = defineEmits(['authenticated'])
 
 const userNameOrEmail = ref('')
 const password = ref('')
+const remember = ref(true)
 const loginHasCyrillic = computed(() => /\p{Script=Cyrillic}/u.test(userNameOrEmail.value))
 const passwordHasCyrillic = computed(() => /\p{Script=Cyrillic}/u.test(password.value))
 const errorMessage = ref('')
@@ -49,7 +50,7 @@ async function submitLogin() {
       return
     }
 
-    emit('authenticated', data)
+    emit('authenticated', { ...data, remember: remember.value })
   } catch {
     errorMessage.value = 'Сервер недоступен. Проверьте подключение.'
   } finally {
@@ -110,6 +111,16 @@ async function submitLogin() {
           В пароле введены русские буквы. Проверьте раскладку и при необходимости переключитесь на английскую.
         </p>
 
+        <label class="auth-remember">
+          <input
+            v-model="remember"
+            name="remember"
+            type="checkbox"
+            autocomplete="off"
+          />
+          <span>Запомнить меня</span>
+        </label>
+
         <p v-if="errorMessage" class="form-error" role="alert">
           {{ errorMessage }}
         </p>
@@ -163,5 +174,27 @@ async function submitLogin() {
   color: #855000;
   font-size: 0.9rem;
   line-height: 1.4;
+}
+
+.auth-form .auth-remember {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: -4px 0 18px;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.2;
+  cursor: pointer;
+  user-select: none;
+}
+
+.auth-form .auth-remember input {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  padding: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
 }
 </style>

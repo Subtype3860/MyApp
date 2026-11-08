@@ -72,10 +72,11 @@ async function loadHistory(append=false) {
   try {const response=await fetch(reportUrl(append?'?offset='+history.value.length:''),{headers:headers()});if(!response.ok)throw new Error();const items=await response.json();history.value=append?[...history.value,...items]:items;moreHistory.value=items.length===100}
   catch {error.value='Не удалось загрузить историю отчётов.'}
 }
-async function openHistory() {
-  if(!historyChoice.value)return
-  if(!await persistReport())return
-  const [selectedDate,selectedShift]=historyChoice.value.split('/')
+/** Открывает сохранённый отчёт, выбранный в списке истории. */
+async function openHistory(choice = historyChoice.value) {
+  if(!choice)return
+  if(!await persistReport()){historyChoice.value='';return}
+  const [selectedDate,selectedShift]=choice.split('/')
   ignoreSelection=true;date.value=selectedDate;shift.value=selectedShift;ignoreSelection=false
   viewingHistory.value=true;await load()
 }
@@ -305,32 +306,30 @@ onBeforeUnmount(()=>{clearTimeout(saveTimer);void persistReport();controller?.ab
         <button v-if="loaded" type="button" class="secondary-button" :disabled="loading || exporting || !loaded || !rows.length || saving > 0" @click="download('png')">Скачать изображение</button>
       </FleetActionMenu>
       </header>
-      <p>Отчёт формируется по выбранному участку, дате и смене. Организация берётся из названия участка. Изменения автоматически сохраняются отдельно для каждого участка.</p>
-      <div class="gto-fields">
+      <p class="gto-lead">Отчёт формируется по выбранному участку, дате и смене. Организация берётся из названия участка. Изменения автоматически сохраняются отдельно для каждого участка.</p>
+      <div class="gto-fields gto-fields--top">
         <label>Организация / участок<select aria-label="Организация / участок" v-model="regionId" :disabled="loading || exporting || reportSaving || saving > 0"><option value="" disabled>Выберите участок</option><option v-for="region in regions" :key="region.id" :value="region.id">{{ region.name }}</option></select></label>
-      </div>
-      <p v-if="!regionId" class="gto-hint">Выберите участок для формирования прогноза. Если список пуст, обратитесь к администратору.</p>
-      <div class="gto-fields">
-        <label>История отчётов<select aria-label="История отчётов" v-model="historyChoice" :disabled="loading || exporting"><option value="">Выберите сохранённый отчёт</option><option v-for="item in history" :key="item.date+'/'+item.shift" :value="item.date+'/'+item.shift">{{ formatReportDate(item.date) }} · {{ item.shift }} смена</option></select></label>
-        <button v-if="moreHistory" type="button" class="secondary-button" :disabled="loading || exporting" @click="loadHistory(true)">Более ранние отчёты</button>
-        <button type="button" class="secondary-button" :disabled="!historyChoice || loading || exporting" @click="openHistory">Открыть отчёт</button>
-        <button v-if="viewingHistory" type="button" class="secondary-button" :disabled="loading || exporting" @click="returnToCurrent">К текущему прогнозу</button>
-      </div>
-      <p v-if="viewingHistory" class="gto-hint">Просмотр сохранённого отчёта. Данные ремонта зафиксированы на момент сохранения.</p>
-      <p class="gto-hint" role="status">{{ reportSaving ? 'Сохранение отчёта…' : reportStatus }}</p>
-      <button v-if="reportDirty && !reportConflict" type="button" class="secondary-button" :disabled="reportSaving" @click="persistReport">Повторить сохранение</button>
-      <button v-if="reportConflict" type="button" class="secondary-button" @click="reloadSaved">Открыть серверную версию</button>
-      <div class="gto-fields">
         <label>Дата прогноза<input v-model="date" type="date" :disabled="exporting || loading || viewingHistory" /></label>
         <label>Смена<select aria-label="Смена" v-model="shift" :disabled="exporting || loading || viewingHistory"><option value="1">1 смена</option><option value="2">2 смена</option></select></label>
       </div>
+      <div class="gto-toolbar">
+        <label>История отчётов<select aria-label="История отчётов" v-model="historyChoice" :disabled="loading || exporting" @change="openHistory($event.target.value)"><option value="">Выберите сохранённый отчёт</option><option v-for="item in history" :key="item.date+'/'+item.shift" :value="item.date+'/'+item.shift">{{ formatReportDate(item.date) }} · {{ item.shift }} смена</option></select></label>
+        <button v-if="moreHistory" type="button" class="secondary-button" :disabled="loading || exporting" @click="loadHistory(true)">Более ранние отчёты</button>
+        <button v-if="viewingHistory" type="button" class="secondary-button" :disabled="loading || exporting" @click="returnToCurrent">К текущему прогнозу</button>
+        <button v-if="reportDirty && !reportConflict" type="button" class="secondary-button" :disabled="reportSaving" @click="persistReport">Повторить сохранение</button>
+        <button v-if="reportConflict" type="button" class="secondary-button" @click="reloadSaved">Открыть серверную версию</button>
+      </div>
       <label class="gto-search">Поиск техники<input v-model="query" type="search" placeholder="Группа, тип, модель или номер" /></label>
-      <p>Механик: {{ mechanic || 'ФИО не указано в профиле' }}</p>
-
-      <p v-if="exporting" class="gto-hint" role="status">Формирование отчёта…</p>
-      <p v-if="saving" class="gto-hint" role="status">Сохранение настроек…</p>
-      <p v-if="draftMessage" class="gto-hint" role="status">{{ draftMessage }}</p>
-      <p v-if="loaded && !canEdit" class="gto-hint">Составлять прогноз могут механики, старшие механики и администраторы.</p>
+      <p class="gto-meta">
+        <span>Механик: {{ mechanic || 'ФИО не указано в профиле' }}</span>
+        <span v-if="!regionId" class="gto-hint">Выберите участок для формирования прогноза. Если список пуст, обратитесь к администратору.</span>
+        <span v-if="viewingHistory" class="gto-hint">Просмотр сохранённого отчёта. Данные ремонта зафиксированы на момент сохранения.</span>
+        <span class="gto-hint" role="status">{{ reportSaving ? 'Сохранение отчёта…' : reportStatus }}</span>
+        <span v-if="exporting" class="gto-hint" role="status">Формирование отчёта…</span>
+        <span v-if="saving" class="gto-hint" role="status">Сохранение настроек…</span>
+        <span v-if="draftMessage" class="gto-hint" role="status">{{ draftMessage }}</span>
+        <span v-if="loaded && !canEdit" class="gto-hint">Составлять прогноз могут механики, старшие механики и администраторы.</span>
+      </p>
     </div>
     <p v-if="error" class="form-message--error" role="alert">{{ error }}</p>
     <p v-if="loading" role="status">Загрузка парка техники…</p>
@@ -371,27 +370,38 @@ onBeforeUnmount(()=>{clearTimeout(saveTimer);void persistReport();controller?.ab
 
 <style scoped>
 .gto-replacement-hours { color: #cc1414; font-family: monospace; font-weight: bold; }
-.gto-engines { display:grid; gap:12px; margin:12px 0; }
-.gto-engine { min-width:0; border:1px solid var(--border); border-radius:8px; padding:12px; }
-.gto-engine legend { font-size:13px; }
-.gto-forecast,.gto-group { display:grid; gap:16px; }
-.gto-panel { padding:20px; border:1px solid var(--border); border-radius:12px; background:var(--bg-surface); min-width:0; }
-.gto-panel h2,.gto-panel h3,.gto-panel h4 { margin:0 0 12px; }
-.gto-fields { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; }
-.gto-field-wide,.gto-fields label,.gto-search { display:grid; gap:6px; font-size:13px; }
-.gto-fields input,.gto-fields select,.gto-fields textarea,.gto-field-wide textarea,.gto-search input { box-sizing:border-box; min-width:0; width:100%; padding:10px; border:1px solid var(--border); border-radius:8px; background:var(--bg-main); color:var(--text-main); font:inherit; }
-.gto-fields :disabled { opacity:.6; }
-.gto-field-wide { grid-column:1/-1; }
-.gto-hint { color:var(--text-secondary); font-size:12px; line-height:1.6; }
+.gto-forecast,.gto-group { display:grid; gap:12px; }
+.gto-forecast>p,.gto-group>h3,.gto-lead { margin:0; }
+.gto-lead { line-height:1.5; }
+.gto-panel { display:grid; gap:10px; align-content:start; padding:16px; border:1px solid var(--border); border-radius:12px; background:var(--bg-surface); min-width:0; }
+.gto-panel h2,.gto-panel h3,.gto-panel h4,.gto-panel p { margin:0; }
 .gto-heading { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; }
 .gto-heading h2 { min-width:0; }
-.gto-summary { display:flex; gap:10px 24px; flex-wrap:wrap; padding-left:18px; }
+.gto-fields { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; }
+.gto-fields--top { grid-template-columns:minmax(0,1.4fr) minmax(0,1fr) minmax(0,.7fr); }
+.gto-field-wide,.gto-fields label,.gto-search,.gto-toolbar label { display:grid; gap:4px; font-size:13px; }
+.gto-fields input,.gto-fields select,.gto-fields textarea,.gto-field-wide textarea,.gto-search input,.gto-toolbar select { box-sizing:border-box; min-width:0; width:100%; padding:8px; border:1px solid var(--border); border-radius:8px; background:var(--bg-main); color:var(--text-main); font:inherit; }
+.gto-fields :disabled,.gto-toolbar :disabled { opacity:.6; }
+.gto-field-wide { grid-column:1/-1; }
+.gto-toolbar { display:flex; flex-wrap:wrap; align-items:end; gap:8px; }
+.gto-toolbar label { flex:1 1 240px; min-width:0; }
+.gto-toolbar .secondary-button { margin:0; }
+.gto-meta { display:flex; flex-wrap:wrap; gap:2px 14px; font-size:12px; color:var(--text-secondary); }
+.gto-meta>span:first-child { color:var(--text-main); }
+.gto-hint { color:var(--text-secondary); font-size:12px; line-height:1.45; }
+.gto-summary { display:flex; gap:8px 24px; flex-wrap:wrap; padding-left:18px; }
 .gto-row header { display:flex; gap:10px; justify-content:space-between; flex-wrap:wrap; }
 .gto-row header span { color:var(--text-secondary); font-size:12px; }
+.gto-engines { display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:8px; }
+.gto-engine { min-width:0; max-width:420px; border:1px solid var(--border); border-radius:8px; padding:8px 10px; }
+.gto-engine legend { font-size:13px; padding:0 4px; }
+.gto-engine .gto-fields { grid-template-columns:minmax(0,1fr); }
 .gto-current-notes p { margin:0; padding:0; }
 .gto-note-bold { font-weight:700; }
 .gto-note-italic { font-style:italic; }
 .gto-repair-note { border-bottom:1px solid var(--text-secondary); line-height:1; }
 .gto-current-notes { white-space:pre-wrap; overflow-wrap:anywhere; font-size:13px; }
-@media(max-width:760px){.gto-fields{grid-template-columns:minmax(0,1fr)}.gto-panel{padding:14px}}
+@media(min-width:1100px){.gto-row>.gto-fields{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media(max-width:1100px){.gto-fields--top{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:760px){.gto-fields,.gto-fields--top,.gto-engines{grid-template-columns:minmax(0,1fr)}.gto-panel{padding:12px}}
 </style>

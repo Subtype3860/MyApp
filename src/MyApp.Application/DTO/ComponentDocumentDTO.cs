@@ -5,9 +5,10 @@ public sealed record ComponentDocumentRequest(
     DateOnly Date,
     string VehicleNumber,
     string SourceTable,
-    ResponsibleEmployeeSelection ResponsibleEmployee,
+    ResponsibleEmployeeSelection? ResponsibleEmployee,
     IReadOnlyList<ComponentDocumentItem> Items)
 {
+    public bool WithoutResponsibleEmployee { get; init; }
     public IReadOnlyList<string> VehicleNumbers { get; init; } = [];
     public IReadOnlyList<IReadOnlyList<ComponentDocumentItem>> Pages { get; init; } = [];
     public string JobName { get; init; } = "Аварийная";

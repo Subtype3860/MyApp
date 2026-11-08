@@ -4,6 +4,7 @@ import CsvFilesSettings from './CsvFilesSettings.vue'
 import MaterialGroupsSettings from './MaterialGroupsSettings.vue'
 import MaintenanceTemplatesSettings from './MaintenanceTemplatesSettings.vue'
 import UserAvatar from './UserAvatar.vue'
+import ProfessionAccessSettings from './ProfessionAccessSettings.vue'
 
 const props = defineProps({
   navigationCollapsed: {
@@ -664,6 +665,7 @@ watch(
       v-else-if="selectedSection === 'professions'"
       class="macos-glass-panel settings-panel professions-panel"
     >
+      <ProfessionAccessSettings :token="token" />
       <div class="profession-create-section">
         <h2>{{ editingProfessionId ? 'Редактирование профессии' : 'Создание профессии' }}</h2>
         <p>Введите название профессии длиной до 40 символов.</p>

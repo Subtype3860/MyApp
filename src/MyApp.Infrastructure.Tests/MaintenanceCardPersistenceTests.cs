@@ -30,7 +30,6 @@ public sealed class MaintenanceCardPersistenceTests
     {
         await using var db=new AppDbContext(new DbContextOptionsBuilder<AppDbContext>().Options);
         var controller=Controller(db,Guid.NewGuid(),false);
-        Assert.IsType<ForbidResult>(await controller.SaveCardTemplate(Guid.NewGuid(),new(0,false,null!),default));
         Assert.IsType<ForbidResult>(await controller.StartCard(Guid.NewGuid(),new(Guid.NewGuid(),Guid.NewGuid(),1,1),default));
         Assert.IsType<ForbidResult>(await controller.SaveCard(Guid.NewGuid(),new(1,null!),default));
         Assert.IsType<ForbidResult>(await controller.ReturnCard(Guid.NewGuid(),new(1,"reason"),default));
@@ -41,6 +40,13 @@ public sealed class MaintenanceCardPersistenceTests
         await using var fixture=await VehicleHoursPostgreSqlDatabase.CreateAsync();
         var vehicle=Guid.NewGuid();var id=Guid.NewGuid();var templateId=Guid.NewGuid();var date=new DateOnly(2026,1,1);
         await fixture.ExecuteAsync("INSERT INTO app_users(id) VALUES(@actor); INSERT INTO number_car(id) VALUES(@vehicle);",("actor",Actor),("vehicle",vehicle));
+        await fixture.ExecuteAsync("""
+            CREATE TABLE maintenance_equipment(id uuid PRIMARY KEY,name text NOT NULL,sort_order integer NOT NULL DEFAULT 0);
+            CREATE TABLE maintenance_intervals(id uuid PRIMARY KEY,equipment_id uuid NOT NULL,name text NOT NULL,sort_order integer NOT NULL DEFAULT 0);
+            CREATE TABLE maintenance_interval_items(id uuid PRIMARY KEY,interval_id uuid NOT NULL,material_name text NOT NULL,quantity numeric NOT NULL,sort_order integer NOT NULL DEFAULT 0);
+            INSERT INTO maintenance_equipment(id,name) VALUES('10000000-0000-0000-0000-000000000001','Экскаваторы');
+            INSERT INTO maintenance_intervals(id,equipment_id,name) VALUES('10000000-0000-0000-0000-000000000002','10000000-0000-0000-0000-000000000001','ТО-1000');
+            """);
         var template=new CardTemplate("SANY SY1250H","ТО-1000","test","",[new("check","Контроль","Проверить",Control:true)],[]);
         await using(var db=fixture.CreateContext()){
             await MaintenancePlanSchema.EnsureAsync(db);

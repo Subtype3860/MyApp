@@ -1278,8 +1278,12 @@ function formatDateTime(value) {
             <input :value="selectedVehicle?.typeName || 'Выберите транспорт'" readonly />
           </label>
           <label class="vehicle-field">
-            <span>Государственный или гаражный номер</span>
-            <input :value="selectedVehicle?.stateNumber || selectedVehicle?.garageNumber || vehicleQuery" readonly />
+            <span>Гаражный номер</span>
+            <input :value="selectedVehicle?.garageNumber ?? ''" placeholder="Не указан" readonly />
+          </label>
+          <label class="vehicle-field">
+            <span>Государственный номер</span>
+            <input :value="selectedVehicle?.stateNumber || ''" placeholder="Не указан" readonly />
           </label>
           <label class="vehicle-field vehicle-field--full">
             <span>Описание неисправности</span>

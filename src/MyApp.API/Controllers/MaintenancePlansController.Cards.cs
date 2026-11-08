@@ -5,6 +5,7 @@ using MyApp.Application.DTO;
 using MyApp.Application.Services;
 using MyApp.Application.Common;
 using MyApp.Infrastructure.Db.Entities;
+using MyApp.Infrastructure.Repositories;
 
 namespace MyApp.API.Controllers;
 
@@ -33,6 +34,9 @@ public sealed partial class MaintenancePlansController
     public sealed record CardWrite(int Revision, CardData Data, string Action = "save", string Reason = "");
     public sealed record CardDecision(int Revision, string Reason = "");
     private static T Decode<T>(string text) => JsonSerializer.Deserialize<T>(text, JsonOptions)!;
+    private async Task<bool> CanUseLibrary(CancellationToken ct) => Actor != Guid.Empty &&
+        MyApp.Application.Security.MaintenanceLibraryAccess.Allows(await db.Users.AsNoTracking()
+            .Where(x => x.Id == Actor).Select(x => x.Profession.Name).SingleOrDefaultAsync(ct));
     private async Task<bool> CanFill(CancellationToken ct) => Actor != Guid.Empty &&
         (User.HasClaim("permission", "vehicles.maintenance_execution") || await CanManage(ct));
     private object CardView(MaintenanceCard card) => new { card.Id, card.VehicleId, card.VehicleLabel, card.Revision, card.Status,
@@ -48,21 +52,41 @@ public sealed partial class MaintenancePlansController
     }
     private IActionResult CardConflict() => Conflict(new { message = "Карта изменена другим сотрудником. Сохранённый локальный черновик доступен; загрузите актуальную карту и сравните изменения." });
 
+    [HttpGet("card-template-options")]
+    public async Task<IActionResult> CardTemplateOptions(CancellationToken ct) => Ok(new {
+        canManage = await CanManage(ct), canFill = await CanFill(ct), canUseLibrary = await CanUseLibrary(ct),
+        templates = (await db.MaintenanceCardTemplates.AsNoTracking().Where(t => t.Published).ToArrayAsync(ct))
+            .Select(t => { var template = Decode<CardTemplate>(t.Snapshot); return new {
+                t.Id, t.Revision, t.Published, template = new { template.Model, template.Service, template.Source } }; })
+    });
+
     [HttpGet("card-templates")]
-    public async Task<IActionResult> CardTemplates(CancellationToken ct) => Ok(new {
-        canManage = await CanManage(ct), canFill = await CanFill(ct),
+    public async Task<IActionResult> CardTemplates(CancellationToken ct)
+    {
+        if (!await CanUseLibrary(ct)) return Forbid();
+        return Ok(new {
+        materialSources = await new MaintenanceTemplateRepository(db).GetAllAsync(ct),
         templates = (await db.MaintenanceCardTemplates.AsNoTracking().ToArrayAsync(ct)).Select(t => new {
             t.Id, t.Revision, t.Published, t.ApprovedBy, t.ApprovedAt, template = Decode<CardTemplate>(t.Snapshot) }) });
+    }
 
     [HttpPut("card-templates/{id:guid}")]
     [RequestSizeLimit(500_000)]
     public async Task<IActionResult> SaveCardTemplate(Guid id, TemplateWrite request, CancellationToken ct)
     {
-        if (!await CanManage(ct)) return Forbid();
+        if (!await CanUseLibrary(ct)) return Forbid();
         if (id == Guid.Empty || request.Revision < 0) return BadRequest();
+        // Materials are maintained in Technical Maintenance, never duplicated in card definitions.
+        if (request.Template is not null) request = request with { Template = request.Template with { Materials = [], MaterialSource = null } };
         var error = MaintenanceCardRules.ValidateTemplate(request.Template);
         // Unresolved imported units can be repaired while the template is still a draft.
         if (error is not null) return BadRequest(new { message = error });
+        if (request.Template!.MaterialIntervalId is { } sourceId)
+        {
+            var interval = await db.MaintenanceIntervals.AsNoTracking().SingleOrDefaultAsync(x => x.Id == sourceId, ct);
+            if (interval is null || MaintenanceCardRules.Normalize(interval.Name) != MaintenanceCardRules.Normalize(request.Template.Service))
+                return BadRequest(new { message = "Источник материалов должен соответствовать виду ТО карты." });
+        }
         await using var tx = await db.Database.BeginTransactionAsync(ct);
         await db.Database.ExecuteSqlInterpolatedAsync($"SELECT pg_advisory_xact_lock(hashtextextended({id.ToString()}, 721))", ct);
         var item = await db.MaintenanceCardTemplates.SingleOrDefaultAsync(x => x.Id == id, ct);
@@ -107,13 +131,47 @@ public sealed partial class MaintenancePlansController
             return BadRequest(new { message = "Модель и вид ТО шаблона должны соответствовать машине и текущему шагу графика." });
         if (await db.MaintenanceCards.AnyAsync(x => x.VehicleId == vehicleId && x.RunInId == request.RunInId && (x.Status == "draft" || x.Status == "submitted"), ct))
             return Conflict(new { message = "Для этого ТО уже есть открытая карта. Продолжите её заполнение." });
+        var resolved = MaintenanceCardMaterials.Resolve(content, vehicle.ModelName, vehicle.TypeName, await new MaintenanceTemplateRepository(db).GetAllAsync(ct));
+        if (resolved.Error is not null) return BadRequest(new { message = resolved.Error });
+        content = resolved.Template!;
         var data = new CardData(Today, "", "", null, null, DateTimeOffset.UtcNow, null, null, "",
             content.Operations.Select(o => new CardAnswer(o.Id,"","","","","")).ToArray(),
             content.Materials.Select(m => new CardConsumption(m.Id,null,"","")).ToArray());
         var card = new MaintenanceCard { Id = request.Id, VehicleId = vehicleId, VehicleLabel = $"{vehicle.ModelName} № {vehicle.GarageNumber} {vehicle.StateNumber} VIN {vehicle.Vin}",
             TemplateId = template.Id, TemplateRevision = template.Revision, PlanRevision = plan.Revision, RunInId = request.RunInId,
-            Template = template.Snapshot, Data = JsonSerializer.Serialize(data, JsonOptions), CreatedBy = Actor, CreatedAt = DateTimeOffset.UtcNow };
+            Template = JsonSerializer.Serialize(content, JsonOptions), Data = JsonSerializer.Serialize(data, JsonOptions), CreatedBy = Actor, CreatedAt = DateTimeOffset.UtcNow };
         AuditCard(card, "created"); db.MaintenanceCards.Add(card);
+        await db.SaveChangesAsync(ct); await tx.CommitAsync(ct); return Ok(CardView(card));
+    }
+
+    [HttpPost("cards/{id:guid}/refresh-materials")]
+    public async Task<IActionResult> RefreshCardMaterials(Guid id, CardDecision request, CancellationToken ct)
+    {
+        if (!await CanFill(ct)) return Forbid();
+        var card = await db.MaintenanceCards.SingleOrDefaultAsync(x => x.Id == id, ct);
+        if (card is null) return NotFound();
+        await using var tx = await db.Database.BeginTransactionAsync(ct); await Lock(card.VehicleId, ct); await db.Entry(card).ReloadAsync(ct);
+        if (card.Revision != request.Revision) return CardConflict();
+        if (card.Status != "draft") return BadRequest(new { message = "Материалы можно загрузить только в черновик." });
+        var data = Decode<CardData>(card.Data);
+        if (data.Materials.Any(m => m.Actual is not null || !string.IsNullOrWhiteSpace(m.Substitute)))
+            return Conflict(new { message = "Фактический расход или аналоги уже заполнены. Список материалов сохранён без изменений." });
+        var vehicle = (await vehicles.GetVehiclesAsync(ct)).FirstOrDefault(v => v.Id == card.VehicleId);
+        if (vehicle is null) return NotFound();
+        var content = Decode<CardTemplate>(card.Template);
+        // An older draft may predate the material-source link. Use the latest explicit mapping if present.
+        if (content.MaterialIntervalId is null)
+        {
+            var definition = await db.MaintenanceCardTemplates.AsNoTracking().SingleOrDefaultAsync(t => t.Id == card.TemplateId, ct);
+            if (definition is not null) content = content with { MaterialIntervalId = Decode<CardTemplate>(definition.Snapshot).MaterialIntervalId };
+        }
+        var resolved = MaintenanceCardMaterials.Resolve(content, vehicle.ModelName, vehicle.TypeName, await new MaintenanceTemplateRepository(db).GetAllAsync(ct));
+        if (resolved.Error is not null) return BadRequest(new { message = resolved.Error });
+        content = resolved.Template!;
+        var old = data.Materials.ToDictionary(m => m.Id);
+        data = data with { Materials = content.Materials.Select(m => old.GetValueOrDefault(m.Id) ?? new CardConsumption(m.Id,null,"","")).ToArray() };
+        card.Template = JsonSerializer.Serialize(content, JsonOptions); card.Data = JsonSerializer.Serialize(data, JsonOptions);
+        AuditCard(card, "materials-refreshed", content.MaterialSource ?? "");
         await db.SaveChangesAsync(ct); await tx.CommitAsync(ct); return Ok(CardView(card));
     }
 
@@ -184,30 +242,30 @@ public sealed partial class MaintenancePlansController
     public async Task<IActionResult> CardPhotos(Guid id, CancellationToken ct)
     {
         if (!await db.MaintenanceCards.AnyAsync(x => x.Id == id, ct)) return NotFound();
-        return Ok(await db.MaintenanceCardPhotos.Where(x => x.CardId == id).Select(x => new { x.Id, x.OperationId, x.CreatedBy, x.CreatedAt }).ToArrayAsync(ct));
+        return Ok(await db.MaintenanceCardPhotos.Where(x => x.CardId == id).Select(x => new { x.Id, x.OperationId, x.ContentType, x.CreatedBy, x.CreatedAt }).ToArrayAsync(ct));
     }
     [HttpGet("cards/{id:guid}/photos/{photoId:guid}")]
     public async Task<IActionResult> CardPhoto(Guid id, Guid photoId, CancellationToken ct)
     {
         if (!await db.MaintenanceCards.AnyAsync(x => x.Id == id, ct)) return NotFound();
         var photo = await db.MaintenanceCardPhotos.AsNoTracking().SingleOrDefaultAsync(x => x.CardId == id && x.Id == photoId, ct);
-        return photo is null ? NotFound() : File(photo.Content, photo.ContentType);
+        return photo is null ? NotFound() : File(photo.Content, photo.ContentType, enableRangeProcessing: true);
     }
     [HttpPost("cards/{id:guid}/photos/{photoId:guid}")]
-    [RequestSizeLimit(4_300_000)]
+    [RequestSizeLimit(26_000_000)]
     public async Task<IActionResult> AddCardPhoto(Guid id, Guid photoId, [FromForm] string operationId, IFormFile file, CancellationToken ct)
     {
         if (!await CanFill(ct)) return Forbid();
-        if (photoId == Guid.Empty || file.Length is < 8 or > 4_000_000) return BadRequest(new { message = "Фото JPEG/PNG до 4 МБ." });
+        if (photoId == Guid.Empty || file.Length is < 8 or > MaintenanceCardMedia.VideoLimit) return BadRequest(new { message = "Фото JPEG/PNG до 4 МБ, видео MP4/WebM до 25 МБ." });
         using var buffer = new MemoryStream(); await file.CopyToAsync(buffer, ct); var bytes = buffer.ToArray();
-        var type = bytes.Take(8).SequenceEqual(new byte[] {137,80,78,71,13,10,26,10}) ? "image/png" : bytes[0] == 255 && bytes[1] == 216 && bytes[2] == 255 ? "image/jpeg" : null;
-        if (type is null) return BadRequest(new { message = "Допустимы только JPEG и PNG." });
+        var type = MaintenanceCardMedia.ContentType(bytes);
+        if (type is null) return BadRequest(new { message = "Допустимы фото JPEG/PNG до 4 МБ и видео MP4/WebM до 25 МБ." });
         var card = await db.MaintenanceCards.SingleOrDefaultAsync(x => x.Id == id, ct); if (card is null) return NotFound();
         await using var tx = await db.Database.BeginTransactionAsync(ct); await Lock(card.VehicleId, ct); await db.Entry(card).ReloadAsync(ct);
         var old = await db.MaintenanceCardPhotos.SingleOrDefaultAsync(x => x.Id == photoId, ct);
         if (old is not null) return old.CardId == id && old.CreatedBy == Actor && old.OperationId == operationId && old.Content.SequenceEqual(bytes) ? Ok(new { id = photoId }) : CardConflict();
         if (card.Status != "draft" || !Decode<CardTemplate>(card.Template).Operations.Any(x => x.Id == operationId)) return BadRequest();
-        if (await db.MaintenanceCardPhotos.CountAsync(x => x.CardId == id, ct) >= 20) return BadRequest(new { message = "Не более 20 фотографий на карту." });
+        if (await db.MaintenanceCardPhotos.CountAsync(x => x.CardId == id, ct) >= 20) return BadRequest(new { message = "Не более 20 медиафайлов на карту." });
         db.MaintenanceCardPhotos.Add(new() { Id = photoId, CardId = id, OperationId = operationId, Content = bytes, ContentType = type, CreatedBy = Actor, CreatedAt = DateTimeOffset.UtcNow });
         AuditCard(card,"photo",operationId); await db.SaveChangesAsync(ct); await tx.CommitAsync(ct); return Ok(new { id = photoId });
     }

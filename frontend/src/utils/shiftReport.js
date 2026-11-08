@@ -39,6 +39,15 @@ export function selectShiftWorks(journals, date, shift) {
       || String(a.id).localeCompare(String(b.id)))
 }
 
+/** Производственный порядок типов техники; остальные типы идут последними. */
+function vehicleTypeOrder(name) {
+  const type = String(name).toLocaleLowerCase('ru-RU')
+  if (type.includes('экскаватор')) return 0
+  if (type.includes('бульдозер')) return 1
+  if (type.includes('самосвал')) return 2
+  return 3
+}
+
 /** Группирует работы смены для отображения в отчёте. */
 export function groupShiftWorks(works, locations = {}) {
   return ['КАРЬЕР', 'РММ'].map(location => {
@@ -51,7 +60,7 @@ export function groupShiftWorks(works, locations = {}) {
       if (!vehicles.has(work.vehicle.id)) vehicles.set(work.vehicle.id, { vehicle: work.vehicle, works: [] })
       vehicles.get(work.vehicle.id).works.push(work)
     }
-    return { location, categories: [...categories].sort(([a], [b]) => a.localeCompare(b, 'ru'))
+    return { location, categories: [...categories].sort(([a], [b]) => vehicleTypeOrder(a) - vehicleTypeOrder(b) || a.localeCompare(b, 'ru'))
       .map(([name, vehicles]) => ({ name, cards: [...vehicles.values()].sort((a, b) =>
         String(a.vehicle.garageNumber ?? a.vehicle.stateNumber).localeCompare(String(b.vehicle.garageNumber ?? b.vehicle.stateNumber), 'ru', { numeric: true })) })) }
   }).filter(group => group.categories.length)
@@ -152,13 +161,11 @@ export function cardPerformers(card) {
 
 /** Отбирает вспомогательные работы выбранной смены. */
 export function cardWorkSections(card) {
-  const confirmed = [], unconfirmed = []
-  for (const work of card.works) {
-    (cardPerformers({ works: [work] }).groups.length ? confirmed : unconfirmed).push(work)
-  }
-  return [confirmed, unconfirmed].filter(works => works.length).map(works => ({
-    works, performers: cardPerformers({ works }),
-  }))
+  if (card.hidePerformers) return [{ works: card.works, performers: { groups: [] } }]
+  if (card.maintenance) return card.works.map(work => ({ works: [work], performers: {
+    groups: work.executors.length ? [{ position: 'Исполнители ТО', names: work.executors }] : [],
+  } }))
+  return card.works.map(work => ({ works: [work], performers: cardPerformers({ works: [work] }) }))
 }
 
 /** Отбирает вспомогательные работы выбранной смены. */
@@ -181,16 +188,33 @@ export function groupAuxiliaryWorks(works) {
 }
 
 /** Объединяет группы ремонтных и вспомогательных работ в отчёт. */
-export function groupReportWorks(repairWorks, auxiliaryWorks, locations = {}) {
+export function groupReportWorks(repairWorks, auxiliaryWorks, locations = {}, maintenanceGroups = []) {
   const repairGroups = groupShiftWorks(repairWorks, locations)
   const auxiliaryGroups = groupAuxiliaryWorks(auxiliaryWorks)
-  return ['КАРЬЕР', 'РММ'].map(location => ({ location,
-    categories: [...(repairGroups.find(group => group.location === location)?.categories ?? []),
-      ...(auxiliaryGroups.find(group => group.location === location)?.categories ?? [])] }))
-    .filter(group => group.categories.length)
+  const additional = auxiliaryGroups.length ? [{ location: 'Дополнительные работы',
+    categories: auxiliaryGroups.map(group => ({ name: group.location,
+      cards: group.categories.flatMap(category => category.cards) })) }] : []
+  return [...repairGroups, ...maintenanceGroups, ...additional]
 }
 
 /** Возвращает заголовок карточки сменного отчёта. */
 export function reportCardTitle(card) {
-  return card.auxiliary ? card.title : vehicleTitle(card.vehicle)
+  return card.auxiliary || card.maintenance ? card.title : vehicleTitle(card.vehicle)
+}
+
+/** Принятые карты попадают в смену по завершению работ, а не по дате приёмки. */
+export function maintenanceReportGroups(records, date, shift) {
+  const { start, end } = shiftBounds(date, shift)
+  const seen = new Set()
+  const cards = records.filter(record => {
+    const at = new Date(record.finishedAt)
+    if (!record.finishedAt || at < start || at >= end || !Number.isFinite(+at) || seen.has(record.id)) return false
+    seen.add(record.id)
+    return true
+  }).sort((a, b) => new Date(a.finishedAt) - new Date(b.finishedAt)).map(record => ({
+    id: `maintenance:${record.id}`, maintenance: true, title: record.vehicleLabel,
+    works: [{ id: `maintenance:${record.id}`, executors: record.executors || [],
+      description: `${record.service} — проведено. Завершено: ${new Date(record.finishedAt).toLocaleString('ru-RU')}${record.notes ? `\n${record.notes}` : ''}` }],
+  }))
+  return cards.length ? [{ location: 'Техническое обслуживание', categories: [{ name: 'Проведённые ТО', cards }] }] : []
 }

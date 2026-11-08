@@ -19,7 +19,10 @@ public sealed class DatabaseInitializer(AppDbContext db) : IDatabaseInitializer
             CREATE TABLE IF NOT EXISTS professions (
                 id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
                 profession varchar(40) NOT NULL
-            )
+            );
+            ALTER TABLE professions ADD COLUMN IF NOT EXISTS permission_override text NULL;
+            ALTER TABLE professions ADD COLUMN IF NOT EXISTS hidden_page_blocks text NOT NULL DEFAULT '';
+            ALTER TABLE professions ADD COLUMN IF NOT EXISTS access_revision integer NOT NULL DEFAULT 0;
             """,
             cancellationToken);
         await db.Database.ExecuteSqlRawAsync(

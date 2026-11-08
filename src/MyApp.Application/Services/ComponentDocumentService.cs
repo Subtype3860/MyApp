@@ -65,17 +65,15 @@ public sealed class ComponentDocumentService(
                 Errors: materialGroupMappings.Errors);
         }
 
-        var responsibleEmployee = await responsibleEmployeeService.ResolveAsync(
-            request.SourceTable,
-            request.ResponsibleEmployee,
-            cancellationToken);
-        if (responsibleEmployee.Status != ServiceResultStatus.Success ||
-            responsibleEmployee.Value is null)
+        ResponsibleEmployeeResponse? issuer = null;
+        if (request.ResponsibleEmployee is not null)
         {
-            return new ServiceResult<ComponentDocumentResponse>(
-                responsibleEmployee.Status,
-                Message: responsibleEmployee.Message,
-                Errors: responsibleEmployee.Errors);
+            var responsibleEmployee = await responsibleEmployeeService.ResolveAsync(
+                request.SourceTable, request.ResponsibleEmployee, cancellationToken);
+            if (responsibleEmployee.Status != ServiceResultStatus.Success || responsibleEmployee.Value is null)
+                return new ServiceResult<ComponentDocumentResponse>(responsibleEmployee.Status,
+                    Message: responsibleEmployee.Message, Errors: responsibleEmployee.Errors);
+            issuer = responsibleEmployee.Value;
         }
 
         var normalizedItems = request.Items
@@ -102,11 +100,11 @@ public sealed class ComponentDocumentService(
                 user.FirstName,
                 user.MiddleName,
                 user.LastName),
-            IssuerPosition = responsibleEmployee.Value.Profession,
+            IssuerPosition = issuer?.Profession ?? string.Empty,
             IssuerName = BuildAuthorName(
-                responsibleEmployee.Value.FirstName,
-                responsibleEmployee.Value.Patronymic,
-                responsibleEmployee.Value.LastName),
+                issuer?.FirstName ?? string.Empty,
+                issuer?.Patronymic ?? string.Empty,
+                issuer?.LastName ?? string.Empty),
             Items = layout.Items
         };
         if (saveRequirement)
@@ -115,9 +113,9 @@ public sealed class ComponentDocumentService(
                 user.Id,
                 BuildFullName(user.FirstName, user.MiddleName, user.LastName),
                 BuildFullName(
-                    responsibleEmployee.Value.FirstName,
-                    responsibleEmployee.Value.Patronymic,
-                    responsibleEmployee.Value.LastName),
+                    issuer?.FirstName ?? string.Empty,
+                    issuer?.Patronymic ?? string.Empty,
+                    issuer?.LastName ?? string.Empty),
                 normalizedRequest,
                 cancellationToken);
         }
@@ -269,7 +267,7 @@ public sealed class ComponentDocumentService(
                 ["Количество номеров техники не должно превышать количество наименований."];
         }
 
-        if (request.ResponsibleEmployee is null)
+        if (request.ResponsibleEmployee is null && !request.WithoutResponsibleEmployee)
         {
             errors[nameof(request.ResponsibleEmployee)] =
                 ["Выберите ответственное лицо за выдачу."];

@@ -1,3 +1,5 @@
+import boldUrl from '../assets/LiberationSans-Bold.ttf?url'
+import italicUrl from '../assets/LiberationSans-Italic.ttf?url'
 import notoSansUrl from '../assets/NotoSans.ttf?url'
 import { cardMedia, cardState, formatReportDate, reportCardTitle, cardWorkSections } from './shiftReport'
 
@@ -26,12 +28,16 @@ export async function createShiftReportPdf({ groups, date, shift, photos, mediaL
   const document = await PDFDocument.create()
   document.registerFontkit(fontkit)
   const font = await document.embedFont(await fontResponse.arrayBuffer(), { subset: true })
+  const [boldResponse, italicResponse] = await Promise.all([fetch(boldUrl), fetch(italicUrl)])
+  if (!boldResponse.ok || !italicResponse.ok) throw new Error('Не удалось загрузить шрифты отчёта.')
+  const boldFont = await document.embedFont(await boldResponse.arrayBuffer(), { subset: true })
+  const italicFont = await document.embedFont(await italicResponse.arrayBuffer(), { subset: true })
   const ink = rgb(.12, .17, .23), muted = rgb(.40, .45, .50), accent = rgb(.08, .37, .42)
   let page, y
   const width = 499, left = 48
   /** Рисует текст в PDF с заданными координатами и оформлением. */
-  function draw(text, size = 10, color = ink, x = left) {
-    page.drawText(String(text), { x, y, size, font, color })
+  function draw(text, size = 10, color = ink, x = left, face = font) {
+    page.drawText(String(text), { x, y, size, font: face, color })
   }
   /** Создаёт следующую страницу PDF и обновляет позицию вывода. */
   function newPage() {
@@ -45,14 +51,14 @@ export async function createShiftReportPdf({ groups, date, shift, photos, mediaL
   /** Создаёт новую страницу, если оставшейся высоты недостаточно для следующего блока. */
   function ensure(height) { if (y - height < 54) newPage() }
   /** Разбивает текст на строки для вывода в PDF сменного отчёта. */
-  function lines(text, size = 10, availableWidth = width) {
+  function lines(text, size = 10, availableWidth = width, face = font) {
     const result = []
     for (const paragraph of String(text).replace(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g, '').split('\n')) {
       let line = ''
       for (const word of paragraph.split(/\s+/).filter(Boolean)) {
-        if (line && font.widthOfTextAtSize(`${line} ${word}`, size) > availableWidth) { result.push(line); line = '' }
+        if (line && face.widthOfTextAtSize(`${line} ${word}`, size) > availableWidth) { result.push(line); line = '' }
         for (const char of word) {
-          if (font.widthOfTextAtSize(line + char, size) > availableWidth) { result.push(line); line = '' }
+          if (face.widthOfTextAtSize(line + char, size) > availableWidth) { result.push(line); line = '' }
           line += char
         }
         line += ' '
@@ -93,17 +99,18 @@ export async function createShiftReportPdf({ groups, date, shift, photos, mediaL
           y -= 6
         }
         function textBlock(text, performer = false, indent = 0, marker = '') {
-          lines(text, performer ? 9 : 10, width - indent).forEach((line, index) => {
-            ensureCard(15)
-            if (index === 0 && marker) draw(marker, performer ? 9 : 10, performer ? muted : ink, left + indent - 12)
-            draw(line, performer ? 9 : 10, performer ? muted : ink, left + indent)
-            y -= 15
+          const size = performer ? 9 : 12, face = performer ? italicFont : boldFont, height = performer ? 15 : 18
+          lines(text, size, width - indent, face).forEach((line, index) => {
+            ensureCard(height)
+            if (index === 0 && marker) draw(marker, size, performer ? muted : ink, left + indent - 12, face)
+            draw(line, size, performer ? muted : ink, left + indent, face)
+            y -= height
           })
         }
         const titleLines = lines(reportCardTitle(card), 12)
         ensure(titleLines.length * 19 + 180)
         for (const line of titleLines) { draw(line, 12); y -= 19 }
-        if (!card.auxiliary) {
+        if (!card.auxiliary && !card.maintenance) {
           const state = cardState(card)
           draw(state.label, 9, state.kind === 'stopped' ? rgb(.66, .20, .20) : muted); y -= 21
         }
@@ -118,12 +125,15 @@ export async function createShiftReportPdf({ groups, date, shift, photos, mediaL
           for (const work of section.works) {
             const workCard = { ...card, works: [work] }
             const media = cardMedia(workCard, 'image'), videos = cardMedia(workCard, 'video')
-            const previews = media.slice(0, 2).filter(item => photos[item.id]?.blob)
+            const previews = media.filter(item => photos[item.id]?.blob)
             const description = work.description || work.cause || 'Описание не указано.'
-            ensureCard((previews.length ? 104 : 0) + Math.min(lines(description, 10, width - 12).length, 3) * 15 + 12)
-            if (previews.length) {
-              for (let index = 0; index < previews.length; index++) {
-                const item = previews[index]
+            ensureCard(54)
+            textBlock(description, false, 12, '•')
+            y -= 8
+            for (let offset = 0; offset < previews.length; offset += 2) {
+              ensureCard(104)
+              for (let index = 0; index < Math.min(2, previews.length - offset); index++) {
+                const item = previews[offset + index]
                 const embedded = await document.embedJpg(await photos[item.id].blob.arrayBuffer())
                 const size = embedded.scale(Math.min(240 / embedded.width, 92 / embedded.height))
                 const x = left + index * 254
@@ -132,7 +142,6 @@ export async function createShiftReportPdf({ groups, date, shift, photos, mediaL
               }
               y -= 104
             }
-            textBlock(description, false, 12, '•')
             const remaining = media.filter(item => !previews.some(preview => preview.id === item.id))
             const shortcuts = [...remaining.map(item => ({ item, type: 'image', label: '+' })), ...videos.map(item => ({ item, type: 'video', label: '▶' }))]
             for (let offset = 0; offset < shortcuts.length; offset += 12) {
@@ -142,6 +151,7 @@ export async function createShiftReportPdf({ groups, date, shift, photos, mediaL
             }
             y -= 10
           }
+          if (!card.hidePerformers) {
           const performers = section.performers
           ensureCard(performers.groups.length ? 45 : 15)
           if (performers.groups.length) {
@@ -152,6 +162,7 @@ export async function createShiftReportPdf({ groups, date, shift, photos, mediaL
               textBlock(group.names.join('; '), true, 24, '+')
             }
           } else textBlock('Исполнители пока не подтверждены', true)
+          }
           y -= 12
         }
         page.drawLine({ start: { x: left, y }, end: { x: left + width, y }, thickness: .5, color: rgb(.86, .89, .90) })

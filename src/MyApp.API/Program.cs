@@ -54,7 +54,7 @@ builder.Services.AddInfrastructure(
     jwtOptions,
     mediaStorageOptions);
 builder.Services.AddHostedService<StagedMediaTransferService>();
-if (builder.Configuration.GetValue("MediaStorage:RetentionEnabled", true))
+if (builder.Configuration.GetValue("MediaStorage:RetentionEnabled", false))
 {
     builder.Services.AddHostedService<MediaRetentionService>();
 }
@@ -72,6 +72,8 @@ builder.Services.AddAuthorization(options =>
         policy.RequireClaim("permission", Permissions.RequirementsView));
     options.AddPolicy(Permissions.MaintenanceView, policy =>
         policy.RequireClaim("permission", Permissions.MaintenanceView));
+    options.AddPolicy(Permissions.ShiftReport, policy =>
+        policy.RequireAuthenticatedUser().RequireClaim("permission", Permissions.ShiftReport));
 });
 builder.Services.AddControllers();
 builder.Services.AddMemoryCache();

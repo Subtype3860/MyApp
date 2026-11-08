@@ -71,4 +71,30 @@ public sealed class ComponentDocumentAuthorizationTests
         ((WorkParticipationAuthorizationTests.InvocationProxy)(object)proxy).Handler = handler;
         return proxy;
     }
+
+    [Fact]
+    public async Task Missing_responsible_requires_explicit_choice_and_keeps_blank_issuer()
+    {
+        var user = JwtRevocationTests.MakeUser();
+        user.Profession = new() { Name = "Механик" };
+        var saves = 0;
+        var service = new ComponentDocumentService(
+            Proxy<IUserRepository>((_, _) => Task.FromResult<User?>(user)),
+            Proxy<IResponsibleEmployeeService>((_, _) => throw new Exception("No employee lookup without selection")),
+            Proxy<IRequirementJournalRepository>((_, args) => {
+                Assert.Equal("", args[2]); saves++; return Task.CompletedTask;
+            }),
+            Proxy<IMaterialGroupService>((_, _) => Task.FromResult(ServiceResult<IReadOnlyList<MaterialGroupMappingResponse>>.Success([]))));
+        var request = new ComponentDocumentRequest(new(2026, 11, 7), "94", "v_full_ost", null, [new("Фильтр", "шт", 1, 2)]);
+        Assert.Equal(ServiceResultStatus.ValidationError, (await service.PrepareAsync(request, user.Id, default)).Status);
+        var allowed = request with { WithoutResponsibleEmployee = true, IssuerName = "Не подставлять", IssuerPosition = "Не подставлять" };
+        var preview = await service.PrepareAsync(allowed, user.Id, default);
+        Assert.Equal(ServiceResultStatus.Success, preview.Status);
+        Assert.Empty(preview.Value!.Document.IssuerName);
+        Assert.Empty(preview.Value.Document.IssuerPosition);
+        Assert.Equal("Механик", preview.Value.Document.AuthorPosition);
+        Assert.Equal(0, saves);
+        Assert.Equal(ServiceResultStatus.Success, (await service.GenerateAsync(allowed, user.Id, default)).Status);
+        Assert.Equal(1, saves);
+    }
 }

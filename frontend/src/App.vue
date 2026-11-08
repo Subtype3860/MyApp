@@ -17,14 +17,11 @@ import AuxiliaryWorksView from './components/AuxiliaryWorksView.vue'
 import IdleSessionWarning from './components/IdleSessionWarning.vue'
 import TanksView from './components/TanksView.vue'
 import MechanicView from './components/MechanicView.vue'
+import { readAuth, writeAuth, clearAuth } from './utils/authStorage'
 
-const TOKEN_KEY = 'myapp.authToken'
-const ROLE_KEY = 'myapp.userRole'
-const PERMISSIONS_KEY = 'myapp.userPermissions'
-
-const storedToken = localStorage.getItem(TOKEN_KEY)
-const storedRole = localStorage.getItem(ROLE_KEY)
-const storedPermissions = localStorage.getItem(PERMISSIONS_KEY)
+const storedToken = readAuth('token')
+const storedRole = readAuth('role')
+const storedPermissions = readAuth('permissions')
 const legacyPermissionMap = {
   'tables.view': 'menu.tables',
   'vehicles.view': 'menu.vehicles',
@@ -46,7 +43,7 @@ const /** Разбирает сохранённый набор разрешен�
   }
 }
 if (storedToken && !storedRole) {
-  localStorage.removeItem(TOKEN_KEY)
+  clearAuth()
 }
 
 const token = ref(storedRole ? storedToken : null)
@@ -79,12 +76,7 @@ const sessionExpiredMessage = ref('')
 
 /** Сохраняет данные успешного входа и открывает приложение. */
 function handleAuthenticated(authData) {
-  localStorage.setItem(TOKEN_KEY, authData.token)
-  localStorage.setItem(ROLE_KEY, authData.role)
-  localStorage.setItem(
-    PERMISSIONS_KEY,
-    JSON.stringify(authData.permissions || []),
-  )
+  writeAuth(authData, authData.remember !== false)
   token.value = authData.token
   role.value = authData.role
   permissions.value = authData.permissions || []
@@ -94,9 +86,7 @@ function handleAuthenticated(authData) {
 /** Очищает локальные данные пользовательской сессии. */
 function clearSession() {
   closeMobileMenu()
-  localStorage.removeItem(TOKEN_KEY)
-  localStorage.removeItem(ROLE_KEY)
-  localStorage.removeItem(PERMISSIONS_KEY)
+  clearAuth()
   token.value = null
   role.value = null
   permissions.value = []
@@ -281,6 +271,7 @@ function updateSelectedComponentRows(rows) {
         :navigation-collapsed="isNavigationCollapsed"
         :rows="selectedComponentRows"
         :responsible-employee="selectedResponsibleEmployee"
+        @update:responsible-employee="updateResponsibleEmployee"
         :token="token"
         @back="openTable(currentTable)"
         @clear="selectedComponentRows = []"

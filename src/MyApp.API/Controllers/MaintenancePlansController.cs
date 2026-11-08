@@ -17,7 +17,7 @@ namespace MyApp.API.Controllers;
 [ApiController]
 [Route("api/maintenance-plans")]
 [Authorize(Policy = Permissions.VehiclesView)]
-public sealed partial class MaintenancePlansController(AppDbContext db, IVehicleService vehicles) : ControllerBase
+public sealed partial class MaintenancePlansController(AppDbContext db, IVehicleService vehicles, JwtOptions jwtOptions) : ControllerBase
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
     public sealed record SaveRequest(int Revision, MaintenancePlan Plan);

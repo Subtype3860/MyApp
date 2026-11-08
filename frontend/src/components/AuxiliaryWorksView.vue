@@ -5,12 +5,13 @@ import WorkParticipants from './WorkParticipants.vue'
 import RepairMediaViewer from './RepairMediaViewer.vue'
 import { cardMedia, defaultReportSelection, selectAuxiliaryWorks } from '../utils/shiftReport'
 import { convertImageToWebp } from '../utils/mediaUpload'
+import { readAuth } from '../utils/authStorage'
 
 const props = defineProps({ token: { type: String, required: true }, navigationCollapsed: { type: Boolean, required: true } })
 const profile = ref(null)
-const role = String(localStorage.getItem('myapp.userRole') || '').toLowerCase()
+const role = String(readAuth('role') || '').toLowerCase()
 let permissions = []
-try { permissions = JSON.parse(localStorage.getItem('myapp.userPermissions') || '[]') } catch { /* No menu permissions. */ }
+try { permissions = JSON.parse(readAuth('permissions') || '[]') } catch { /* No menu permissions. */ }
 const canRecord = role === 'administrator' || permissions.includes('menu.auxiliary_works')
 provide('workParticipation', { token: computed(() => props.token), userId: computed(() => canRecord ? profile.value?.id || '' : ''), canReview: computed(() => canRecord && profile.value?.position?.trim().toLocaleLowerCase('ru-RU') === 'механик') })
 const query = new URLSearchParams(window.location.search)
