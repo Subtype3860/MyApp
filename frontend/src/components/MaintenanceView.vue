@@ -64,7 +64,7 @@ loadTemplates()
 <template>
   <main class="home-page" :class="{ 'home-page--expanded': navigationCollapsed }">
     <header class="home-header">
-      <div><p class="eyebrow">ТЕХНИЧЕСКОЕ ОБСЛУЖИВАНИЕ</p><h1>Шаблоны ТО</h1></div>
+      <div><p class="eyebrow">МАТЕРИАЛЫ И РАБОТЫ</p><h1>Техническое обслуживание</h1></div>
       <button class="secondary-button" type="button" :disabled="selectedCount === 0" @click="$emit('show-selected')">
         Выбранные компоненты: {{ selectedCount }}
       </button>
