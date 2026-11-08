@@ -283,12 +283,18 @@ function updateSelectedComponentRows(rows) {
         @apply-template="applyMaintenanceTemplate"
         @show-selected="openSelectedComponents"
       />
-      <section
+      <main
         v-else-if="currentPage === 'maintenance-templates'"
-        class="macos-glass-panel settings-panel"
+        class="home-page"
+        :class="{ 'home-page--expanded': isNavigationCollapsed }"
       >
-        <MaintenanceTemplatesSettings :token="token" />
-      </section>
+        <header class="home-header">
+          <div><p class="eyebrow">ТАБЛИЦЫ</p><h1>Шаблоны ТО</h1></div>
+        </header>
+        <section class="macos-glass-panel settings-panel">
+          <MaintenanceTemplatesSettings :token="token" />
+        </section>
+      </main>
       <AuxiliaryWorksView v-else-if="currentPage === 'auxiliary-works'" :token="token" :navigation-collapsed="isNavigationCollapsed" />
 
       <VehicleJournalView
