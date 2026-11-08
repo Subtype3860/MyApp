@@ -14,7 +14,6 @@ import FleetRegionsView from './components/FleetRegionsView.vue'
 import TablesView from './components/TablesView.vue'
 import VehicleJournalView from './components/VehicleJournalView.vue'
 import AuxiliaryWorksView from './components/AuxiliaryWorksView.vue'
-import IdleSessionWarning from './components/IdleSessionWarning.vue'
 import TanksView from './components/TanksView.vue'
 import MechanicView from './components/MechanicView.vue'
 import { readAuth, writeAuth, clearAuth } from './utils/authStorage'
@@ -116,12 +115,6 @@ function handleSessionExpired(event) {
   clearSession()
 }
 
-/** Завершает сессию после превышения времени бездействия. */
-function handleIdleExpired() {
-  sessionExpiredMessage.value = ''
-  handleLogout()
-}
-
 window.addEventListener('myapp:session-expired', handleSessionExpired)
 onBeforeUnmount(() => {
   window.removeEventListener('myapp:session-expired', handleSessionExpired)
@@ -200,7 +193,6 @@ function updateSelectedComponentRows(rows) {
   />
 
   <div v-else class="app-shell">
-    <IdleSessionWarning @expired="handleIdleExpired" />
     <header class="mobile-topbar" :inert="mobileMenuOpen">
       <BrandIdentity />
       <button
