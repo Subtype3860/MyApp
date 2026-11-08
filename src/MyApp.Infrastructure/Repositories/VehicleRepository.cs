@@ -315,7 +315,7 @@ public sealed class VehicleRepository(
                 VehicleId = vehicleId.Value,
                 Response = new VehiclePartsRequestResponse(request.Id, request.VehicleId, request.DefectId,
                     request.RequestNumber, request.RequestDate, request.Description,
-                    request.RequiredParts, request.CreatedAt, request.CompletedDate)
+                    request.RequiredParts, request.CreatedAt, request.CompletedDate, request.IsOzch)
             }).ToListAsync(cancellationToken);
         var partsByVehicle = partsRequests.GroupBy(item => item.VehicleId)
             .ToDictionary(group => group.Key, group => (IReadOnlyList<VehiclePartsRequestResponse>)group.Select(item => item.Response).ToArray());
@@ -877,6 +877,7 @@ public sealed class VehicleRepository(
             RequestNumber = request.RequestNumber,
             Description = request.Description,
             RequiredParts = request.RequiredParts ?? string.Empty,
+            IsOzch = request.IsOzch,
             CompletedDate = request.CompletedDate,
             CreatedBy = createdBy
         };
@@ -908,7 +909,8 @@ public sealed class VehicleRepository(
                     .SetProperty(
                         partsRequest => partsRequest.RequiredParts,
                         request.RequiredParts ?? string.Empty)
-                    .SetProperty(partsRequest => partsRequest.CompletedDate, request.CompletedDate),
+                    .SetProperty(partsRequest => partsRequest.CompletedDate, request.CompletedDate)
+                    .SetProperty(partsRequest => partsRequest.IsOzch, request.IsOzch),
                 cancellationToken);
         return updatedRows > 0;
     }
@@ -930,7 +932,8 @@ public sealed class VehicleRepository(
                 request.Description,
                 request.RequiredParts,
                 request.CreatedAt,
-                request.CompletedDate))
+                request.CompletedDate,
+                request.IsOzch))
             .ToListAsync(cancellationToken);
     }
 
@@ -1282,7 +1285,8 @@ public sealed class VehicleRepository(
                         request.Description,
                         request.RequiredParts,
                         request.CreatedAt,
-                        request.CompletedDate)
+                        request.CompletedDate,
+                        request.IsOzch)
                 })
                 .ToListAsync(cancellationToken);
         var photosByWork = photos.GroupBy(photo => photo.WorkId)

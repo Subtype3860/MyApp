@@ -11,6 +11,7 @@ public sealed class VehiclePartsRequestRecord
     public string RequestNumber { get; set; } = string.Empty;
     public string Description { get; set; } = string.Empty;
     public string RequiredParts { get; set; } = string.Empty;
+    public bool IsOzch { get; set; }
     public Guid CreatedBy { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
 }

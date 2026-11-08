@@ -167,8 +167,8 @@ async function openPartsAction(action, row) {
   partsActionItemId.value = selectedPartsActionRow.value?.partsRequests[0]?.id ?? ''
   const item = selectedPartsActionItem.value
   partsActionDraft.value = action === 'add'
-    ? { date: new Date().toISOString().slice(0, 10), description: '', completed: false, completedDate: new Date().toISOString().slice(0, 10) }
-    : { date: item?.requestDate ?? '', description: item?.description || item?.requestNumber || '', completed: partsAction.value === 'complete' || Boolean(item?.completedDate), completedDate: item?.completedDate || new Date().toISOString().slice(0, 10) }
+    ? { date: new Date().toISOString().slice(0, 10), description: '', completed: false, completedDate: new Date().toISOString().slice(0, 10), ozch: false }
+    : { date: item?.requestDate ?? '', description: item?.description || item?.requestNumber || '', completed: partsAction.value === 'complete' || Boolean(item?.completedDate), completedDate: item?.completedDate || new Date().toISOString().slice(0, 10), ozch: Boolean(item?.isOzch) }
   await nextTick()
   partsActionDialog.value?.showModal()
 }
@@ -346,6 +346,7 @@ async function savePartsRequest(request) {
         requestNumber: draft.description.trim().slice(0, 100),
         description: draft.description.trim(),
         completedDate: draft.completed ? draft.completedDate : null,
+        isOzch: Boolean(draft.ozch),
       }),
       },
     )
@@ -379,6 +380,7 @@ async function savePartsRequest(request) {
         requestNumber: draft.description.trim().slice(0, 100),
         description: draft.description.trim(),
         completedDate: draft.completed ? draft.completedDate : null,
+        isOzch: Boolean(draft.ozch),
       },
     ]
     draft.description = ''
@@ -411,6 +413,7 @@ async function saveEditedPartsRequest(item) {
         description: draft.description.trim(),
         completedDate: draft.completed ? draft.completedDate : null,
         requiredParts: item.requiredParts || '',
+        isOzch: Boolean(draft.ozch),
       }),
     })
     const result = await response.json().catch(() => null)
@@ -429,6 +432,7 @@ async function saveEditedPartsRequest(item) {
     item.requestNumber = draft.description.trim().slice(0, 100)
     item.description = draft.description.trim()
     item.completedDate = draft.completed ? draft.completedDate : null
+    item.isOzch = Boolean(draft.ozch)
     successMessage.value = 'Заявка изменена.'
     return true
   } catch (error) {
@@ -1383,7 +1387,7 @@ function formatDateTime(value) {
                 >
                     <div class="parts-request-history__content">
                       <time :datetime="item.requestDate">{{ formatPartsRequestDate(item.requestDate) }}</time>
-                      <p>{{ item.description || item.requestNumber }}</p>
+                      <p><strong v-if="item.isOzch" class="parts-request-ozch">ОЗЧ</strong> {{ item.description || item.requestNumber }}</p>
                       <p v-if="item.completedDate" class="parts-request-completed">Выполнено · {{ formatPartsRequestDate(item.completedDate) }}</p>
                     </div>
                 </div>
@@ -1411,11 +1415,12 @@ function formatDateTime(value) {
             </div>
             <label v-if="partsAction !== 'add'">Заявка
               <select v-model="partsActionItemId" aria-label="Заявка" :disabled="isSaving" required>
-                <option v-for="item in selectedPartsActionRow?.partsRequests ?? []" :key="item.id" :value="item.id">{{ formatPartsRequestDate(item.requestDate) }} · {{ item.description || item.requestNumber }}</option>
+                <option v-for="item in selectedPartsActionRow?.partsRequests ?? []" :key="item.id" :value="item.id">{{ formatPartsRequestDate(item.requestDate) }} · {{ item.isOzch ? 'ОЗЧ · ' : '' }}{{ item.description || item.requestNumber }}</option>
               </select>
             </label>
             <template v-if="partsAction !== 'delete'">
               <label v-if="partsAction !== 'complete'">Дата заявки<input v-model="partsActionDraft.date" type="date" :disabled="isSaving" required /></label>
+              <label v-if="partsAction !== 'complete'" class="parts-ozch-toggle"><input v-model="partsActionDraft.ozch" type="checkbox" :disabled="isSaving" />ОЗЧ</label>
               <label v-if="partsAction !== 'complete'">Номер и описание заявки<textarea v-model="partsActionDraft.description" rows="5" maxlength="5000" :disabled="isSaving" required></textarea></label>
               <LocalRequestDraft v-if="partsAction !== 'complete'" :key="partsAction + partsActionRowId + partsActionItemId" :token="token" kind="parts" :source="partsActionDraft.description" :context="partsActionRowId" :disabled="isSaving" @apply="applyPartsDraft" />
               <label v-if="partsAction !== 'complete'" class="parts-completed-toggle"><input v-model="partsActionDraft.completed" type="checkbox" :disabled="isSaving" />Выполнено</label>

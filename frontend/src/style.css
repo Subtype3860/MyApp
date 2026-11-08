@@ -3770,3 +3770,8 @@ button {
 .parts-request-history__item { gap: 4px; padding-bottom: 6px; }
 .parts-request-history__content p { font-size: 13px; line-height: 1.45; }
 .parts-request-history__item time { margin-bottom: 2px; }
+
+/* ОЗЧ в форме и списке заявок на закупку */
+.parts-ozch-toggle { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 600; }
+.parts-ozch-toggle input { width: 18px; height: 18px; margin: 0; }
+.parts-request-ozch { color: #c58e32; }

@@ -185,7 +185,8 @@ public sealed record VehiclePartsRequest(
     DateOnly RequestDate,
     string Description = "",
     string? RequiredParts = null,
-    DateOnly? CompletedDate = null);
+    DateOnly? CompletedDate = null,
+    bool IsOzch = false);
 
 /// <summary>Реквизиты и состояние заявки на закупку запчастей.</summary>
 public sealed record VehiclePartsRequestResponse(
@@ -197,7 +198,8 @@ public sealed record VehiclePartsRequestResponse(
     string Description,
     string RequiredParts,
     DateTimeOffset CreatedAt,
-    DateOnly? CompletedDate = null);
+    DateOnly? CompletedDate = null,
+    bool IsOzch = false);
 
 /// <summary>Содержимое файла заявки на закупку запчастей.</summary>
 /// <summary>

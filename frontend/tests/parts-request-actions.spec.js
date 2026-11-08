@@ -81,10 +81,12 @@ test('request is attached to the vehicle and supports create, edit and delete', 
 
   let dialog = await action(page, state.row('v1'), 'Добавить заявку')
   await dialog.getByLabel('Дата заявки').fill('2026-10-11')
+  await dialog.getByLabel('ОЗЧ', { exact: true }).check()
   await dialog.getByLabel('Номер и описание заявки').fill('ЗЧ-2: фильтр — 2 шт.')
   await dialog.getByRole('button', { name: 'Сохранить', exact: true }).click()
   await expect(dialog).not.toBeVisible()
-  expect(state.mutations.at(-1)).toMatchObject({ method: 'POST', path: '/api/vehicles/v1/parts-requests' })
+  expect(state.mutations.at(-1)).toMatchObject({ method: 'POST', path: '/api/vehicles/v1/parts-requests', body: { isOzch: true } })
+  await expect(state.row('v1')).toContainText('ОЗЧ')
 
   dialog = await action(page, state.row('v1'), 'Редактировать заявку')
   await dialog.getByLabel('Заявка', { exact: true }).selectOption('p1')

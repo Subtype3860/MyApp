@@ -514,6 +514,7 @@ public sealed class DatabaseInitializer(AppDbContext db) : IDatabaseInitializer
             );
 
             ALTER TABLE vehicle_parts_requests ADD COLUMN IF NOT EXISTS completed_date date;
+            ALTER TABLE vehicle_parts_requests ADD COLUMN IF NOT EXISTS is_ozch boolean NOT NULL DEFAULT false;
             ALTER TABLE vehicle_parts_requests ADD COLUMN IF NOT EXISTS vehicle_id uuid
                 REFERENCES number_car(id) ON DELETE CASCADE;
             UPDATE vehicle_parts_requests AS request

@@ -146,6 +146,8 @@ namespace MyApp.Infrastructure.Db {
                     .HasColumnName("description");
                 entity.Property(x => x.RequiredParts)
                     .HasColumnName("required_parts");
+                entity.Property(x => x.IsOzch)
+                    .HasColumnName("is_ozch");
                 entity.Property(x => x.CreatedBy).HasColumnName("created_by");
                 entity.Property(x => x.CreatedAt)
                     .HasColumnName("created_at")
