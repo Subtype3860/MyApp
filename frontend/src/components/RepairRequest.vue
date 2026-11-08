@@ -3,14 +3,20 @@ import { inject } from 'vue'
 import WorkItem from './WorkItem.vue'
 import RepairActionsMenu from './RepairActionsMenu.vue'
 
-defineProps({
+const props = defineProps({
   isAdministrator: { type: Boolean, default: false },
   busy: { type: Boolean, default: false },
   request: { type: Object, required: true },
 })
 
 const canEditRequest = inject('canEditHistoryRequest', () => false)
-const emit = defineEmits(['view-media', 'manage-entry'])
+const emit = defineEmits(['view-media', 'manage-entry', 'attach-media'])
+/** Передаёт выбранные файлы для прикрепления к существующей заявке. */
+function attach(event) {
+  const files = [...event.target.files]
+  event.target.value = ''
+  if (files.length) emit('attach-media', props.request, files)
+}
 </script>
 
 <template>
@@ -34,8 +40,7 @@ const emit = defineEmits(['view-media', 'manage-entry'])
     <div
       v-if="request.photos?.length || request.videos?.length"
       class="repair-request__media"
-    >
-      <button
+    >      <button
         v-if="request.photos?.length"
         type="button"
         @click="emit('view-media', request.photos, 'image')"
@@ -49,6 +54,13 @@ const emit = defineEmits(['view-media', 'manage-entry'])
       >
         Просмотр видео ({{ request.videos.length }})
       </button>
+    </div>
+
+    <div v-if="isAdministrator || canEditRequest(request)" class="repair-request__media-actions">
+      <label class="repair-request__attach">
+        {{ busy ? 'Загрузка…' : 'Добавить фото/видео' }}
+        <input type="file" accept="image/*,video/*" multiple :disabled="busy" aria-label="Добавить медиа к заявке" @change="attach" />
+      </label>
     </div>
 
     <p v-if="!request.works?.length" class="repair-request__empty">
@@ -113,6 +125,11 @@ const emit = defineEmits(['view-media', 'manage-entry'])
   flex-wrap: wrap;
   gap: 0.55rem;
 }
+
+.repair-request__media-actions { display: flex; flex-wrap: wrap; gap: 0.55rem; }
+.repair-request__attach { position: relative; display: inline-flex; align-items: center; min-height: 36px; padding: 0.35rem 0.65rem; border: 1px dashed var(--border); border-radius: 0.6rem; color: var(--accent); font-size: 0.9rem; cursor: pointer; overflow: hidden; }
+.repair-request__attach input { position: absolute; inset: 0; width: 100%; opacity: 0; cursor: pointer; }
+.repair-request__attach:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 .repair-request__details {
   min-width: 0;

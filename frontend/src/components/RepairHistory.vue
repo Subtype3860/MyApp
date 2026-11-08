@@ -4,6 +4,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, provide, ref, watch } f
 import RepairMediaViewer from './RepairMediaViewer.vue'
 import VehicleCard from './VehicleCard.vue'
 import { forecastGroups } from '../utils/gtoForecast'
+import { convertImageToWebp } from '../utils/mediaUpload'
 
 const props = defineProps({
   token: { type: String, required: true },
@@ -125,6 +126,43 @@ async function saveEdit() {
   } catch (error) { mutationError.value = error.message }
   finally { mutationBusy.value = false }
 }
+/** Прикрепляет фото и видео к существующей заявке на ремонт. */
+async function attachMedia(request, files) {
+  if (mutationBusy.value) return
+  if (!(props.isAdministrator || canEditRequest(request))) return
+  mutationBusy.value = true
+  mutationError.value = ''
+  try {
+    for (const raw of files) {
+      const isVideo = raw.type.startsWith('video/')
+      if (!isVideo && !raw.type.startsWith('image/')) throw new Error('Допустимы фото и видео.')
+      let file = raw
+      if (!isVideo) {
+        try { file = await convertImageToWebp(raw, { maxSide: 1600 }) } catch { /* HEIC и подобные форматы отправляем как есть. */ }
+        if (file.size > 8_000_000) throw new Error('Фото до 8 МБ.')
+      } else if (file.size > 100_000_000) throw new Error('Видео до 100 МБ.')
+      const form = new FormData()
+      form.append('file', file)
+      const response = await fetch(`/api/vehicles/defects/${request.id}/${isVideo ? 'videos' : 'photos'}`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${props.token}` },
+        body: form,
+        signal: AbortSignal.timeout(180000),
+      })
+      if (!response.ok) {
+        const body = await response.json().catch(() => null)
+        throw new Error(body?.message || body?.detail || 'Не удалось добавить медиа к заявке.')
+      }
+    }
+    await search()
+  } catch (error) {
+    mutationError.value = error.name === 'TimeoutError'
+      ? 'Сервер не ответил при загрузке. Проверьте связь и повторите.'
+      : (error.message || 'Не удалось добавить медиа.')
+  } finally {
+    mutationBusy.value = false
+  }
+}
 const mutationBusy = ref(false)
 const mutationError = ref('')
 /** Передаёт выбранную запись истории для выполнения действия. */
@@ -229,7 +267,7 @@ function closeMedia() {
       <VehicleCard v-if="selectedHistory" :key="selectedHistory.vehicle.id"
         :vehicle="selectedHistory.vehicle" :requests="selectedHistory.requests"
         :is-administrator="isAdministrator" :busy="mutationBusy"
-        @manage-entry="manageEntry" @view-media="openMedia" />
+        @manage-entry="manageEntry" @view-media="openMedia" @attach-media="attachMedia" />
     </dialog>
     <dialog ref="editDialog" class="repair-history__edit-dialog" aria-labelledby="history-edit-title" @cancel="event => { if (mutationBusy) event.preventDefault(); else closeEdit() }">
       <form @submit.prevent="saveEdit">

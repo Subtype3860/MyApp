@@ -7,7 +7,7 @@ defineProps({
   requests: { type: Array, required: true },
 })
 
-const emit = defineEmits(['view-media', 'manage-entry'])
+const emit = defineEmits(['view-media', 'manage-entry', 'attach-media'])
 </script>
 
 <template>
@@ -24,6 +24,7 @@ const emit = defineEmits(['view-media', 'manage-entry'])
       :busy="busy"
       @manage-entry="(...args) => emit('manage-entry', ...args)"
         @view-media="(...args) => emit('view-media', ...args)"
+        @attach-media="(...args) => emit('attach-media', ...args)"
       />
     </div>
   </section>
