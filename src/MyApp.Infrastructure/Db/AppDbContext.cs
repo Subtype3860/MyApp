@@ -133,6 +133,7 @@ namespace MyApp.Infrastructure.Db {
                 entity.ToTable("vehicle_parts_requests");
                 entity.HasKey(x => x.Id);
                 entity.Property(x => x.Id).HasColumnName("id");
+                entity.Property(x => x.VehicleId).HasColumnName("vehicle_id");
                 entity.Property(x => x.DefectId).HasColumnName("defect_id");
                 entity.Property(x => x.RequestDate)
                     .HasColumnName("request_date")

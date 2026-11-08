@@ -305,12 +305,15 @@ public sealed class VehicleRepository(
 
         var partsRequests = await (
             from request in dbContext.VehiclePartsRequests.AsNoTracking()
-            join defect in dbContext.VehicleDefects.AsNoTracking() on request.DefectId equals defect.Id
-            where vehicleIds.Contains(defect.VehicleId) && request.CompletedDate == null
+            join defect in dbContext.VehicleDefects.AsNoTracking()
+                on request.DefectId equals (Guid?)defect.Id into defectRows
+            from defect in defectRows.DefaultIfEmpty()
+            let vehicleId = (Guid?)(request.VehicleId ?? defect.VehicleId)
+            where vehicleId != null && vehicleIds.Contains(vehicleId.Value) && request.CompletedDate == null
             orderby request.RequestDate, request.CreatedAt
             select new {
-                defect.VehicleId,
-                Response = new VehiclePartsRequestResponse(request.Id, request.DefectId,
+                VehicleId = vehicleId.Value,
+                Response = new VehiclePartsRequestResponse(request.Id, request.VehicleId, request.DefectId,
                     request.RequestNumber, request.RequestDate, request.Description,
                     request.RequiredParts, request.CreatedAt, request.CompletedDate)
             }).ToListAsync(cancellationToken);
@@ -849,23 +852,18 @@ public sealed class VehicleRepository(
             entity => entity.StoragePath,
             cancellationToken);
 
-    /// <summary>Добавляет заявку на закупку запчастей для неисправности.</summary>
+    /// <summary>Добавляет заявку на закупку запчастей, прикреплённую к технике.</summary>
     public async Task<Guid?> AddPartsRequestAsync(
-        Guid defectId,
+        Guid vehicleId,
         VehiclePartsRequest request,
         Guid createdBy,
         CancellationToken cancellationToken)
     {
         await using var transaction = await dbContext.Database
             .BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
-        var canAdd = await dbContext.VehicleDefects.AsNoTracking()
-            .AnyAsync(defect =>
-                defect.Id == defectId &&
-                dbContext.VehicleWorks.Any(work =>
-                    work.DefectId == defect.Id &&
-                    work.RepairStatus == "awaiting_parts"),
-                cancellationToken);
-        if (!canAdd)
+        var vehicleExists = await dbContext.Vehicles.AsNoTracking()
+            .AnyAsync(vehicle => vehicle.Id == vehicleId, cancellationToken);
+        if (!vehicleExists)
         {
             return null;
         }
@@ -873,7 +871,8 @@ public sealed class VehicleRepository(
         var entity = new VehiclePartsRequestRecord
         {
             Id = Guid.NewGuid(),
-            DefectId = defectId,
+            VehicleId = vehicleId,
+            DefectId = null,
             RequestDate = request.RequestDate,
             RequestNumber = request.RequestNumber,
             Description = request.Description,
@@ -924,6 +923,7 @@ public sealed class VehicleRepository(
             .OrderBy(request => request.CreatedAt)
             .Select(request => new VehiclePartsRequestResponse(
                 request.Id,
+                request.VehicleId,
                 request.DefectId,
                 request.RequestNumber,
                 request.RequestDate,
@@ -1268,13 +1268,14 @@ public sealed class VehicleRepository(
         var requests = defectIds.Length == 0
             ? []
             : await dbContext.VehiclePartsRequests.AsNoTracking()
-                .Where(request => defectIds.Contains(request.DefectId))
+                .Where(request => request.DefectId != null && defectIds.Contains(request.DefectId.Value))
                 .OrderBy(request => request.CreatedAt)
                 .Select(request => new
                 {
                     request.DefectId,
                     Response = new VehiclePartsRequestResponse(
                         request.Id,
+                        request.VehicleId,
                         request.DefectId,
                         request.RequestNumber,
                         request.RequestDate,

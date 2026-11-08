@@ -274,7 +274,7 @@ async function loadRepairSection() {
   }
 }
 
-/** Загружает заявки всего парка одним пакетным запросом. */
+/** Загружает заявки на закупку ЗЧ, прикреплённые к технике. */
 async function loadPartsRequests() {
   isLoading.value = true
   errorMessage.value = ''
@@ -284,39 +284,23 @@ async function loadPartsRequests() {
     if (!response.ok) throw new Error('Не удалось загрузить заявки на закупку ЗЧ. Попробуйте открыть раздел повторно.')
     for (const result of await response.json()) {
       const vehicle = result.vehicle
-      const works = [...(result.works ?? [])].sort(
-        (left, right) => new Date(right.completedAt || right.createdAt) - new Date(left.completedAt || left.createdAt)
-          || new Date(right.createdAt ?? 0) - new Date(left.createdAt ?? 0),
-      )
-      const worksByDefect = new Map()
-      for (const work of works) {
-        if (!work.defectId) continue
-        const stages = worksByDefect.get(work.defectId) ?? []
-        stages.push(work)
-        worksByDefect.set(work.defectId, stages)
-      }
-      for (const item of result.partsRequests ?? []) {
-        if (!worksByDefect.has(item.defectId)) worksByDefect.set(item.defectId, [])
-      }
-      for (const [defectId, stages] of worksByDefect) {
-        const defect = (result.defects ?? []).find(item => item.id === defectId)
-        const work = stages[0] ?? { id: defectId, defectId, description: defect?.symptoms ?? '', status: defect?.status ?? 'awaiting_parts' }
-        const history = [...new Map([...stages.flatMap(stage => stage.partsRequests ?? []), ...(result.partsRequests ?? []).filter(item => item.defectId === defectId)]
-          .map(item => [item.id, item])).values()]
-          .sort((left, right) => String(right.requestDate).localeCompare(String(left.requestDate)))
-        if (history.length || stages.some(stage => stage.status === 'awaiting_parts')) {
-          requests.push({
-            ...work,
-            partsRequests: history,
-            vehicleOperationalState: result.vehicle?.operationalState ?? vehicle.operationalState ?? (isCompletedStatus(work.status) ? "healthy" : "stopped"),
-            vehicleName: vehicle.modelName,
-            vehicleTypeName: vehicle.typeName,
-            vehicleStateNumber: vehicle.stateNumber,
-            vehicleGarageNumber: vehicle.garageNumber,
-          })
-        }
-      }
-
+      const legacy = (result.works ?? []).flatMap(work => work.partsRequests ?? [])
+      const history = [...new Map([...(result.partsRequests ?? []), ...legacy].map(item => [item.id, item])).values()]
+        .sort((left, right) => String(right.requestDate).localeCompare(String(left.requestDate)))
+      requests.push({
+        id: vehicle.id,
+        vehicleId: vehicle.id,
+        vehicleName: vehicle.modelName,
+        vehicleTypeName: vehicle.typeName,
+        vehicleStateNumber: vehicle.stateNumber,
+        vehicleGarageNumber: vehicle.garageNumber,
+        vehicleOperationalState: result.vehicle?.operationalState ?? vehicle.operationalState,
+        description: history.length ? history[0].requiredParts || history[0].description || '' : '',
+        status: '',
+        partsRequests: history,
+        photos: [],
+        videos: [],
+      })
     }
     partsRequests.value = requests
   } catch (error) {
@@ -339,7 +323,7 @@ async function savePartsRequest(request) {
   errorMessage.value = ''
   try {
     const response = await fetch(
-      `/api/vehicles/defects/${request.defectId}/parts-requests`,
+      `/api/vehicles/${request.vehicleId}/parts-requests`,
       {
       method: 'POST',
       headers: authHeaders(true),
@@ -375,7 +359,8 @@ async function savePartsRequest(request) {
       ...(request.partsRequests ?? []),
       {
         id: result?.id ?? result,
-        defectId: request.defectId,
+        vehicleId: request.vehicleId,
+        defectId: null,
         requestDate: draft.date,
         requestNumber: draft.description.trim().slice(0, 100),
         description: draft.description.trim(),
@@ -641,8 +626,7 @@ function repairStatus(status) {
     'исправна (готово)',
     'завершено',
   ].includes(normalized)) return 'done'
-  if (['awaiting_parts', 'waiting', 'ожидание запчастей'].includes(normalized)) return 'waiting'
-  if (['in_progress', 'in progress', 'repair', 'faulty', 'ремонт'].includes(normalized)) return 'repair'
+  if (['in_progress', 'in progress', 'repair', 'faulty', 'ремонт', 'awaiting_parts', 'ожидание запчастей'].includes(normalized)) return 'repair'
   return 'queue'
 }
 
@@ -655,7 +639,6 @@ function repairStatusLabel(status) {
   return {
     queue: 'Зарегистрирована',
     repair: 'В работе',
-    waiting: 'Ожидает запчасти',
     done: 'Выполнена',
   }[repairStatus(status)]
 }
@@ -794,13 +777,7 @@ async function completeRepair(defect) {
   successMessage.value = ''
   try {
     if (!draft.savedWorkId) {
-      const status = draft.status === 'done'
-        ? 'repaired'
-        : draft.status === 'waiting'
-          ? 'awaiting_parts'
-          : draft.status === 'queue'
-            ? 'faulty'
-            : 'faulty'
+      const status = draft.status === 'done' ? 'repaired' : 'faulty'
       const response = await fetch(`/api/vehicles/${defect.vehicleId}/works`, {
         method: 'POST',
         headers: authHeaders(true),
@@ -812,7 +789,7 @@ async function completeRepair(defect) {
           status,
           operationalState: draft.status === 'done' ? 'operating' : draft.operationalState,
           downtimeStartedAt: draft.status !== 'done' && draft.operationalState === 'stopped' ? new Date(draft.downtimeStartedAt).toISOString() : null,
-          requiredParts: status === 'awaiting_parts' ? 'Требуется определить' : null,
+          requiredParts: null,
         }),
       })
       const result = await response.json().catch(() => null)
@@ -1193,7 +1170,7 @@ function statusLabel(status) {
     faulty: 'Неисправна',
     repair: 'Ремонт',
     ремонт: 'Ремонт',
-    awaiting_parts: 'Ожидание запчастей',
+    awaiting_parts: 'Неисправна',
   }[status] ?? status ?? '—'
 }
 
@@ -1372,7 +1349,7 @@ function formatDateTime(value) {
                   <span class="parts-request-card__status" :class="`parts-request-card__status--${repairStatus(request.status)}`">{{ operationalStateLabel(request.vehicleOperationalState) }}</span>
                 </td>
                 <td class="parts-request-cell-cause" data-label="Требуется">
-                  <p class="parts-request-cause-text"><strong class="visually-hidden">Требуется: </strong>{{ request.description || 'Не указано, что требуется.' }}</p>
+                  <p class="parts-request-cause-text"><strong class="visually-hidden">Требуется: </strong>{{ request.description || (request.partsRequests?.length ? 'Не указано, что требуется.' : 'Заявок пока нет.') }}</p>
                   <div v-if="request.photos?.length || request.videos?.length" class="parts-request-media">
                     <button v-if="request.photos?.length" class="secondary-button" type="button" @click="openRepairMedia(workMediaForWorks([request], 'image'), 'image')">Фото · {{ request.photos.length }}</button>
                     <button v-if="request.videos?.length" class="secondary-button" type="button" @click="openRepairMedia(workMediaForWorks([request], 'video'), 'video')">Видео · {{ request.videos.length }}</button>
@@ -1538,7 +1515,6 @@ function formatDateTime(value) {
                   <fieldset class="repair-status-options" :disabled="isSaving || !!repairDraft(defect).savedWorkId">
                     <legend>Статус заявки после выполнения</legend>
                     <label><input v-model="repairDraft(defect).status" :name="`repair-status-${defect.id}`" type="radio" value="repair" /> В работе</label>
-                    <label><input v-model="repairDraft(defect).status" :name="`repair-status-${defect.id}`" type="radio" value="waiting" /> Ожидает запчасти</label>
                     <label><input v-model="repairDraft(defect).status" :name="`repair-status-${defect.id}`" type="radio" value="done" /> Выполнена</label>
                   </fieldset>
                   <label v-if="repairDraft(defect).status !== 'done'" class="vehicle-field">

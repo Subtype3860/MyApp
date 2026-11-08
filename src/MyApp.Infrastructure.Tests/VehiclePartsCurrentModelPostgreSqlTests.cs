@@ -22,24 +22,25 @@ public sealed class VehiclePartsCurrentModelPostgreSqlTests
         return new VehicleRepository(db, new MediaStorageService(options), options);
     }
 
-    /// <summary>Проверяет операции с заявкой на запчасти на этапе ожидания деталей.</summary>
+
+    /// <summary>Проверяет создание, изменение, чтение и удаление заявки, прикреплённой к технике.</summary>
     [Xunit.Fact]
     [Xunit.Trait("Category", "Integration")]
-    public async Task Awaiting_parts_allows_create_update_read_and_delete()
+    public async Task Vehicle_parts_request_allows_create_update_read_and_delete()
     {
         await using var fixture = await VehiclePartsPostgreSqlDatabase.CreateAsync();
-        var (_, defect, user) = await fixture.SeedAsync();
+        var (vehicle, _, user) = await fixture.SeedAsync();
         await using var db = fixture.CreateContext();
         var repository = Repo(db);
         var request = new VehiclePartsRequest(
             "PR-100", new DateOnly(2026, 10, 8), "Hydraulic filter", "2 pcs");
 
         var id = await repository.AddPartsRequestAsync(
-            defect, request, user, CancellationToken.None);
+            vehicle, request, user, CancellationToken.None);
         Xunit.Assert.NotNull(id);
-        var created = Xunit.Assert.Single(await repository.GetPartsRequestsAsync(
-            defect, CancellationToken.None));
-        Xunit.Assert.Equal(id.Value, created.Id);
+        var created = await db.VehiclePartsRequests.AsNoTracking()
+            .SingleAsync(item => item.Id == id, CancellationToken.None);
+        Xunit.Assert.Equal(vehicle, created.VehicleId);
         Xunit.Assert.Equal("PR-100", created.RequestNumber);
         Xunit.Assert.Equal("Hydraulic filter", created.Description);
 
@@ -51,8 +52,8 @@ public sealed class VehiclePartsCurrentModelPostgreSqlTests
         };
         Xunit.Assert.True(await repository.UpdatePartsRequestAsync(
             id.Value, revised, CancellationToken.None));
-        var changed = Xunit.Assert.Single(await repository.GetPartsRequestsAsync(
-            defect, CancellationToken.None));
+        var changed = await db.VehiclePartsRequests.AsNoTracking()
+            .SingleAsync(item => item.Id == id, CancellationToken.None);
         Xunit.Assert.Equal("PR-101", changed.RequestNumber);
         Xunit.Assert.Equal("3 pcs", changed.RequiredParts);
         Xunit.Assert.Equal(new DateOnly(2026, 10, 10), changed.CompletedDate);
@@ -61,58 +62,46 @@ public sealed class VehiclePartsCurrentModelPostgreSqlTests
             id.Value, CancellationToken.None));
         Xunit.Assert.False(await repository.DeletePartsRequestAsync(
             id.Value, CancellationToken.None));
-        Xunit.Assert.Empty(await repository.GetPartsRequestsAsync(
-            defect, CancellationToken.None));
     }
 
-    /// <summary>Проверяет обязательность этапа ожидания запчастей для создания заявки.</summary>
+    /// <summary>Проверяет, что заявку можно создать без этапа ремонта и статуса ожидания.</summary>
     [Xunit.Fact]
     [Xunit.Trait("Category", "Integration")]
-    public async Task Parts_request_requires_awaiting_parts_repair_status()
+    public async Task Parts_request_does_not_require_repair_stage()
     {
         await using var fixture = await VehiclePartsPostgreSqlDatabase.CreateAsync();
-        var (_, defect, user) = await fixture.SeedAsync("repaired");
+        var (vehicle, _, user) = await fixture.SeedAsync("repaired");
         await using var db = fixture.CreateContext();
         var repository = Repo(db);
         var request = new VehiclePartsRequest(
             "PR-200", new DateOnly(2026, 10, 8), "Belts", "2 pcs");
 
-        Xunit.Assert.Null(await repository.AddPartsRequestAsync(
-            defect, request, user, CancellationToken.None));
-        Xunit.Assert.Equal(0L, await fixture.CountAsync());
-
-        await fixture.ExecuteAsync(
-            "UPDATE vehicle_works SET repair_status = 'awaiting_parts' WHERE defect_id = @defect",
-            ("defect", defect));
         Xunit.Assert.NotNull(await repository.AddPartsRequestAsync(
-            defect, request, user, CancellationToken.None));
+            vehicle, request, user, CancellationToken.None));
         Xunit.Assert.Equal(1L, await fixture.CountAsync());
     }
 
-    /// <summary>Проверяет ограничение уникальности заявок на запчасти.</summary>
+    /// <summary>Проверяет, что одинаковые заявки для одной техники допускаются.</summary>
     [Xunit.Fact]
     [Xunit.Trait("Category", "Integration")]
-    public async Task Duplicate_parts_request_preserves_existing_uniqueness_rule()
+    public async Task Duplicate_vehicle_parts_requests_are_allowed()
     {
         await using var fixture = await VehiclePartsPostgreSqlDatabase.CreateAsync();
-        var (_, defect, user) = await fixture.SeedAsync();
+        var (vehicle, _, user) = await fixture.SeedAsync("repaired");
         var request = new VehiclePartsRequest(
             "PR-300", new DateOnly(2026, 10, 8), "Bearing", "1 pc");
 
         await using (var db = fixture.CreateContext())
         {
             Xunit.Assert.NotNull(await Repo(db).AddPartsRequestAsync(
-                defect, request, user, CancellationToken.None));
+                vehicle, request, user, CancellationToken.None));
         }
 
         await using (var db = fixture.CreateContext())
         {
-            var error = await Xunit.Assert.ThrowsAsync<DbUpdateException>(() =>
-                Repo(db).AddPartsRequestAsync(
-                    defect, request, user, CancellationToken.None));
-            var pg = Xunit.Assert.IsType<PostgresException>(error.InnerException);
-            Xunit.Assert.Equal(PostgresErrorCodes.UniqueViolation, pg.SqlState);
+            Xunit.Assert.NotNull(await Repo(db).AddPartsRequestAsync(
+                vehicle, request, user, CancellationToken.None));
         }
-        Xunit.Assert.Equal(1L, await fixture.CountAsync());
+        Xunit.Assert.Equal(2L, await fixture.CountAsync());
     }
 }

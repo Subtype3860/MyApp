@@ -107,7 +107,7 @@ internal sealed class VehiclePartsPostgreSqlDatabase : IAsyncDisposable
 
     /// <summary>Заполняет изолированную схему исходными данными теста.</summary>
     public async Task<(Guid Vehicle, Guid Defect, Guid User)> SeedAsync(
-        string workStatus = "awaiting_parts")
+        string workStatus = "faulty")
     {
         var vehicle = Guid.NewGuid();
         var defect = Guid.NewGuid();

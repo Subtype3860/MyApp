@@ -171,7 +171,7 @@ public interface IVehicleRepository
 
     /// <summary>Добавляет заявку на закупку запчастей для неисправности.</summary>
     Task<Guid?> AddPartsRequestAsync(
-        Guid defectId,
+        Guid vehicleId,
         VehiclePartsRequest request,
         Guid createdBy,
         CancellationToken cancellationToken);

@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using MyApp.API.Controllers;
 using MyApp.Application.DTO;
+using MyApp.Application.Security;
 using MyApp.Application.Services;
 using MyApp.Infrastructure.Db;
 using MyApp.Infrastructure.Db.Entities;
@@ -14,6 +15,7 @@ using Xunit;
 namespace MyApp.Infrastructure.Tests;
 public sealed class MaintenanceCardPersistenceTests
 {
+    private static readonly JwtOptions TestJwt = new(new string('k', 32), "test", "test");
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
     private static readonly Guid Actor=Guid.NewGuid();
     private static MaintenancePlansController Controller(AppDbContext db, Guid vehicle, bool manage=true)
@@ -24,7 +26,7 @@ public sealed class MaintenanceCardPersistenceTests
             nameof(IVehicleService.GetVehicleCatalogOptionsAsync)=>Task.FromResult(new VehicleCatalogOptions(manage,[],[],[])),
             _=>throw new InvalidOperationException(method.Name)
         };
-        return new(db,proxy) {ControllerContext=new() {HttpContext=new DefaultHttpContext {User=new(new ClaimsIdentity([new(ClaimTypes.NameIdentifier,Actor.ToString())],"test"))}}};
+        return new(db,proxy,TestJwt) {ControllerContext=new() {HttpContext=new DefaultHttpContext {User=new(new ClaimsIdentity([new(ClaimTypes.NameIdentifier,Actor.ToString())],"test"))}}};
     }
     [Fact] public async Task Viewers_cannot_mutate_cards_or_templates()
     {

@@ -190,7 +190,8 @@ public sealed record VehiclePartsRequest(
 /// <summary>Реквизиты и состояние заявки на закупку запчастей.</summary>
 public sealed record VehiclePartsRequestResponse(
     Guid Id,
-    Guid DefectId,
+    Guid? VehicleId,
+    Guid? DefectId,
     string RequestNumber,
     DateOnly RequestDate,
     string Description,

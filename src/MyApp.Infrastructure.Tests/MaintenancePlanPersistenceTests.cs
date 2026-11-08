@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using MyApp.API.Controllers;
 using MyApp.Application.DTO;
+using MyApp.Application.Security;
 using MyApp.Application.Services;
 using MyApp.Infrastructure.Db;
 using Xunit;
@@ -14,6 +15,7 @@ namespace MyApp.Infrastructure.Tests;
 
 public sealed class MaintenancePlanPersistenceTests
 {
+    private static readonly JwtOptions TestJwt = new(new string('k', 32), "test", "test");
     private static readonly Guid Actor = Guid.NewGuid();
     private static IVehicleService Service(Guid id, bool allowed)
     {
@@ -26,7 +28,7 @@ public sealed class MaintenancePlanPersistenceTests
         return proxy;
     }
     private static MaintenancePlansController Controller(AppDbContext db, Guid id, bool allowed=true) =>
-        new(db,Service(id,allowed)) {
+        new(db,Service(id,allowed),TestJwt) {
             ControllerContext=new ControllerContext { HttpContext=new DefaultHttpContext {
                 User=new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.NameIdentifier,Actor.ToString())],"test"))
             }}

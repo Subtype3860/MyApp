@@ -190,12 +190,12 @@ test('multiple procurement requests stay with their repair and mechanic note', (
   {id:'p1',defectId:'d1',description:'ЗЗП-42',requestDate:'2026-10-22'},
   {id:'p2',defectId:'d1',description:'ЗЗП-43',requestDate:'2026-10-23'},
  ]}])
- expect(row.currentNotes).toBe('Течь гидроцилиндра — (ЗЗП-42; Требуется: уплотнения) (ЗЗП-43; Требуется: уплотнения)\nОтказ двигателя')
+ expect(row.currentNotes).toBe('ОЗЧ Требуется: уплотнения — (ЗЗП-42) (ЗЗП-43)\nОтказ двигателя')
  row.note='Проверить утром'
- expect(forecastPdfNoteBlocks(row)[0].text).toContain('Течь гидроцилиндра (Проверить утром) — (ЗЗП-42;')
+ expect(forecastPdfNoteBlocks(row)[0].text).toContain('ОЗЧ Требуется: уплотнения (Проверить утром) — (ЗЗП-42)')
  expect(row.currentNotes).not.toContain('Проверить утром')
  row.forecast='healthy'
- expect(forecastNoteBlocks(row)[0].text).toBe('Течь гидроцилиндра — (ЗЗП-42; Требуется: уплотнения) (ЗЗП-43; Требуется: уплотнения)')
+ expect(forecastNoteBlocks(row)[0].text).toBe('ОЗЧ Требуется: уплотнения — (ЗЗП-42) (ЗЗП-43)')
 })
 
 test('procurement requirement uses the latest work shown in the procurement section', () => {
@@ -205,11 +205,11 @@ test('procurement requirement uses the latest work shown in the procurement sect
   {defectId:'d1',status:'in_progress',description:'Позднейший осмотр',createdAt:'2026-10-11T10:00:00Z'},
   {defectId:'d2',status:'awaiting_parts',description:'Другая машина'},
  ]}])
- expect(row.currentNotes).toBe('Первичная заявка: не заводится — (Купить насос; Требуется: Позднейший осмотр)')
+ expect(row.currentNotes).toBe('ОЗЧ Требуется: Позднейший осмотр — (Купить насос)')
 })
 test('procurement without works uses the same defect fallback as the procurement section', () => {
  const [row]=buildForecastRows([{vehicle:{id:'v1',operationalState:'stopped'},defects:[{id:'d1',symptoms:'Первичная заявка'}],partsRequests:[{id:'p1',defectId:'d1',description:'Купить насос'}]}])
- expect(row.currentNotes).toBe('Первичная заявка — (Купить насос; Требуется: Первичная заявка)')
+ expect(row.currentNotes).toBe('ОЗЧ Требуется: Первичная заявка — (Купить насос)')
 })
 
 test('completed repair request is not placed before procurement requests', () => {
@@ -447,10 +447,10 @@ for (const status of ['awaiting_parts', 'in_progress']) {
    { defectId: 'd1', status, description: 'уплотнения', createdAt: '2026-10-22T10:00:00Z' },
   ] }
   const [withoutRequest] = buildForecastRows([journal])
-  expect(withoutRequest.currentNotes).toBe(status === 'awaiting_parts' ? 'ОЗЧ Требуется: уплотнения' : 'Течь гидроцилиндра')
+  expect(withoutRequest.currentNotes).toBe('Течь гидроцилиндра')
   journal.partsRequests = [{ id: 'p1', defectId: 'd1', description: 'ЗЗП-42' }]
   const [withRequest] = buildForecastRows([journal])
-  expect(withRequest.currentNotes).toBe(status === 'awaiting_parts' ? 'ОЗЧ Требуется: уплотнения — (ЗЗП-42)' : 'Течь гидроцилиндра — (ЗЗП-42; Требуется: уплотнения)')
+  expect(withRequest.currentNotes).toBe('ОЗЧ Требуется: уплотнения — (ЗЗП-42)')
  })
 }
 

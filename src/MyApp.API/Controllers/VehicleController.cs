@@ -560,11 +560,11 @@ public class VehicleController : ControllerBase
         return this.ToActionResult(result, _ => NoContent());
     }
 
-    /// <summary>Добавляет заявку на закупку запчастей для неисправности.</summary>
-    [HttpPost("defects/{defectId:guid}/parts-requests")]
+    /// <summary>Добавляет заявку на закупку запчастей к технике.</summary>
+    [HttpPost("{vehicleId:guid}/parts-requests")]
     [IgnoreAntiforgeryToken]
     public async Task<IActionResult> AddPartsRequest(
-        Guid defectId,
+        Guid vehicleId,
         [FromBody] VehiclePartsRequest request,
         [FromServices] IVehicleService service,
         CancellationToken cancellationToken)
@@ -575,9 +575,9 @@ public class VehicleController : ControllerBase
         }
 
         var result = await service.AddPartsRequestAsync(
-            defectId, request, userId, cancellationToken);
+            vehicleId, request, userId, cancellationToken);
         return this.ToActionResult(result, id => Created(
-            $"/api/vehicles/defects/{defectId}/parts-requests/{id}",
+            $"/api/vehicles/{vehicleId}/parts-requests/{id}",
             new { id }));
     }
 

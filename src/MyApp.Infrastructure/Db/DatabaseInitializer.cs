@@ -514,6 +514,15 @@ public sealed class DatabaseInitializer(AppDbContext db) : IDatabaseInitializer
             );
 
             ALTER TABLE vehicle_parts_requests ADD COLUMN IF NOT EXISTS completed_date date;
+            ALTER TABLE vehicle_parts_requests ADD COLUMN IF NOT EXISTS vehicle_id uuid
+                REFERENCES number_car(id) ON DELETE CASCADE;
+            UPDATE vehicle_parts_requests AS request
+            SET vehicle_id = defect.vehicle_id
+            FROM vehicle_defects AS defect
+            WHERE request.vehicle_id IS NULL AND defect.id = request.defect_id;
+            ALTER TABLE vehicle_parts_requests ALTER COLUMN defect_id DROP NOT NULL;
+            CREATE INDEX IF NOT EXISTS ix_vehicle_parts_requests_vehicle_created
+                ON vehicle_parts_requests (vehicle_id, created_at);
             ALTER TABLE vehicle_defects ALTER COLUMN downtime_started_at DROP NOT NULL;
             ALTER TABLE vehicle_defects ALTER COLUMN downtime_started_at DROP DEFAULT;
             ALTER TABLE vehicle_defects ADD COLUMN IF NOT EXISTS operational_state text NOT NULL DEFAULT 'stopped';
@@ -565,16 +574,27 @@ public sealed class DatabaseInitializer(AppDbContext db) : IDatabaseInitializer
                 completed_at = created_at
             WHERE performed_by IS NULL;
 
+            UPDATE vehicle_works
+            SET repair_status = 'faulty'
+            WHERE repair_status = 'awaiting_parts';
+
             DO $$
             BEGIN
+                IF EXISTS (
+                    SELECT 1 FROM pg_constraint
+                    WHERE conname = 'ck_vehicle_works_repair_status'
+                      AND conrelid = 'vehicle_works'::regclass
+                      AND pg_get_constraintdef(oid) LIKE '%awaiting_parts%'
+                ) THEN
+                    ALTER TABLE vehicle_works DROP CONSTRAINT ck_vehicle_works_repair_status;
+                END IF;
                 IF NOT EXISTS (
                     SELECT 1 FROM pg_constraint
                     WHERE conname = 'ck_vehicle_works_repair_status'
                 ) THEN
                     ALTER TABLE vehicle_works
                     ADD CONSTRAINT ck_vehicle_works_repair_status
-                    CHECK (repair_status IN (
-                        'repaired', 'faulty', 'awaiting_parts'));
+                    CHECK (repair_status IN ('repaired', 'faulty'));
                 END IF;
             END
             $$;

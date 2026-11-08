@@ -188,9 +188,9 @@ public interface IVehicleService
     Task<ServiceResult<bool>> DeleteWorkVideoAsync(
         Guid videoId, Guid userId, CancellationToken cancellationToken);
 
-    /// <summary>Добавляет заявку на закупку запчастей для неисправности.</summary>
+    /// <summary>Добавляет заявку на закупку запчастей для техники.</summary>
     Task<ServiceResult<Guid>> AddPartsRequestAsync(
-        Guid defectId, VehiclePartsRequest request, Guid userId,
+        Guid vehicleId, VehiclePartsRequest request, Guid userId,
         CancellationToken cancellationToken);
     /// <summary>Обновляет реквизиты и состояние заявки на закупку запчастей.</summary>
     Task<ServiceResult<bool>> UpdatePartsRequestAsync(

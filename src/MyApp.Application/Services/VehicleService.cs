@@ -478,6 +478,8 @@ public sealed class VehicleService(
         request = request with { DefectId = defectId };
         var cause = Clean(request.Cause);
         var status = Clean(request.Status).ToLowerInvariant();
+        // Старый клиент мог прислать «awaiting_parts»; статус заменён заявкой на закупку ЗЧ.
+        if (status == "awaiting_parts") status = "faulty";
         request = request with
         {
             Description = Clean(request.Description),
@@ -606,9 +608,9 @@ public sealed class VehicleService(
             "work-video", videoId, userId,
             repository.DeleteWorkVideoAsync, cancellationToken);
 
-    /// <summary>Добавляет заявку на закупку запчастей для неисправности.</summary>
+    /// <summary>Добавляет заявку на закупку запчастей для техники.</summary>
     public async Task<ServiceResult<Guid>> AddPartsRequestAsync(
-        Guid defectId,
+        Guid vehicleId,
         VehiclePartsRequest request,
         Guid userId,
         CancellationToken cancellationToken)
@@ -626,7 +628,7 @@ public sealed class VehicleService(
         }
 
         var id = await repository.AddPartsRequestAsync(
-            defectId,
+            vehicleId,
             request with
             {
                 RequestNumber = Clean(request.RequestNumber),
@@ -637,8 +639,7 @@ public sealed class VehicleService(
             cancellationToken);
         return id is Guid value
             ? ServiceResult<Guid>.Success(value)
-            : ServiceResult<Guid>.Conflict(
-                "Заявку можно добавить только к неисправности со статусом awaiting_parts.");
+            : ServiceResult<Guid>.NotFound();
     }
 
     /// <summary>Обновляет реквизиты и состояние заявки на закупку запчастей.</summary>
@@ -792,12 +793,9 @@ public sealed class VehicleService(
         var locationError = Clean(request.Location) is not ("" or "КАРЬЕР" or "РММ")
             ? "Место работ должно быть КАРЬЕР или РММ." : null;
         return description ?? failure ?? repairDateTimeError ?? operationalError ?? locationError ??
-            (status is not ("repaired" or "faulty" or "awaiting_parts")
-                ? "Статус должен быть repaired, faulty или awaiting_parts."
-                : status == "awaiting_parts" &&
-                  Clean(request.RequiredParts).Length == 0
-                    ? "Для статуса awaiting_parts укажите необходимые запчасти."
-                    : null);
+            (status is not ("repaired" or "faulty")
+                ? "Статус должен быть repaired или faulty."
+                : null);
     }
 
     /// <summary>Проверяет обязательность и допустимую длину текстового поля.</summary>

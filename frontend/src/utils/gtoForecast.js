@@ -33,10 +33,13 @@ export function buildForecastRows(journals) {
       .sort((a, b) => new Date(b.completedAt || b.createdAt || 0) - new Date(a.completedAt || a.createdAt || 0)
         || new Date(b.createdAt || 0) - new Date(a.createdAt || 0))
     for (const stage of stages) if (!partsStages.has(stage.defectId)) partsStages.set(stage.defectId, stage)
+    const openRequests = [...requests.values()]
     const noteBlocks = defects.flatMap(defect => {
       const stage = partsStages.get(defect.id)
-      const waiting = (stage?.status ?? defect.status) === 'awaiting_parts'
-      const text = waiting ? `ОЗЧ Требуется: ${String(stage?.description ?? '').trim() || 'Описание не указано'}` : defect.symptoms || defect.failureReason
+      const waiting = openRequests.some(request => !request.defectId || request.defectId === defect.id)
+      const text = waiting
+        ? `ОЗЧ Требуется: ${String(stage?.description ?? defect.symptoms ?? defect.failureReason ?? '').trim() || 'Описание не указано'}`
+        : defect.symptoms || defect.failureReason
       return text ? [{ text, defectId: defect.id, kind: 'defect', bold: true, divider: false }] : []
     })
     for (const request of requests.values()) {
@@ -56,7 +59,9 @@ export function buildForecastRows(journals) {
       }).join('; ')
       const details = []
       if (body) details.push({ text: body })
-      if (required && !defects.some(defect => defect.id === request.defectId && (stage?.status ?? defect.status) === 'awaiting_parts')) details.push({ text: `Требуется: ${required}`, kind: 'required', italic: true })
+      const coveredByOzch = Boolean(request.defectId) && defects.some(defect => defect.id === request.defectId)
+        && openRequests.some(item => !item.defectId || item.defectId === request.defectId)
+      if (required && !coveredByOzch) details.push({ text: `Требуется: ${required}`, kind: 'required', italic: true })
       if (!details.length) continue
       let block = request.defectId ? noteBlocks.find(item => item.defectId === request.defectId) : null
       if (!block) {
