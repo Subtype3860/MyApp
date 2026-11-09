@@ -99,12 +99,34 @@ public static class DailyHoursPlanner
             return (rows, "Для сравнения ДВС нужны предыдущие показания обоих двигателей на одну дату.", null);
         if (rows.Any(r => r.EngineHours is null && blocked.Contains((vehicleId, r.EngineNumber))))
             return (rows, "Простой после ошибочной записи: требуется верная пара показаний.", null);
-        var delta = rows.Select((r, i) => (r.EngineHours ?? prior[i][0].Value) - prior[i][0].Value).Max();
         var days = date.DayNumber - prior[0][0].Key.DayNumber;
-        if (delta < 0)
+        var deltas = rows.Select((r, i) => (r.EngineHours ?? prior[i][0].Value) - prior[i][0].Value).ToArray();
+        if (deltas.Any(d => d < 0))
             return (rows, "Оба счётчика ДВС уменьшились. Проверьте показания или замену двигателей.", null);
-        var estimated = delta > 24m * days;
-        if (estimated) delta = 22m * days;
+        var limit = 24m * days;
+        var norm = 22m * days;
+        var spread = Math.Abs(deltas[0] - deltas[1]);
+        var withinLimit = deltas.Select(d => d <= limit).ToArray();
+        // Показания двух ДВС одной машины растут почти одинаково: расхождение до 2 м/ч — норма.
+        if (withinLimit.All(x => x) && spread <= 2m) return (rows, null, null);
+        decimal delta;
+        string reason;
+        if (withinLimit.Count(x => x) == 1)
+        {
+            var index = Array.IndexOf(withinLimit, true);
+            delta = deltas[index];
+            reason = $"Расхождение показаний ДВС {spread} м/ч; принят прирост по ДВС №{index + 1}.";
+        }
+        else if (withinLimit.All(x => x))
+        {
+            delta = deltas.OrderBy(d => Math.Abs(d - norm)).ThenBy(d => d).First();
+            reason = $"Расхождение показаний ДВС {spread} м/ч; принят прирост, ближайший к норме 22 м/ч в сутки.";
+        }
+        else
+        {
+            delta = norm;
+            reason = "Прирост обоих ДВС превышает 24 м/ч в сутки; применена расчётная норма 22 м/ч в сутки.";
+        }
         var adjusted = rows.Select((r, i) => r with { EngineHours = prior[i][0].Value + delta }).ToArray();
         for (var i = 0; i < adjusted.Length; i++)
         {
@@ -115,7 +137,7 @@ public static class DailyHoursPlanner
         }
         var changed = rows.Where((r, i) => (r.EngineHours ?? prior[i][0].Value) != adjusted[i].EngineHours).Any();
         var message = changed
-            ? (estimated ? "Превышен порог 24 м/ч в сутки; применена расчётная норма 22 м/ч в сутки. " : "Согласовано по большему приросту ДВС. ") +
+            ? reason + " " +
               $"Прирост обоих ДВС: +{delta} м/ч за {days} дн. " +
               $"Исходные ДВС1/ДВС2: {rows[0].EngineHours?.ToString() ?? "пусто"}/{rows[1].EngineHours?.ToString() ?? "пусто"}; " +
               $"итог: {adjusted[0].EngineHours}/{adjusted[1].EngineHours}."

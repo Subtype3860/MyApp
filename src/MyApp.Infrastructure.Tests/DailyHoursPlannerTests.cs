@@ -55,6 +55,28 @@ public sealed class DailyHoursPlannerTests
         Assert.Equal("error", Assert.Single(Plan([Row(2, 125)], History(1, 100)).Rows).Status);
         Assert.Equal("error", Assert.Single(Plan([Row(2, 125)], History(3, 120)).Rows).Status);
     }
+    /// <summary>Проверяет допуск на расхождение прироста двух ДВС и выбор достоверного двигателя.</summary>
+    [Fact] public void Engine_deltas_within_tolerance_are_saved_as_is()
+    {
+        var result = Plan([Row(2, 123), Row(2, 522, 2)], History(1, 100), History(1, 500, 2));
+        Assert.Equal(new decimal?[] {123, 522}, result.Rows.Select(r => r.EngineHours));
+        Assert.All(result.Rows, r => Assert.Equal("ready", r.Status));
+    }
+    /// <summary>Проверяет, что при расхождении ДВС берётся прирост двигателя в пределах нормы.</summary>
+    [Fact] public void Outlier_engine_uses_reliable_engine_delta()
+    {
+        var result = Plan([Row(2, 124), Row(2, 534, 2)], History(1, 100), History(1, 500, 2));
+        Assert.Equal(new decimal?[] {124, 524}, result.Rows.Select(r => r.EngineHours));
+        Assert.All(result.Rows, r => Assert.Equal("ready", r.Status));
+        Assert.Contains("ДВС №1", result.Rows[0].Message);
+    }
+    /// <summary>Проверяет применение расчётной нормы, когда оба ДВС превышают порог.</summary>
+    [Fact] public void Both_engines_over_limit_use_norm()
+    {
+        var result = Plan([Row(2, 130), Row(2, 540, 2)], History(1, 100), History(1, 500, 2));
+        Assert.Equal(new decimal?[] {122, 522}, result.Rows.Select(r => r.EngineHours));
+        Assert.All(result.Rows, r => Assert.Equal("ready", r.Status));
+    }
     /// <summary>Проверяет сопоставление по бортовому номеру и отклонение неоднозначных совпадений.</summary>
     [Fact] public void Matches_number_only_and_rejects_ambiguous_numbers()
     {
