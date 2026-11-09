@@ -55,13 +55,15 @@ public sealed class SanyClient(SanyOptions options)
     {
         using var request = new HttpRequestMessage(HttpMethod.Get,
             $"{options.NormalizedBaseUrl}/customer/user/v2/kaptcha.jpg");
+        request.Headers.TryAddWithoutValidation("Origin", "https://sis-global.sanygroup.com");
+        request.Headers.TryAddWithoutValidation("User-Agent",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36");
         using var response = await connection.Client.SendAsync(request, cancellationToken);
         response.EnsureSuccessStatusCode();
-        if (!response.Headers.TryGetValues("kaptchaid", out var values))
-            throw new InvalidOperationException("Портал SANY не вернул идентификатор капчи.");
-        var captchaId = values.FirstOrDefault()?.Trim() ?? "";
-        if (captchaId.Length == 0)
-            throw new InvalidOperationException("Портал SANY вернул пустой идентификатор капчи.");
+        // Заголовок kaptchaid не обязателен: портал проверяет ответ капчи по своему состоянию.
+        var captchaId = response.Headers.TryGetValues("kaptchaid", out var values)
+            ? values.FirstOrDefault()?.Trim() ?? ""
+            : "";
         connection.CaptchaId = captchaId;
         return new SanyCaptcha(await response.Content.ReadAsByteArrayAsync(cancellationToken), captchaId);
     }
@@ -70,14 +72,14 @@ public sealed class SanyClient(SanyOptions options)
     public async Task<SanyLoginResult> LoginAsync(SanyConnection connection, string captchaCode,
         int tokenHours, CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(connection.CaptchaId))
-            return new SanyLoginResult(false, null, "Сначала запросите капчу.");
         if (string.IsNullOrWhiteSpace(connection.Account) || string.IsNullOrWhiteSpace(connection.Password))
             return new SanyLoginResult(false, null, "Не указаны логин и пароль SANY.");
 
         using var request = new HttpRequestMessage(HttpMethod.Post,
             $"{options.NormalizedBaseUrl}/customer/user/onlogin?captchaCode={Uri.EscapeDataString(captchaCode.Trim())}&language=ru");
-        request.Headers.TryAddWithoutValidation("captchaCodeId", connection.CaptchaId);
+        if (!string.IsNullOrWhiteSpace(connection.CaptchaId))
+            request.Headers.TryAddWithoutValidation("captchaCodeId", connection.CaptchaId);
+        request.Headers.TryAddWithoutValidation("Origin", "https://sis-global.sanygroup.com");
         request.Content = JsonContent.Create(new { account = connection.Account, password = connection.Password });
         using var response = await connection.Client.SendAsync(request, cancellationToken);
         var body = await response.Content.ReadAsStringAsync(cancellationToken);
@@ -92,10 +94,17 @@ public sealed class SanyClient(SanyOptions options)
             : null;
         if (string.IsNullOrWhiteSpace(token))
         {
-            var message = root.TryGetProperty("message", out var messageElement)
-                ? messageElement.GetString()
-                : null;
-            return new SanyLoginResult(false, null, message ?? "Портал SANY не вернул токен доступа.");
+            var code = root.TryGetProperty("code", out var codeElement) ? codeElement.ToString() : "";
+            var portalMessage = root.TryGetProperty("message", out var messageElement)
+                ? messageElement.GetString() ?? ""
+                : "";
+            var message = portalMessage.Contains("验证码", StringComparison.Ordinal) ||
+                          portalMessage.Contains("подтверждения", StringComparison.OrdinalIgnoreCase)
+                ? "Неверный код с картинки. Запросите капчу заново и повторите ввод."
+                : code == "3"
+                    ? "Портал SANY отклонил логин или пароль. Проверьте данные учётной записи."
+                    : "Портал SANY не вернул токен доступа.";
+            return new SanyLoginResult(false, null, message);
         }
 
         connection.Token = token;
