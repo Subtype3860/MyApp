@@ -107,4 +107,19 @@ public sealed class SanyClient(SanyOptions options)
         connection.ExpiresAt = DateTimeOffset.UtcNow.AddHours(Math.Clamp(tokenHours, 1, 24));
         return new SanyLoginResult(true, token, null);
     }
+
+    /// <summary>Выполняет запрос к разрешённому разделу портала от имени подключения.</summary>
+    public async Task<(int Status, string Body)> SendAsync(SanyConnection connection, string path,
+        object? body, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(connection.Token))
+            return (401, "{\"message\":\"Нет активного подключения к SANY.\"}");
+        using var request = new HttpRequestMessage(HttpMethod.Post, $"{options.NormalizedBaseUrl}{path}");
+        request.Headers.TryAddWithoutValidation("Authorization", connection.Token);
+        if (!string.IsNullOrWhiteSpace(connection.UserId))
+            request.Headers.TryAddWithoutValidation("Authorization-userId", connection.UserId);
+        if (body is not null) request.Content = JsonContent.Create(body);
+        using var response = await connection.Client.SendAsync(request, cancellationToken);
+        return ((int)response.StatusCode, await response.Content.ReadAsStringAsync(cancellationToken));
+    }
 }

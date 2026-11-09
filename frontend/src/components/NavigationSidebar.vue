@@ -126,7 +126,7 @@ watch(
   () => props.activePage,
   (page) => {
     if (!['vehicles', 'auxiliary-works'].includes(page)) isVehiclesExpanded.value = false
-    if (!['tables', 'selected-components', 'maintenance', 'maintenance-templates'].includes(page)) {
+    if (!['tables', 'selected-components', 'maintenance', 'maintenance-templates', 'sany'].includes(page)) {
       isTablesExpanded.value = false
     }
     if (page !== 'settings') isSettingsExpanded.value = false
@@ -256,6 +256,7 @@ function toggleGames() {
             'selected-components',
             'maintenance',
             'maintenance-templates',
+            'sany',
           ].includes(activePage),
         }"
         type="button"
@@ -337,6 +338,10 @@ function toggleGames() {
           :class="{ 'nav-submenu-link--active': activePage === 'maintenance-templates' }" type="button"
           :aria-current="activePage === 'maintenance-templates' ? 'page' : undefined"
           @click="$emit('navigate', 'maintenance-templates')">Шаблоны ТО</button>
+        <button v-if="canView('menu.tables')" class="nav-submenu-link"
+          :class="{ 'nav-submenu-link--active': activePage === 'sany' }" type="button"
+          :aria-current="activePage === 'sany' ? 'page' : undefined"
+          @click="$emit('navigate', 'sany')">SANY: запчасти</button>
       </div>
       <button
         v-if="(canView('menu.vehicles') || canView('menu.maintenance') || canView('menu.auxiliary_works'))"

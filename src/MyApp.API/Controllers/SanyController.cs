@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using MyApp.Application.Security;
@@ -8,7 +9,7 @@ namespace MyApp.API.Controllers;
 /// <summary>Подключение к порталу SANY SIS: капча и вход по логину и паролю.</summary>
 [ApiController]
 [Route("api/sany")]
-[Authorize(Policy = Permissions.VehiclesView)]
+[Authorize]
 public sealed class SanyController(SanySessionStore store, SanyClient client, IConfiguration configuration) : ControllerBase
 {
     public sealed record ConnectRequest(string Account, string Password);
@@ -76,6 +77,53 @@ public sealed class SanyController(SanySessionStore store, SanyClient client, IC
 
         Attempts.Remove(id);
         return Ok(new { connected = true, expiresAt = connection.ExpiresAt });
+    }
+
+    /// <summary>Разделы портала, к которым разрешено обращаться через шлюз.</summary>
+    private static readonly HashSet<string> AllowedPaths =
+    [
+        "/customer/equipmentInfo/queryByCondition",
+        "/customer/equipmentInfo/queryByEquipment",
+        "/customer/equipmentInfo/queryByEquipmentNew",
+        "/customer/equipmentInfo/childrenBomPage",
+        "/customer/equipmentInfo/queryChildren",
+        "/bom-server/agentEquipment/getEquipmentDetail",
+        "/bom-server/manual/v2/queryByEquitmentCodeAndLanguageCategory",
+        "/admin-server/language/languageList",
+    ];
+
+    public sealed record QueryRequest(string Path, JsonElement? Body);
+
+    /// <summary>Проксирует запрос к разрешённому разделу портала.</summary>
+    [HttpPost("session/{id}/query")]
+    [RequestSizeLimit(64 * 1024)]
+    public async Task<IActionResult> Query(string id, [FromBody] QueryRequest request, CancellationToken ct)
+    {
+        var connection = store.Find(id);
+        if (connection is null) return NotFound(new { message = "Сессия SANY истекла. Подключитесь заново." });
+        if (!connection.Connected) return Unauthorized(new { message = "Сначала войдите в SANY." });
+        if (string.IsNullOrWhiteSpace(request.Path) || !AllowedPaths.Contains(request.Path))
+            return BadRequest(new { message = "Этот раздел портала недоступен через приложение." });
+
+        object? body = request.Body is { ValueKind: JsonValueKind.Object or JsonValueKind.Array } element
+            ? element
+            : null;
+        try
+        {
+            var (status, text) = await client.SendAsync(connection, request.Path, body, ct);
+            if (status is 401 or 403)
+            {
+                store.Remove(id);
+                return Unauthorized(new { message = "Портал SANY завершил сессию. Подключитесь заново." });
+            }
+            if (status is < 200 or >= 300)
+                return StatusCode(502, new { message = $"Портал SANY вернул ошибку {(status)}." });
+            return Content(text, "application/json");
+        }
+        catch (Exception)
+        {
+            return StatusCode(502, new { message = "Портал SANY не ответил на запрос." });
+        }
     }
 
     /// <summary>Возвращает состояние подключения.</summary>
