@@ -98,12 +98,14 @@ public sealed class SanyClient(SanyOptions options)
             var portalMessage = root.TryGetProperty("message", out var messageElement)
                 ? messageElement.GetString() ?? ""
                 : "";
-            var message = portalMessage.Contains("验证码", StringComparison.Ordinal) ||
-                          portalMessage.Contains("подтверждения", StringComparison.OrdinalIgnoreCase)
-                ? "Неверный код с картинки. Запросите капчу заново и повторите ввод."
+            var isCaptchaError = portalMessage.Contains("验证码", StringComparison.Ordinal) ||
+                                 portalMessage.Contains("подтверждения", StringComparison.OrdinalIgnoreCase);
+            var reason = portalMessage.Length > 0 ? $" Ответ портала: {portalMessage} (код {code})." : "";
+            var message = isCaptchaError
+                ? "Неверный код с картинки. Запросите капчу заново и повторите ввод." + reason
                 : code == "3"
-                    ? "Портал SANY отклонил логин или пароль. Проверьте данные учётной записи."
-                    : "Портал SANY не вернул токен доступа.";
+                    ? "Портал SANY отклонил логин или пароль. Проверьте данные учётной записи." + reason
+                    : "Портал SANY не вернул токен доступа." + reason;
             return new SanyLoginResult(false, null, message);
         }
 
