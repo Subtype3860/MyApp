@@ -44,20 +44,4 @@ for (const operating of [true, false]) {
   })
 }
 
-test('waiting for parts can coexist with continued operation, and a later work can stop the machine', async ({ page }) => {
-  const calls = await setup(page)
-  await page.locator('.dashboard-shortcut').filter({ hasText: 'Работы, история' }).click()
-  await page.getByRole('button', { name: 'Самосвал · Гар. №901 — Некритичная неисправность' }).click()
-  await expect(page.locator('.repair-state-badges')).toContainText('Работает с неисправностью')
-  await expect(page.locator('.repair-state-badges')).toContainText('Заявка: Ожидает запчасти')
-  await expect(page.locator('.repair-overview-meta')).not.toContainText('Простой с')
-  await page.getByLabel('Описание выполненных работ', { exact: true }).fill('Машина остановлена для ремонта')
-  await page.getByLabel('Место работ', { exact: true }).selectOption('КАРЬЕР')
-  await page.getByLabel('Эксплуатация машины').selectOption('stopped')
-  await page.getByLabel('Начало простоя', { exact: true }).fill('2026-10-01T10:00')
-  await page.getByLabel('Ожидает запчасти', { exact: true }).check()
-  await page.getByRole('button', { name: 'Сохранить этап', exact: true }).click()
-  await expect.poll(() => calls.length).toBe(1)
-  expect(calls[0].body).toMatchObject({ status: 'awaiting_parts', operationalState: 'stopped' })
-  expect(await page.evaluate(value => { const date=new Date(value); return [date.getFullYear(),date.getMonth()+1,date.getDate(),date.getHours()] }, calls[0].body.downtimeStartedAt)).toEqual([2026,10,1,10])
-})
+

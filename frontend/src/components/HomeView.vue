@@ -145,14 +145,15 @@ async function loadVehicles() {
           ? 'Нет доступа к реестру техники.'
           : 'Не удалось загрузить технику. Попробуйте ещё раз.',
       )
-    if (!regionResponse.ok || !assignmentResponse.ok) throw new Error('Не удалось загрузить участки и закрепления техники. Повторите обновление.')
-    const [data, regionData, assignmentData] = await Promise.all([response.json(), regionResponse.json(), assignmentResponse.json()])
+    const [data, regionData, assignmentData] = await Promise.all([response.json(),
+      regionResponse.ok ? regionResponse.json().catch(() => null) : null,
+      assignmentResponse.ok ? assignmentResponse.json().catch(() => null) : null])
     if (!Array.isArray(data))
       throw new Error('Сервер вернул неверный формат данных.')
-    if (!Array.isArray(regionData?.regions) || !Array.isArray(assignmentData)) throw new Error('Сервер вернул неверный формат участков.')
+    // Участки и закрепления — вспомогательные данные: без доступа к ним реестр всё равно показываем.
     vehicles.value = data
-    regions.value = regionData.regions
-    assignments.value = assignmentData
+    regions.value = Array.isArray(regionData?.regions) ? regionData.regions : []
+    assignments.value = Array.isArray(assignmentData) ? assignmentData : []
     if (selectedRegion.value && selectedRegion.value !== 'unassigned' && !regions.value.some(r => r.id === selectedRegion.value)) selectedRegion.value = ''
     loaded.value = true
     page.value = 1
