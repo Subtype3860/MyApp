@@ -4,6 +4,7 @@ using MyApp.Application;
 using MyApp.Application.Security;
 using MyApp.Application.Storage;
 using MyApp.Infrastructure;
+using MyApp.Infrastructure.Sany;
 using MyApp.API.Games;
 using System.Threading.RateLimiting;
 
@@ -77,6 +78,9 @@ builder.Services.AddAuthorization(options =>
 });
 builder.Services.AddControllers();
 builder.Services.AddMemoryCache();
+builder.Services.AddSingleton(new SanyOptions(builder.Configuration["Sany:BaseUrl"] ?? "https://sis-global.sanygroup.com/api-gateway"));
+builder.Services.AddSingleton<SanyClient>();
+builder.Services.AddSingleton<SanySessionStore>();
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddScoped<ITanksAccess, TanksAccess>();
 builder.Services.AddSingleton<TanksTickets>();

@@ -1305,7 +1305,8 @@ public sealed class VehicleRepository(
                 group => (IReadOnlyList<VehicleMediaResponse>)group
                     .Select(item => item.Response)
                     .ToArray());
-        var requestsByDefect = requests.GroupBy(request => request.DefectId)
+        var requestsByDefect = requests.Where(request => request.DefectId != null)
+            .GroupBy(request => request.DefectId!.Value)
             .ToDictionary(
                 group => group.Key,
                 group => (IReadOnlyList<VehiclePartsRequestResponse>)group
