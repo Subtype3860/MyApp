@@ -19,8 +19,8 @@ const service=computed(()=>draft.value?.steps?.[draft.value.nextStepIndex]?.name
 const clone=value=>JSON.parse(JSON.stringify(value))
 const headers=()=>({Authorization:'Bearer '+props.token,'Content-Type':'application/json'})
 async function request(url,options={}) {
- const response=await fetch(url,{...options,headers:headers()})
- if(!response.ok){const body=await response.json().catch(()=>null);if(response.status===409)conflict.value=true;throw Error(body?.message || 'Не удалось выполнить действие.')}
+ const response=await fetch(url,{...options,headers:headers(),signal:options.signal??AbortSignal.timeout(60000)})
+ if(!response.ok){const body=await response.json().catch(()=>null);if(response.status===409)conflict.value=true;throw Error(body?.message || (response.status===403?'Недостаточно прав для этого действия.':'Сервер не выполнил действие. Проверьте связь и повторите.'))}
  return response.json()
 }
 async function load(){
@@ -38,7 +38,7 @@ async function selectVehicle(id){
   engines:Array.from({length:row.vehicle.engineCount || 1},(_,i)=>({number:i+1,hours:''})),runIns:[]
  }
  initialStep.value=row.plan ? (row.plan.nextStepIndex+row.plan.steps.length-1)%row.plan.steps.length : 0
- try{history.value=await request('/api/maintenance-plans/'+id+'/history')}catch(e){error.value=e.message}
+ try{history.value=canManage.value?await request('/api/maintenance-plans/'+id+'/history'):[]}catch(e){history.value=[];if(!/доступ|запрещ/i.test(e.message))error.value=e.message}
 }
 function preset(index){
  const value=maintenancePresets[index];draft.value.name=value.name;draft.value.steps=clone(value.steps)
