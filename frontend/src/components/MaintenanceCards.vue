@@ -80,7 +80,11 @@ async function save(action='save'){
  clearTimeout(timer);const auto=action==='save';if(auto)saving.value=true;else busy.value=true;error.value='';const version=editGeneration;const id=card.value.id;const payload=clone(data.value)
  try{const item=await request('cards/'+id,{method:'PUT',body:JSON.stringify({revision:card.value.revision,data:payload,action,reason:reason.value})});card.value=item
   cards.value=cards.value.map(c=>c.id===id?item:c)
-  if(version===editGeneration){data.value=clone(item.data);localStorage.removeItem(localKey());message.value=action==='submit'?'Карта передана на проверку':'Сохранено на сервере'}else{keepLocal();timer=setTimeout(()=>save(),1200)}
+  if(version===editGeneration){
+   // Автосохранение не подменяет поля формы: иначе ввод даты и времени сбрасывается.
+   if(!auto)data.value=clone(item.data)
+   localStorage.removeItem(localKey());message.value=action==='submit'?'Карта передана на проверку':'Сохранено на сервере'
+  }else{keepLocal();timer=setTimeout(()=>save(),1200)}
   return true
  }catch(e){error.value=e.message;keepLocal();return false}finally{busy.value=false;saving.value=false}
 }
@@ -111,6 +115,13 @@ function setMaterialActual(id,value){
 function setExecutor(){for(const a of data.value.answers)if(!a.executor)a.executor=batchExecutor.value;for(const m of data.value.materials)if(!m.executor)m.executor=batchExecutor.value;changed()}
 const timeValue=value=>value?new Date(new Date(value).getTime()-new Date(value).getTimezoneOffset()*60000).toISOString().slice(0,16):''
 function beginTimeEdit(){editingTime=true;clearTimeout(timer)}
+/** Запоминает выбранное значение без сохранения: сохраняем только по завершении выбора. */
+function syncTime(key,input){
+ const value=input.value, parsed=value?new Date(value):null
+ if(input.validity.badInput || (parsed&&!Number.isFinite(parsed.getTime()))){invalidTimes.add(key);return}
+ invalidTimes.delete(key)
+ data.value[key]=parsed?parsed.toISOString():null
+}
 function setTime(key,input){
  const value=input.value, parsed=value?new Date(value):null
  if(input.validity.badInput || (parsed&&!Number.isFinite(parsed.getTime()))){invalidTimes.add(key);clearTimeout(timer);return}
@@ -269,7 +280,7 @@ onBeforeUnmount(()=>{clearTimeout(timer);generation++;closeMedia()})
    <aside v-if="recovery"><p>На устройстве есть несохранённые изменения (версия {{recovery.revision}}; на сервере {{card.revision}}). Проверьте их перед отправкой.</p><details><summary>Посмотреть локальные изменения</summary><pre>{{JSON.stringify(recovery.data,null,2)}}</pre></details><button type="button" :disabled="recovery.revision!==card.revision" @click="restore">Восстановить черновик</button><button type="button" @click="discard">Оставить серверную версию</button></aside>
    <fieldset :disabled="!editable || busy || !!recovery" @input="changed" @change="normalizeNumbers">
     <div class="grid"><label>Дата ТО<input v-model="data.date" type="date" :max="localDate(new Date())" /></label><label>Водитель / машинист<input v-model="data.driver" name="atlas-driver" autocomplete="off" autocapitalize="words" /></label><label>Марка ДВС<input v-model="data.engineModel" name="atlas-engine" autocomplete="off" /></label><label>Пробег, км<input v-model.number="data.mileage" name="atlas-mileage" autocomplete="off" type="number" min="0" inputmode="numeric" /></label></div>
-    <div class="grid"><label v-for="(label,key) in {stoppedAt:'Остановка техники',startedAt:'Начало работ',finishedAt:'Окончание работ',releasedAt:'Возврат в работу'}" :key="key">{{label}}<input type="datetime-local" :value="timeValue(data[key])" @focus="beginTimeEdit" @input.stop="setTime(key,$event.target)" @change.stop="setTime(key,$event.target)" @blur="finishTimeEdit(key,$event.target)" /></label></div>
+    <div class="grid"><label v-for="(label,key) in {stoppedAt:'Остановка техники',startedAt:'Начало работ',finishedAt:'Окончание работ',releasedAt:'Возврат в работу'}" :key="key">{{label}}<input type="datetime-local" :value="timeValue(data[key])" @focus="beginTimeEdit" @input.stop="syncTime(key,$event.target)" @change.stop="setTime(key,$event.target)" @blur="finishTimeEdit(key,$event.target)" /></label></div>
     <p v-if="data.startedAt&&data.finishedAt">Длительность работ: {{((new Date(data.finishedAt)-new Date(data.startedAt))/3600000).toFixed(1)}} ч.</p><p v-if="data.stoppedAt&&data.releasedAt">Простой: {{((new Date(data.releasedAt)-new Date(data.stoppedAt))/3600000).toFixed(1)}} ч.</p>
     <MaintenanceDateReadings :key="card.id+card.status" :token="token" :vehicle-id="vehicle.id" :date="data.date" :snapshot="card.status==='accepted'?card.readings:undefined" v-model="readings" />
     <div class="actions"><label>Исполнитель для незаполненных строк<input v-model="batchExecutor" /></label><button type="button" @click="setExecutor">Назначить исполнителя</button></div>
