@@ -62,6 +62,13 @@ public sealed class DailyHoursPlannerTests
         Assert.Equal(new decimal?[] {123, 522}, result.Rows.Select(r => r.EngineHours));
         Assert.All(result.Rows, r => Assert.Equal("ready", r.Status));
     }
+    /// <summary>Проверяет, что значения в пределах 24 м/ч в сутки сохраняются даже при расхождении.</summary>
+    [Fact] public void Readings_within_daily_limit_are_never_lowered()
+    {
+        var result = Plan([Row(2, 124), Row(2, 520, 2)], History(1, 100), History(1, 500, 2));
+        Assert.Equal(new decimal?[] {124, 520}, result.Rows.Select(r => r.EngineHours));
+        Assert.All(result.Rows, r => Assert.Equal("ready", r.Status));
+    }
     /// <summary>Проверяет, что при расхождении ДВС берётся прирост двигателя в пределах нормы.</summary>
     [Fact] public void Outlier_engine_uses_reliable_engine_delta()
     {

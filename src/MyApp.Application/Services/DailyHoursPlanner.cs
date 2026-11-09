@@ -107,8 +107,9 @@ public static class DailyHoursPlanner
         var norm = 22m * days;
         var spread = Math.Abs(deltas[0] - deltas[1]);
         var withinLimit = deltas.Select(d => d <= limit).ToArray();
-        // Показания двух ДВС одной машины растут почти одинаково: расхождение до 2 м/ч — норма.
-        if (withinLimit.All(x => x) && spread <= 2m) return (rows, null, null);
+        // 24 м/ч в сутки физически возможно: техника зимой работает круглосуточно.
+        // Поэтому любые значения в пределах порога считаем достоверными и не выравниваем.
+        if (withinLimit.All(x => x)) return (rows, null, null);
         decimal delta;
         string reason;
         if (withinLimit.Count(x => x) == 1)
@@ -116,11 +117,6 @@ public static class DailyHoursPlanner
             var index = Array.IndexOf(withinLimit, true);
             delta = deltas[index];
             reason = $"Расхождение показаний ДВС {spread} м/ч; принят прирост по ДВС №{index + 1}.";
-        }
-        else if (withinLimit.All(x => x))
-        {
-            delta = deltas.OrderBy(d => Math.Abs(d - norm)).ThenBy(d => d).First();
-            reason = $"Расхождение показаний ДВС {spread} м/ч; принят прирост, ближайший к норме 22 м/ч в сутки.";
         }
         else
         {
