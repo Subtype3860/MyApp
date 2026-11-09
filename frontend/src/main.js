@@ -15,12 +15,14 @@ window.fetch = async (...args) => {
   const requestUrl = typeof request === 'string' ? request : request?.url || ''
   const hasStoredToken = Boolean(readAuth('token'))
   const isLoginRequest = requestUrl.includes('/api/auth/login')
+  // Ошибки интеграции SANY не означают, что сессия Атласа завершена.
+  const isSanyRequest = requestUrl.includes('/api/sany/')
 
   if (isLoginRequest && response.ok) {
     sessionExpiredEventSent = false
   }
 
-  if (response.status === 401 && hasStoredToken && !isLoginRequest && !sessionExpiredEventSent) {
+  if (response.status === 401 && hasStoredToken && !isLoginRequest && !isSanyRequest && !sessionExpiredEventSent) {
     sessionExpiredEventSent = true
     window.dispatchEvent(
       new CustomEvent('myapp:session-expired', {

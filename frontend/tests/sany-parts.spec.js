@@ -56,3 +56,35 @@ test('SANY page connects with captcha and searches equipment', async ({ page }) 
   await page.getByRole('button', { name: 'Отключить', exact: true }).click()
   await expect(page.getByLabel('Логин SANY')).toBeVisible()
 })
+
+test('SANY login rejection does not sign the user out', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1000 })
+  await page.addInitScript(() => {
+    localStorage.setItem('myapp.authToken', 'test')
+    localStorage.setItem('myapp.userRole', 'Administrator')
+    localStorage.setItem('myapp.userPermissions', JSON.stringify(['menu.tables', 'menu.vehicles']))
+  })
+  await page.route('**/api/**', route => {
+    const req = route.request(), path = new URL(req.url()).pathname
+    if (path === '/api/sany/session' && req.method() === 'POST') {
+      return route.fulfill({ json: { sessionId: 's1', captchaImage: captcha.toString('base64'), contentType: 'image/png', expiresAt: '2026-11-09T20:00:00Z' } })
+    }
+    if (path === '/api/sany/session/s1/login') {
+      return route.fulfill({ status: 400, json: { message: 'Портал SANY отклонил логин или пароль. Проверьте данные учётной записи.' } })
+    }
+    if (path === '/api/profile') return route.fulfill({ json: { id: 'u1', firstName: 'Тест', position: 'Механик' } })
+    return route.fulfill({ json: [] })
+  })
+
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Таблицы', exact: true }).click()
+  await page.getByRole('button', { name: 'SANY: запчасти', exact: true }).click()
+  await page.getByLabel('Логин SANY').fill('Alexey_G')
+  await page.getByLabel('Пароль SANY').fill('wrong')
+  await page.getByRole('button', { name: 'Продолжить', exact: true }).click()
+  await page.getByLabel('Код с картинки').fill('1234')
+  await page.getByRole('button', { name: 'Войти в SANY', exact: true }).click()
+  await expect(page.getByRole('alert')).toContainText('отклонил логин или пароль')
+  await expect(page.getByRole('heading', { name: 'SANY: запчасти', level: 1 })).toBeVisible()
+  expect(await page.evaluate(() => localStorage.getItem('myapp.authToken'))).toBe('test')
+})

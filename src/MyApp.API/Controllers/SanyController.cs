@@ -72,7 +72,7 @@ public sealed class SanyController(SanySessionStore store, SanyClient client, IC
         {
             Attempts[id] = attempts + 1;
             if (attempts + 1 >= MaxAttempts) store.Remove(id);
-            return Unauthorized(new { message = result.Message ?? "Не удалось войти в SANY." });
+            return BadRequest(new { message = result.Message ?? "Не удалось войти в SANY." });
         }
 
         Attempts.Remove(id);
@@ -101,7 +101,7 @@ public sealed class SanyController(SanySessionStore store, SanyClient client, IC
     {
         var connection = store.Find(id);
         if (connection is null) return NotFound(new { message = "Сессия SANY истекла. Подключитесь заново." });
-        if (!connection.Connected) return Unauthorized(new { message = "Сначала войдите в SANY." });
+        if (!connection.Connected) return Conflict(new { message = "Сначала войдите в SANY." });
         if (string.IsNullOrWhiteSpace(request.Path) || !AllowedPaths.Contains(request.Path))
             return BadRequest(new { message = "Этот раздел портала недоступен через приложение." });
 
@@ -114,7 +114,7 @@ public sealed class SanyController(SanySessionStore store, SanyClient client, IC
             if (status is 401 or 403)
             {
                 store.Remove(id);
-                return Unauthorized(new { message = "Портал SANY завершил сессию. Подключитесь заново." });
+                return StatusCode(502, new { message = "Портал SANY завершил сессию. Подключитесь заново." });
             }
             if (status is < 200 or >= 300)
                 return StatusCode(502, new { message = $"Портал SANY вернул ошибку {(status)}." });
