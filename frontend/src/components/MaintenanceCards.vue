@@ -88,6 +88,15 @@ async function decide(action){
  try{await request('cards/'+card.value.id+'/'+action,{method:'POST',body:JSON.stringify({revision:card.value.revision,reason:reason.value})});const id=card.value.id;await load();await open(cards.value.find(c=>c.id===id));if(action==='accept')emit('completed')}
  catch(e){error.value=e.message}finally{busy.value=false}
 }
+/** Догружает историю изменений карты по требованию: в списке она не передаётся. */
+async function loadAudit(){
+ if(!card.value) return
+ busy.value=true;error.value=''
+ try{
+  const full=await request('cards/'+card.value.id)
+  if(card.value && full?.id===card.value.id){card.value.audit=full.audit??[];card.value.auditCount=card.value.audit.length}
+ }catch(e){error.value=e.message}finally{busy.value=false}
+}
 function operations(section){return card.value.template.operations.filter(o=>o.section===section && (!filter.value||o.text.toLowerCase().includes(filter.value.toLowerCase())) && (!onlyPending.value || !answer(o.id).status || answer(o.id).status==='not-done'))}
 const answer=id=>data.value.answers.find(a=>a.id===id)
 const consumption=id=>data.value.materials.find(m=>m.id===id)
@@ -278,7 +287,8 @@ onBeforeUnmount(()=>{clearTimeout(timer);generation++;closeMedia()})
    <p v-if="error" role="alert" class="form-message--error">{{error}}</p>
    <div class="actions"><template v-if="editable"><button type="button" :disabled="busy||!!recovery" @click="save()">Сохранить карту</button><button type="button" class="primary-button" :disabled="busy||!!recovery" @click="save('submit')">Передать на проверку</button><button type="button" :disabled="busy||!reason||!!recovery" @click="save('cancel')">Отменить карту</button></template><template v-if="canManage&&card.status==='submitted'"><button type="button" class="primary-button" :disabled="busy" @click="decide('accept')">Принять карту и завершить ТО</button><button type="button" :disabled="busy||!reason" @click="decide('return')">Вернуть на доработку</button></template></div>
    <p v-if="card.status==='accepted'">Карта принята {{new Date(card.acceptedAt).toLocaleString('ru-RU')}}. График обновлён. Сохранённые результаты доступны только для чтения.</p>
-   <details><summary>История изменений ({{card.audit.length}})</summary><article v-for="a in [...card.audit].reverse()" :key="a.revision"><strong>Версия {{a.revision}} · {{a.action}}</strong><p>{{new Date(a.at).toLocaleString('ru-RU')}} · {{a.actor}} · {{a.reason}}</p><details><summary>Данные на момент изменения</summary><pre>{{JSON.stringify(a.data,null,2)}}</pre></details></article></details>
+   <details v-if="card.audit"><summary>История изменений ({{card.audit.length}})</summary><article v-for="a in [...card.audit].reverse()" :key="a.revision"><strong>Версия {{a.revision}} · {{a.action}}</strong><p>{{new Date(a.at).toLocaleString('ru-RU')}} · {{a.actor}} · {{a.reason}}</p><details><summary>Данные на момент изменения</summary><pre>{{JSON.stringify(a.data,null,2)}}</pre></details></article></details>
+    <button v-else-if="card.auditCount" type="button" class="secondary-button" :disabled="busy" @click="loadAudit">История изменений ({{ card.auditCount }})</button>
   </section>
   <dialog ref="mediaDialog" class="card-media-dialog" aria-label="Медиа выполнения" @cancel.prevent="closeMedia">
    <header><strong>Медиа выполнения</strong><button type="button" @click="closeMedia">Закрыть медиа</button></header>

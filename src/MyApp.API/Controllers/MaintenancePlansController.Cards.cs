@@ -39,6 +39,11 @@ public sealed partial class MaintenancePlansController
             .Where(x => x.Id == Actor).Select(x => x.Profession.Name).SingleOrDefaultAsync(ct));
     private async Task<bool> CanFill(CancellationToken ct) => Actor != Guid.Empty &&
         (User.HasClaim("permission", "vehicles.maintenance_execution") || await CanManage(ct));
+    private object CardLite(MaintenanceCard card) => new { card.Id, card.VehicleId, card.VehicleLabel, card.Revision, card.Status,
+        card.TemplateId, card.TemplateRevision, card.PlanRevision, card.RunInId, card.CreatedBy, card.CreatedAt, card.AcceptedBy, card.AcceptedAt,
+        auditCount = Decode<CardAudit[]>(card.Audit).Length,
+        template = Decode<CardTemplate>(card.Template), data = Decode<CardData>(card.Data),
+        defects = Decode<Dictionary<string,Guid>>(card.Defects), readings = Decode<MaintenanceEngine[]>(card.Readings) };
     private object CardView(MaintenanceCard card) => new { card.Id, card.VehicleId, card.VehicleLabel, card.Revision, card.Status,
         card.TemplateId, card.TemplateRevision, card.PlanRevision, card.RunInId, card.CreatedBy, card.CreatedAt, card.AcceptedBy, card.AcceptedAt,
         template = Decode<CardTemplate>(card.Template), data = Decode<CardData>(card.Data), audit = Decode<CardAudit[]>(card.Audit),
@@ -48,6 +53,8 @@ public sealed partial class MaintenancePlansController
         card.Revision++;
         var audit = Decode<List<CardAudit>>(card.Audit);
         audit.Add(new(card.Revision, Actor, DateTimeOffset.UtcNow, action, reason, Decode<CardData>(card.Data)));
+        // Храним только последние проверки: старые снимки раздувают ответы карты.
+        if (audit.Count > 40) audit.RemoveRange(0, audit.Count - 40);
         card.Audit = JsonSerializer.Serialize(audit, JsonOptions);
     }
     private IActionResult CardConflict() => Conflict(new { message = "Карта изменена другим сотрудником. Сохранённый локальный черновик доступен; загрузите актуальную карту и сравните изменения." });
@@ -103,7 +110,7 @@ public sealed partial class MaintenancePlansController
     public async Task<IActionResult> Cards(Guid vehicleId, CancellationToken ct)
     {
         if (!(await vehicles.GetVehiclesAsync(ct)).Any(x => x.Id == vehicleId)) return NotFound();
-        return Ok((await db.MaintenanceCards.AsNoTracking().Where(x => x.VehicleId == vehicleId).OrderByDescending(x => x.CreatedAt).ToArrayAsync(ct)).Select(CardView));
+        return Ok((await db.MaintenanceCards.AsNoTracking().Where(x => x.VehicleId == vehicleId).OrderByDescending(x => x.CreatedAt).ToArrayAsync(ct)).Select(CardLite));
     }
 
     [HttpPost("{vehicleId:guid}/cards")]
@@ -117,7 +124,7 @@ public sealed partial class MaintenancePlansController
         await Lock(vehicleId, ct);
         var repeat = await db.MaintenanceCards.SingleOrDefaultAsync(x => x.Id == request.Id, ct);
         if (repeat is not null) return repeat.VehicleId == vehicleId && repeat.CreatedBy == Actor && repeat.TemplateId == request.TemplateId && repeat.PlanRevision == request.PlanRevision && repeat.RunInId == request.RunInId && repeat.TemplateRevision == request.TemplateRevision
-            ? Ok(CardView(repeat)) : CardConflict();
+            ? Ok(CardLite(repeat)) : CardConflict();
         var plan = await db.VehicleMaintenancePlans.SingleOrDefaultAsync(x => x.VehicleId == vehicleId, ct);
         if (plan is null || plan.Revision != request.PlanRevision) return VersionConflict();
         var definition = Read(plan);
@@ -141,7 +148,7 @@ public sealed partial class MaintenancePlansController
             TemplateId = template.Id, TemplateRevision = template.Revision, PlanRevision = plan.Revision, RunInId = request.RunInId,
             Template = JsonSerializer.Serialize(content, JsonOptions), Data = JsonSerializer.Serialize(data, JsonOptions), CreatedBy = Actor, CreatedAt = DateTimeOffset.UtcNow };
         AuditCard(card, "created"); db.MaintenanceCards.Add(card);
-        await db.SaveChangesAsync(ct); await tx.CommitAsync(ct); return Ok(CardView(card));
+        await db.SaveChangesAsync(ct); await tx.CommitAsync(ct); return Ok(CardLite(card));
     }
 
     [HttpPost("cards/{id:guid}/refresh-materials")]
@@ -172,7 +179,7 @@ public sealed partial class MaintenancePlansController
         data = data with { Materials = content.Materials.Select(m => old.GetValueOrDefault(m.Id) ?? new CardConsumption(m.Id,null,"","")).ToArray() };
         card.Template = JsonSerializer.Serialize(content, JsonOptions); card.Data = JsonSerializer.Serialize(data, JsonOptions);
         AuditCard(card, "materials-refreshed", content.MaterialSource ?? "");
-        await db.SaveChangesAsync(ct); await tx.CommitAsync(ct); return Ok(CardView(card));
+        await db.SaveChangesAsync(ct); await tx.CommitAsync(ct); return Ok(CardLite(card));
     }
 
     [HttpPut("cards/{id:guid}")]
@@ -193,7 +200,7 @@ public sealed partial class MaintenancePlansController
         if (request.Action == "submit") card.Status = "submitted";
         if (request.Action == "cancel") card.Status = "cancelled";
         AuditCard(card, request.Action, request.Reason);
-        await db.SaveChangesAsync(ct); await tx.CommitAsync(ct); return Ok(CardView(card));
+        await db.SaveChangesAsync(ct); await tx.CommitAsync(ct); return Ok(CardLite(card));
     }
 
     [HttpPost("cards/{id:guid}/return")]
@@ -207,7 +214,7 @@ public sealed partial class MaintenancePlansController
         if (card.Revision != request.Revision) return CardConflict();
         if (card.Status != "submitted") return BadRequest();
         card.Status = "draft"; AuditCard(card, "returned", request.Reason);
-        await db.SaveChangesAsync(ct); await tx.CommitAsync(ct); return Ok(CardView(card));
+        await db.SaveChangesAsync(ct); await tx.CommitAsync(ct); return Ok(CardLite(card));
     }
 
     [HttpPost("cards/{id:guid}/accept")]
@@ -236,6 +243,14 @@ public sealed partial class MaintenancePlansController
         if (result.Status != ServiceResultStatus.Success) return BadRequest(new { message = result.Message ?? "Не удалось создать дефект. Проверьте права и данные." });
         links[operationId] = result.Value; card.Defects = JsonSerializer.Serialize(links, JsonOptions); AuditCard(card, "defect", operationId);
         await db.SaveChangesAsync(ct); await tx.CommitAsync(ct); return Ok(new { id = result.Value });
+    }
+
+    [HttpGet("cards/{id:guid}")]
+    public async Task<IActionResult> Card(Guid id, CancellationToken ct)
+    {
+        if (!await CanFill(ct)) return Forbid();
+        var card = await db.MaintenanceCards.AsNoTracking().SingleOrDefaultAsync(x => x.Id == id, ct);
+        return card is null ? NotFound() : Ok(CardView(card));
     }
 
     [HttpGet("cards/{id:guid}/photos")]
