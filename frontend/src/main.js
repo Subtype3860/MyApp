@@ -38,3 +38,12 @@ window.fetch = async (...args) => {
 
 initializeTheme()
 createApp(App).mount('#app')
+
+// После обновления сайта старые вкладки могут ссылаться на уже пересобранные файлы:
+// один раз перезагружаем страницу, чтобы подхватить новый index.html.
+window.addEventListener('vite:preloadError', event => {
+  event.preventDefault()
+  if (sessionStorage.getItem('myapp:preload-reloaded')) return
+  sessionStorage.setItem('myapp:preload-reloaded', '1')
+  window.location.reload()
+})
