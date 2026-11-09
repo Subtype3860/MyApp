@@ -656,7 +656,7 @@ function repairStatus(status) {
 function repairStatusLabel(status) {
   return {
     queue: 'Зарегистрирована',
-    repair: 'В работе',
+    repair: 'В ремонте',
     done: 'Выполнена',
   }[repairStatus(status)]
 }

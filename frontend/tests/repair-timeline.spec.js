@@ -105,7 +105,7 @@ test('administrator edits and deletes requests and works in repair history', asy
   await page.locator('.repair-history__row').first().click()
 
   await expect(page.getByText('Неисправность', { exact: true })).toBeVisible()
-  await expect(page.locator('.repair-request__status')).toHaveText('В работе')
+  await expect(page.locator('.repair-request__status')).toHaveText('В ремонте')
   await expect(page.getByRole('button', { name: 'Редактировать заявку', exact: true })).toBeHidden()
   if (!(await page.locator('.repair-request__details').getAttribute('open') === '')) await page.locator('.repair-request__details > summary').click()
   await expect(page.locator('.work-item__status')).toHaveCount(0)
