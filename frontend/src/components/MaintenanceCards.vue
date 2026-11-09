@@ -8,7 +8,7 @@ const props=defineProps({token:String,vehicle:Object,plan:Object,planRevision:Nu
 const emit=defineEmits(['completed','materials'])
 const canUseLibrary=ref(false)
 const templates=ref([]),cards=ref([]),card=ref(null),data=ref(null),photos=ref([]),readings=ref([])
-const canManage=ref(false),canFill=ref(false),busy=ref(false),error=ref(''),message=ref(''),filter=ref(''),onlyPending=ref(false)
+const canManage=ref(false),canFill=ref(false),busy=ref(false),saving=ref(false),error=ref(''),message=ref(''),filter=ref(''),onlyPending=ref(false)
 const selectedTemplate=ref(''),runInId=ref(''),reason=ref(''),batchExecutor=ref(''),recovery=ref(null)
 const requirement=ref(null), currentExecutor=ref(''), mediaPreview=ref(null), mediaDialog=ref(null)
 let previewGeneration=0
@@ -75,13 +75,14 @@ async function start(){
 }
 async function save(action='save'){
  if(busy.value||!editable.value||recovery.value)return false
+ if(saving.value){timer=setTimeout(()=>save(action),500);return false}
  if(invalidTimes.size){error.value='Введите дату и время полностью.';return false}
- clearTimeout(timer);busy.value=true;error.value='';const version=editGeneration;const id=card.value.id;const payload=clone(data.value)
+ clearTimeout(timer);const auto=action==='save';if(auto)saving.value=true;else busy.value=true;error.value='';const version=editGeneration;const id=card.value.id;const payload=clone(data.value)
  try{const item=await request('cards/'+id,{method:'PUT',body:JSON.stringify({revision:card.value.revision,data:payload,action,reason:reason.value})});card.value=item
   cards.value=cards.value.map(c=>c.id===id?item:c)
   if(version===editGeneration){data.value=clone(item.data);localStorage.removeItem(localKey());message.value=action==='submit'?'Карта передана на проверку':'Сохранено на сервере'}else{keepLocal();timer=setTimeout(()=>save(),1200)}
   return true
- }catch(e){error.value=e.message;keepLocal();return false}finally{busy.value=false}
+ }catch(e){error.value=e.message;keepLocal();return false}finally{busy.value=false;saving.value=false}
 }
 async function decide(action){
  if(busy.value)return;busy.value=true;error.value=''

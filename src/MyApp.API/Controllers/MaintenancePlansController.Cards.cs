@@ -41,7 +41,7 @@ public sealed partial class MaintenancePlansController
         (User.HasClaim("permission", "vehicles.maintenance_execution") || await CanManage(ct));
     private object CardLite(MaintenanceCard card) => new { card.Id, card.VehicleId, card.VehicleLabel, card.Revision, card.Status,
         card.TemplateId, card.TemplateRevision, card.PlanRevision, card.RunInId, card.CreatedBy, card.CreatedAt, card.AcceptedBy, card.AcceptedAt,
-        auditCount = Decode<CardAudit[]>(card.Audit).Length,
+        audit = Array.Empty<CardAudit>(), auditCount = Decode<CardAudit[]>(card.Audit).Length,
         template = Decode<CardTemplate>(card.Template), data = Decode<CardData>(card.Data),
         defects = Decode<Dictionary<string,Guid>>(card.Defects), readings = Decode<MaintenanceEngine[]>(card.Readings) };
     private object CardView(MaintenanceCard card) => new { card.Id, card.VehicleId, card.VehicleLabel, card.Revision, card.Status,
