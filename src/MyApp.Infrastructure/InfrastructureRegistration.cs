@@ -5,6 +5,7 @@ using MyApp.Application.Security;
 using MyApp.Application.Storage;
 using MyApp.Infrastructure.Db;
 using MyApp.Infrastructure.Repositories;
+using MyApp.Infrastructure.Media;
 using MyApp.Infrastructure.Security;
 using MyApp.Infrastructure.Storage;
 using Npgsql;
@@ -27,6 +28,7 @@ public static class InfrastructureRegistration
         services.AddSingleton(jwtOptions);
         services.AddSingleton(mediaStorageOptions);
         services.AddSingleton<IMediaStorageService, MediaStorageService>();
+        services.AddSingleton<MediaImageNormalizer>();
         services.AddScoped<IMediaStorageAdministrationRepository, MediaStorageAdministrationRepository>();
         services.AddScoped<IUserRepository, UserRepository>();
         services.AddScoped<IProfessionRepository, ProfessionRepository>();

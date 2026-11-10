@@ -9,6 +9,11 @@ public static class MaintenanceCardMedia
     public static string? ContentType(ReadOnlySpan<byte> bytes)
     {
         if (bytes.Length < 8 || bytes.Length > VideoLimit) return null;
+        // HEIC/HEIF проверяем отдельно: снимок iPhone может быть больше лимита фото,
+        // сервер приведёт его к WebP после загрузки.
+        if (bytes.Length >= 12 && bytes.Slice(4,4).SequenceEqual("ftyp"u8) &&
+            new[] {"heic","heix","hevc","hevx","mif1","msf1","heis","heim"}.Contains(Encoding.ASCII.GetString(bytes.Slice(8,4)).Trim()))
+            return "image/heic";
         if (bytes.Length <= PhotoLimit)
         {
             if (bytes[..8].SequenceEqual(new byte[] {137,80,78,71,13,10,26,10})) return "image/png";

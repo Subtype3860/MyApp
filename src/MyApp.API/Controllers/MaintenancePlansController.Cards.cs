@@ -272,13 +272,22 @@ public sealed partial class MaintenancePlansController
     }
     [HttpPost("cards/{id:guid}/photos/{photoId:guid}")]
     [RequestSizeLimit(26_000_000)]
-    public async Task<IActionResult> AddCardPhoto(Guid id, Guid photoId, [FromForm] string operationId, IFormFile file, CancellationToken ct)
+    public async Task<IActionResult> AddCardPhoto(Guid id, Guid photoId, [FromForm] string operationId, IFormFile file,
+        [FromServices] MyApp.Infrastructure.Media.MediaImageNormalizer normalizer, CancellationToken ct)
     {
         if (!await CanFill(ct)) return Forbid();
         if (photoId == Guid.Empty || file.Length is < 8 or > MaintenanceCardMedia.VideoLimit) return BadRequest(new { message = "Фото JPEG/PNG/WebP до 4 МБ, видео MP4/WebM до 25 МБ." });
         using var buffer = new MemoryStream(); await file.CopyToAsync(buffer, ct); var bytes = buffer.ToArray();
         var type = MaintenanceCardMedia.ContentType(bytes);
-        if (type is null) return BadRequest(new { message = "Допустимы фото JPEG/PNG/WebP до 4 МБ и видео MP4/WebM до 25 МБ." });
+        if (type is null) return BadRequest(new { message = "Допустимы фото JPEG/PNG/WebP/HEIC до 4 МБ и видео MP4/WebM до 25 МБ." });
+        // Фото приводим к WebP на сервере: это работает и для HEIC с iPhone.
+        if (type != "image/webp" && type.StartsWith("image/", StringComparison.Ordinal))
+        {
+            var normalized = await normalizer.NormalizeAsync(bytes, ct);
+            bytes = normalized.Bytes; type = normalized.ContentType;
+        }
+        if (type.StartsWith("image/", StringComparison.Ordinal) && bytes.Length > MaintenanceCardMedia.PhotoLimit)
+            return BadRequest(new { message = "Фото после сжатия должно быть не больше 4 МБ." });
         var card = await db.MaintenanceCards.SingleOrDefaultAsync(x => x.Id == id, ct); if (card is null) return NotFound();
         await using var tx = await db.Database.BeginTransactionAsync(ct); await Lock(card.VehicleId, ct); await db.Entry(card).ReloadAsync(ct);
         var old = await db.MaintenanceCardPhotos.SingleOrDefaultAsync(x => x.Id == photoId, ct);
