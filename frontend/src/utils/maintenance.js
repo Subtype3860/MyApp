@@ -1,7 +1,8 @@
 /** Циклы хранят интервалы между ТО: 700 → 1000 означает 300 м/ч. */
 export const maintenancePresets = [
   { name: 'Цикл 250–4000', steps: [250,500,250,1000,250,500,250,2000,250,500,250,1000,250,500,250,4000].map(value => ({ name: 'ТО-' + value, interval: 250 })) },
-  { name: 'Цикл 350–4000', steps: [350,700,1000,350,700,2000,350,700,1000,350,700,4000].map((value,index) => ({ name: 'ТО-' + value, interval: index % 3 === 2 ? 300 : 350 })) },
+  // Каждое ТО — ровно 350 м/ч после обкаточного: отметки цикла растут на 350, названия номинальные.
+  { name: 'Цикл 350–4000', steps: [350,700,1000,350,700,2000,350,700,1000,350,700,4000].map(value => ({ name: 'ТО-' + value, interval: 350 })) },
 ]
 export const hoursText = value => Number(value).toLocaleString('ru-RU', { maximumFractionDigits: 1 })
 export function nearestMaintenance(rows) {
