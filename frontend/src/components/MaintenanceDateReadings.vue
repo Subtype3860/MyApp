@@ -27,6 +27,6 @@ watch([()=>props.vehicleId,()=>props.date,()=>(props.modelValue||[]).map(e=>e.nu
  <div class="maintenance-date-readings" aria-live="polite">
   <p v-if="loading">Загрузка моточасов…</p>
   <template v-else><p v-if="error" role="alert" class="form-message--error">{{error}}</p><p v-for="engine in modelValue" :key="engine.number">ДВС № {{engine.number}}: <strong>{{engine.hours===''?'нет данных':hoursText(engine.hours)+' м/ч'}}</strong><small v-if="engine.isEstimated"> · Расчётные моточасы: от {{engine.sourceDate?.split('-').reverse().join('.')}} ({{hoursText(engine.sourceHours)}} м/ч)</small></p></template>
-  <small>{{snapshot ? 'Показания, зафиксированные при сохранении обкатки.' : 'При отсутствии данных на выбранную дату: последние загруженные показания + 23 м/ч за каждый полный день после них + 11,5 м/ч за выбранный день.'}}</small>
+  <small>{{snapshot ? 'Показания, зафиксированные при сохранении обкатки.' : 'При отсутствии данных на выбранную дату: последние загруженные показания + 23 м/ч за каждый полный день после них + 11 м/ч за выбранный день.'}}</small>
  </div>
 </template>
