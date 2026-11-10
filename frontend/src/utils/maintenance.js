@@ -2,7 +2,7 @@
 export const maintenancePresets = [
   { name: 'Цикл 250–4000', steps: [250,500,250,1000,250,500,250,2000,250,500,250,1000,250,500,250,4000].map(value => ({ name: 'ТО-' + value, interval: 250 })) },
   // Каждое ТО — ровно 350 м/ч после обкаточного: отметки цикла растут на 350, названия номинальные.
-  { name: 'Цикл 350–4000', steps: [350,700,1000,350,700,2000,350,700,1000,350,700,4000].map(value => ({ name: 'ТО-' + value, interval: 350 })) },
+  { name: 'Цикл 350–4000', markOffset: 150, steps: [350,700,1000,350,700,2000,350,700,1000,350,700,4000].map(value => ({ name: 'ТО-' + value, interval: 350 })) },
 ]
 export const hoursText = value => Number(value).toLocaleString('ru-RU', { maximumFractionDigits: 1 })
 export function nearestMaintenance(rows) {
@@ -11,8 +11,8 @@ export function nearestMaintenance(rows) {
     .sort((a,b) => a.next.remaining-b.next.remaining || String(a.vehicle.garageNumber ?? a.vehicle.stateNumber).localeCompare(String(b.vehicle.garageNumber ?? b.vehicle.stateNumber),'ru',{numeric:true}))
     .slice(0,5)
 }
-export function stepLabel(steps,index) {
-  const mark = steps.slice(0,index+1).reduce((sum,step) => sum+Number(step.interval || 0),0)
+export function stepLabel(steps,index,offset = 0) {
+  const mark = offset + steps.slice(0,index+1).reduce((sum,step) => sum+Number(step.interval || 0),0)
   return (index+1)+'. '+steps[index].name+' · отметка цикла '+hoursText(mark)+' м/ч'
 }
 

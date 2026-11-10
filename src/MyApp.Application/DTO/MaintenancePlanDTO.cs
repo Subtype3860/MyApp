@@ -8,7 +8,7 @@ public sealed record MaintenanceRunIn(Guid Id, string Reason, DateOnly StartDate
 public sealed record MaintenancePlan(
     string Name, MaintenanceStep[] Steps, int NextStepIndex,
     DateOnly LastDate, string LastService, MaintenanceEngine[] Engines,
-    MaintenanceRunIn[] RunIns);
+    MaintenanceRunIn[] RunIns, int MarkOffset = 0);
 public sealed record MaintenanceReading(int Number, decimal Hours, DateOnly Date, bool IsEstimated = false, DateOnly? SourceDate = null);
 public sealed record MaintenanceDue(
     string Kind, Guid? RunInId, string Name, decimal Interval,

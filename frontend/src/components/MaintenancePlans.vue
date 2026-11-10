@@ -41,7 +41,7 @@ async function selectVehicle(id){
  try{history.value=canManage.value?await request('/api/maintenance-plans/'+id+'/history'):[]}catch(e){history.value=[];if(!/доступ|запрещ/i.test(e.message))error.value=e.message}
 }
 function preset(index){
- const value=maintenancePresets[index];draft.value.name=value.name;draft.value.steps=clone(value.steps)
+ const value=maintenancePresets[index];draft.value.name=value.name;draft.value.steps=clone(value.steps);draft.value.markOffset=value.markOffset||0
  draft.value.nextStepIndex=0;initialStep.value=0
 }
 function openNewGraph(){
@@ -58,7 +58,7 @@ function applyNewGraph(){
   if(!step.name.trim() || !Number.isFinite(mark) || interval<=0 || interval>100000){graphError.value='Укажите вид ТО и возрастающие отметки моточасов от начала цикла.';return}
   steps.push({name:step.name.trim(),interval});previous=mark
  }
- draft.value.name=newGraph.value.name.trim();draft.value.steps=steps;draft.value.nextStepIndex=0;initialStep.value=-1
+ draft.value.name=newGraph.value.name.trim();draft.value.steps=steps;draft.value.markOffset=0;draft.value.nextStepIndex=0;initialStep.value=-1
  graphDialog.value.close();message.value='Новый график подготовлен. Проверьте шаг ТО и нажмите «Сохранить график».'
 }
 function removeStep(index){
@@ -72,7 +72,7 @@ async function save(){
  if(!canManage.value||busy.value)return
  error.value='';message.value=''
  const plan=clone(draft.value)
- if(!selected.value.plan){plan.lastService=Number(initialStep.value)===-1?'Начало эксплуатации':stepLabel(plan.steps,Number(initialStep.value));plan.nextStepIndex=(Number(initialStep.value)+1)%plan.steps.length}
+ if(!selected.value.plan){plan.lastService=Number(initialStep.value)===-1?'Начало эксплуатации':stepLabel(plan.steps,Number(initialStep.value),plan.markOffset||0);plan.nextStepIndex=(Number(initialStep.value)+1)%plan.steps.length}
  if(plan.engines.some(e=>e.hours===''||e.hours===null)||plan.runIns.some(r=>r.engines.some(e=>e.hours===''||e.hours===null))){error.value='Дождитесь загрузки моточасов за выбранные даты. Если показаний нет, сначала загрузите их.';return}
  plan.engines.forEach(e=>e.hours=Number(e.hours));plan.runIns.forEach(r=>r.engines.forEach(e=>e.hours=Number(e.hours)))
  plan.steps.forEach(s=>s.interval=Number(s.interval));plan.nextStepIndex=Number(plan.nextStepIndex)
@@ -154,11 +154,11 @@ onMounted(load)
     <template v-if="!selected.plan">
      <h3>Последнее плановое ТО</h3>
      <label>Дата последнего ТО<input v-model="draft.lastDate" type="date" :max="localDate(new Date())" required /></label>
-     <label>Выполненный шаг цикла<select v-model.number="initialStep"><option :value="-1">Начало эксплуатации — перед первым ТО</option><option v-for="(step,index) in draft.steps" :key="index" :value="index">{{stepLabel(draft.steps,index)}}</option></select></label>
+     <label>Выполненный шаг цикла<select v-model.number="initialStep"><option :value="-1">Начало эксплуатации — перед первым ТО</option><option v-for="(step,index) in draft.steps" :key="index" :value="index">{{stepLabel(draft.steps,index,draft.markOffset||0)}}</option></select></label>
      <MaintenanceDateReadings :token="token" :vehicle-id="selectedId" :date="draft.lastDate" v-model="draft.engines" />
     </template>
     <template v-else>
-     <label>Следующий шаг нового графика<select v-model.number="draft.nextStepIndex"><option v-for="(step,index) in draft.steps" :key="index" :value="index">{{stepLabel(draft.steps,index)}}</option></select></label>
+     <label>Следующий шаг нового графика<select v-model.number="draft.nextStepIndex"><option v-for="(step,index) in draft.steps" :key="index" :value="index">{{stepLabel(draft.steps,index,draft.markOffset||0)}}</option></select></label>
      <p>Изменения применяются к следующему ТО. Дата и показания последнего выполненного ТО сохраняются; прошлая история не пересчитывается.</p>
     </template>
     <h3>Разовые обкаточные ТО</h3><p>Выполняются отдельно и не сдвигают основной цикл. По умолчанию — через 150 м/ч. При замене одного ДВС оставьте только его показания.</p>
