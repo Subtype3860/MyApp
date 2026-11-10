@@ -84,6 +84,7 @@ public static class MaintenancePlanner
             ? plan with { RunIns = plan.RunIns.Where(r => r.Id != id).ToArray() }
             : plan with {
                 LastDate = completion.Date,
+                LastTime = completion.Time,
                 LastService = plan.Steps[plan.NextStepIndex].Name,
                 Engines = completion.Engines,
                 NextStepIndex = (plan.NextStepIndex + 1) % plan.Steps.Length

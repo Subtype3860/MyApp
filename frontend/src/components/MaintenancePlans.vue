@@ -128,7 +128,7 @@ onMounted(load)
    <h3>{{vehicleTitle(selected.vehicle)}}</h3>
    <p v-if="!selected.plan">Начните с графика и данных последнего ТО.</p>
    <template v-else>
-    <p>Последнее плановое ТО: {{selected.plan.lastService}} · {{selected.plan.lastDate.split('-').reverse().join('.')}}</p>
+    <p>Последнее плановое ТО: {{selected.plan.lastService}} · {{selected.plan.lastDate.split('-').reverse().join('.')}}<template v-if="selected.plan.lastTime"> {{String(selected.plan.lastTime).slice(0,5)}}</template></p>
     <ul class="maintenance-due-list">
      <li v-for="due in selected.due" :key="due.runInId || 'scheduled'" class="maintenance-due" :class="{ 'maintenance-due--overdue': due.remaining<0, 'maintenance-due--runin': !!due.runInId }">
       <span v-if="due.runInId" class="maintenance-runin-badge">обкатка</span>

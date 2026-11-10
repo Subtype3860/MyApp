@@ -223,8 +223,12 @@ public sealed partial class MaintenancePlansController
         var card = await db.MaintenanceCards.AsNoTracking().SingleOrDefaultAsync(x => x.Id == id, ct);
         if (card is null) return NotFound();
         var data = Decode<CardData>(card.Data);
+        // Время из карты — точка отсчёта: показания позже него уже не база для следующего ТО.
+        TimeOnly? time = data.FinishedAt is { } finished ? TimeOnly.FromTimeSpan(finished.TimeOfDay)
+            : data.ReleasedAt is { } released ? TimeOnly.FromTimeSpan(released.TimeOfDay)
+            : data.StartedAt is { } started ? TimeOnly.FromTimeSpan(started.TimeOfDay) : null;
         return await Complete(card.VehicleId, new(card.PlanRevision, data.Date, [],
-            $"Карта ТО {id}. {request.Reason}".Trim(), card.RunInId, id, id, request.Revision), ct);
+            $"Карта ТО {id}. {request.Reason}".Trim(), card.RunInId, id, id, request.Revision, time), ct);
     }
 
     [HttpPost("cards/{id:guid}/defects/{operationId}")]

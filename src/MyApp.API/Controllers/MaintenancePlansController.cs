@@ -71,10 +71,13 @@ public sealed partial class MaintenancePlansController(AppDbContext db, IVehicle
         return Ok(new { engines, missing = Enumerable.Range(1, vehicle.EngineCount).Except(engines.Select(e => e.Number)) });
     }
 
-    private async Task<MaintenanceEngine[]> ReadingsOn(Guid vehicleId, DateOnly date, CancellationToken ct)
+    private async Task<MaintenanceEngine[]> ReadingsOn(Guid vehicleId, DateOnly date, CancellationToken ct, TimeOnly? time = null)
     {
+        // Время из карты ТО ограничивает выборку: показания, снятые позже обслуживания, не являются базой.
         var readings = await db.VehicleHourReadings.AsNoTracking()
-            .Where(r => r.VehicleId == vehicleId && r.ReadingDate <= date && r.EngineNumber > 0)
+            .Where(r => r.VehicleId == vehicleId && r.EngineNumber > 0 &&
+                (r.ReadingDate < date ||
+                 r.ReadingDate == date && (time == null || r.ReadingTime == null || r.ReadingTime <= time)))
             .OrderByDescending(r => r.ReadingDate).ThenByDescending(r => r.ReadingTime).ThenByDescending(r => r.CreatedAt).ThenByDescending(r => r.Id)
             .ToArrayAsync(ct);
         return readings.DistinctBy(r => r.EngineNumber).Select(r => MaintenancePlanner.Estimate(r.EngineNumber, r.EngineHours, r.ReadingDate, date)).ToArray();
@@ -196,7 +199,7 @@ public sealed partial class MaintenancePlansController(AppDbContext db, IVehicle
             return Conflict(new { message = "Для этого ТО открыта карта. Завершите обслуживание через её приёмку." });
         var runIn = request.RunInId is { } id ? plan.RunIns.FirstOrDefault(r => r.Id == id) : null;
         if (request.RunInId is not null && runIn is null) return BadRequest(new { message = "Обкаточное ТО не найдено или уже выполнено." });
-        var engines = await ReadingsOn(vehicleId, request.Date, ct);
+        var engines = await ReadingsOn(vehicleId, request.Date, ct, request.Time);
         if (!MaintenancePlanner.ValidEngines(engines, vehicle.EngineCount)) return MissingReadings(request.Date);
         request = request with { Engines = engines };
         var baseline = runIn?.Engines ?? plan.Engines;
