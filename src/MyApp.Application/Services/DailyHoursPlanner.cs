@@ -68,7 +68,7 @@ public static class DailyHoursPlanner
                 }
                 var warning = prior.Length > 0 && value - prior[0].Value > 24m * (row.ReadingDate.DayNumber - prior[0].Key.DayNumber);
                 if (warning && vehicle.EngineCount == 2) {
-                    blocked.Add(key); Add("error", "Прирост превышает 24 м/ч в сутки. Для расчёта по норме 22 часа нужны показания обоих ДВС.", value); continue;
+                    blocked.Add(key); Add("error", "Прирост превышает 24 м/ч в сутки. Для расчёта по норме 23 часа нужны показания обоих ДВС.", value); continue;
                 }
                 timeline[row.ReadingDate] = value.Value;
                 blocked.Remove(key);
@@ -104,7 +104,7 @@ public static class DailyHoursPlanner
         if (deltas.Any(d => d < 0))
             return (rows, "Оба счётчика ДВС уменьшились. Проверьте показания или замену двигателей.", null);
         var limit = 24m * days;
-        var norm = 22m * days;
+        var norm = MaintenancePlanner.DailyHoursNorm * days;
         var spread = Math.Abs(deltas[0] - deltas[1]);
         var withinLimit = deltas.Select(d => d <= limit).ToArray();
         // 24 м/ч в сутки физически возможно: техника зимой работает круглосуточно.
@@ -121,7 +121,7 @@ public static class DailyHoursPlanner
         else
         {
             delta = norm;
-            reason = "Прирост обоих ДВС превышает 24 м/ч в сутки; применена расчётная норма 22 м/ч в сутки.";
+            reason = "Прирост обоих ДВС превышает 24 м/ч в сутки; применена расчётная норма 23 м/ч в сутки.";
         }
         var adjusted = rows.Select((r, i) => r with { EngineHours = prior[i][0].Value + delta }).ToArray();
         for (var i = 0; i < adjusted.Length; i++)

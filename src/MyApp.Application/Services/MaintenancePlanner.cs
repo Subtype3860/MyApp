@@ -5,12 +5,15 @@ namespace MyApp.Application.Services;
 /// <summary>Расчёт ТО по фактическому приросту наработки наиболее нагруженного ДВС.</summary>
 public static class MaintenancePlanner
 {
-    /// <summary>За пропущенные полные дни — 22 м/ч, за выбранный день — 11 м/ч.</summary>
+    /// <summary>Расчётная суточная наработка, м/ч.</summary>
+    public const decimal DailyHoursNorm = 23m;
+
+    /// <summary>За пропущенные полные дни — 23 м/ч, за выбранный день — 11,5 м/ч.</summary>
     public static MaintenanceEngine Estimate(int number, decimal hours, DateOnly sourceDate, DateOnly targetDate)
     {
         var days = targetDate.DayNumber - sourceDate.DayNumber;
         if (days < 0) throw new ArgumentOutOfRangeException(nameof(targetDate));
-        return new(number, hours + (days > 0 ? (days - 1) * 22m + 11m : 0m), days > 0, sourceDate, hours);
+        return new(number, hours + (days > 0 ? (days - 1) * DailyHoursNorm + DailyHoursNorm / 2m : 0m), days > 0, sourceDate, hours);
     }
 
     public static string? Validate(MaintenancePlan? plan, int engineCount, DateOnly today)

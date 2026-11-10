@@ -81,7 +81,7 @@ public sealed class DailyHoursPlannerTests
     [Fact] public void Both_engines_over_limit_use_norm()
     {
         var result = Plan([Row(2, 130), Row(2, 540, 2)], History(1, 100), History(1, 500, 2));
-        Assert.Equal(new decimal?[] {122, 522}, result.Rows.Select(r => r.EngineHours));
+        Assert.Equal(new decimal?[] {123, 523}, result.Rows.Select(r => r.EngineHours));
         Assert.All(result.Rows, r => Assert.Equal("ready", r.Status));
     }
     /// <summary>Проверяет сопоставление по бортовому номеру и отклонение неоднозначных совпадений.</summary>
