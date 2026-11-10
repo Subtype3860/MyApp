@@ -109,6 +109,24 @@ public interface IVehicleService
         Guid createdBy,
         CancellationToken cancellationToken);
 
+    /// <summary>Возвращает отметки о замене ЭБУ двигателей техники.</summary>
+    Task<ServiceResult<EcuReplacementView[]>> GetEcuReplacementsAsync(
+        Guid vehicleId,
+        CancellationToken cancellationToken);
+
+    /// <summary>Сохраняет отметку о замене ЭБУ: показание на эту дату считается новым отсчётом.</summary>
+    Task<ServiceResult<Guid>> AddEcuReplacementAsync(
+        Guid vehicleId,
+        EcuReplacementRequest request,
+        Guid createdBy,
+        CancellationToken cancellationToken);
+
+    /// <summary>Удаляет отметку о замене ЭБУ.</summary>
+    Task<ServiceResult<bool>> DeleteEcuReplacementAsync(
+        Guid id,
+        Guid actor,
+        CancellationToken cancellationToken);
+
     /// <summary>Импортирует показания моточасов из CSV- или XLSX-файла.</summary>
     /// <param name="file">Поток с содержимым файла.</param>
     /// <param name="fileExtension">Расширение файла (".csv" или ".xlsx").</param>

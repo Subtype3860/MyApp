@@ -4,7 +4,7 @@ import UserAvatar from './UserAvatar.vue'
 import WorkParticipants from './WorkParticipants.vue'
 import RepairMediaViewer from './RepairMediaViewer.vue'
 import { cardMedia, defaultReportSelection, selectAuxiliaryWorks } from '../utils/shiftReport'
-import { convertImageToWebp } from '../utils/mediaUpload'
+import { convertImageToWebp, isImageFile } from '../utils/mediaUpload'
 import { readAuth } from '../utils/authStorage'
 
 const props = defineProps({ token: { type: String, required: true }, navigationCollapsed: { type: Boolean, required: true } })
@@ -64,11 +64,11 @@ async function selectFiles(event) {
     const allowed = ['image/jpeg', 'image/png', 'image/webp', 'video/mp4', 'video/webm', 'video/quicktime']
     if (selected.some(file => !allowed.includes(file.type))) throw new Error('Выберите фото JPEG, PNG, WebP или видео MP4, WebM, MOV.')
     if (selected.some(file => file.type.startsWith('video/') && file.size > 100 * 1024 * 1024)) throw new Error('Видео должно быть не больше 100 МБ.')
-    const processed = await Promise.all(selected.map(file => file.type.startsWith('image/') ? convertImageToWebp(file) : file))
-    if (processed.some(file => file.type.startsWith('image/') && file.size > 8 * 1024 * 1024)) throw new Error('Фото после преобразования должно быть не больше 8 МБ.')
+    const processed = await Promise.all(selected.map(file => isImageFile(file) ? convertImageToWebp(file) : file))
+    if (processed.some(file => isImageFile(file) && file.size > 8 * 1024 * 1024)) throw new Error('Фото после преобразования должно быть не больше 8 МБ.')
     const allFiles = [...files.value.map(item => item.file), ...processed]
     if (['image/', 'video/'].some(prefix => allFiles.filter(file => file.type.startsWith(prefix)).length > 10)) throw new Error('К одной работе можно приложить до 10 фото и 10 видео.')
-    files.value.push(...processed.map(file => ({ file, url: file.type.startsWith('image/') ? URL.createObjectURL(file) : '' })))
+    files.value.push(...processed.map(file => ({ file, url: isImageFile(file) ? URL.createObjectURL(file) : '' })))
   } catch (failure) { error.value = failure.message }
   finally { preparing.value = false }
 }

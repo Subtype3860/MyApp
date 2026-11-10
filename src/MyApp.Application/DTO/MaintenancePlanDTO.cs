@@ -16,3 +16,6 @@ public sealed record MaintenanceDue(
     decimal DueHours, decimal Elapsed, decimal Remaining, DateOnly ReadingDate, bool IsEstimated = false, DateOnly? SourceDate = null);
 public sealed record MaintenanceCompletion(int Revision, DateOnly Date, MaintenanceEngine[] Engines, string Description, Guid? RunInId = null, Guid? OperationId = null, Guid? CardId = null, int? CardRevision = null, TimeOnly? Time = null);
 
+/// <summary>Отметка о замене блока управления ДВС.</summary>
+public sealed record EcuReplacementRequest(int EngineNumber, DateOnly ReplacedOn, string Note = "");
+public sealed record EcuReplacementView(Guid Id, Guid VehicleId, int EngineNumber, DateOnly ReplacedOn, string Note, DateTimeOffset CreatedAt);

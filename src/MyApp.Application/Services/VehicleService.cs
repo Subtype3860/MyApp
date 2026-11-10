@@ -327,6 +327,33 @@ public sealed class VehicleService(
             repository.DeleteDefectVideoAsync, cancellationToken);
 
     /// <summary>Добавляет показание моточасов техники.</summary>
+    /// <summary>Возвращает отметки о замене ЭБУ двигателей техники.</summary>
+    public async Task<ServiceResult<EcuReplacementView[]>> GetEcuReplacementsAsync(Guid vehicleId, CancellationToken cancellationToken) =>
+        ServiceResult<EcuReplacementView[]>.Success(await repository.GetEcuReplacementsAsync(vehicleId, cancellationToken));
+
+    /// <summary>Сохраняет отметку о замене ЭБУ: показание на эту дату считается новым отсчётом.</summary>
+    public async Task<ServiceResult<Guid>> AddEcuReplacementAsync(Guid vehicleId, EcuReplacementRequest request, Guid createdBy, CancellationToken cancellationToken)
+    {
+        if (!await CanManageHoursAsync(createdBy, cancellationToken))
+            return ServiceResult<Guid>.Forbidden("Нет права изменять моточасы.");
+        if (request.EngineNumber is < 1 or > 2) return ServiceResult<Guid>.BadRequest("Номер ДВС должен быть 1 или 2.");
+        if (request.ReplacedOn == default || request.ReplacedOn > DateOnly.FromDateTime(DateTime.UtcNow))
+            return ServiceResult<Guid>.BadRequest("Укажите дату замены ЭБУ не позже сегодняшней.");
+        if ((request.Note ?? "").Length > 500) return ServiceResult<Guid>.BadRequest("Комментарий не должен превышать 500 символов.");
+        var vehicle = (await repository.GetVehiclesAsync(cancellationToken)).FirstOrDefault(x => x.Id == vehicleId);
+        if (vehicle is null) return ServiceResult<Guid>.NotFound();
+        if (request.EngineNumber > vehicle.EngineCount) return ServiceResult<Guid>.BadRequest("У этой техники один ДВС.");
+        return ServiceResult<Guid>.Success(await repository.AddEcuReplacementAsync(vehicleId, request, createdBy, cancellationToken));
+    }
+
+    /// <summary>Удаляет отметку о замене ЭБУ.</summary>
+    public async Task<ServiceResult<bool>> DeleteEcuReplacementAsync(Guid id, Guid actor, CancellationToken cancellationToken)
+    {
+        if (!await CanManageHoursAsync(actor, cancellationToken))
+            return ServiceResult<bool>.Forbidden("Нет права изменять моточасы.");
+        return ServiceResult<bool>.Success(await repository.DeleteEcuReplacementAsync(id, cancellationToken));
+    }
+
     public async Task<ServiceResult<Guid>> AddHoursAsync(
         Guid vehicleId,
         VehicleHoursRequest request,

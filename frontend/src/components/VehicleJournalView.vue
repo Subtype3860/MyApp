@@ -11,7 +11,7 @@ import RepairActionsMenu from './RepairActionsMenu.vue'
 import WorkParticipants from './WorkParticipants.vue'
 import LocalAdvicePanel from './LocalAdvicePanel.vue'
 import LocalRequestDraft from './LocalRequestDraft.vue'
-import { convertImageToWebp } from '../utils/mediaUpload'
+import { convertImageToWebp, isImageFile } from '../utils/mediaUpload'
 
 /**
  * Компонент раздела «Транспорт»: журнал техники, заявки на ремонт,
@@ -755,7 +755,7 @@ async function uploadRepairFiles(defect, event) {
   draft.preparing = true
   try {
     const processedFiles = await Promise.all(files.map((file) =>
-      file.type.startsWith('image/') ? convertImageToWebp(file) : file))
+      isImageFile(file) ? convertImageToWebp(file) : file))
     const oversizedImage = processedFiles.find((file) =>
       file.type === 'image/webp' && file.size > 8 * 1024 * 1024)
     if (oversizedImage) {
@@ -828,7 +828,7 @@ async function completeRepair(defect) {
     // Keep the saved stage and remove only acknowledged files from the retry queue.
     while (draft.files.length) {
       const file = draft.files[0]
-      await uploadFiles('works', draft.savedWorkId, file.type.startsWith('image/') ? 'photos' : 'videos', [file])
+      await uploadFiles('works', draft.savedWorkId, isImageFile(file) ? 'photos' : 'videos', [file])
       draft.files.shift()
     }
     draft.previews.forEach(({ url }) => URL.revokeObjectURL(url))
@@ -924,7 +924,7 @@ async function selectFiles(event) {
   const files = Array.from(event.target.files ?? [])
   event.target.value = ''
   if (!files.length || preparingRequestMedia.value || isSaving.value) return
-  const images = files.filter(file => file.type.startsWith('image/'))
+  const images = files.filter(file => isImageFile(file))
   const clips = files.filter(file => file.type.startsWith('video/'))
   const validation = files.length !== images.length + clips.length
     ? 'Выберите фото или видео.'

@@ -138,7 +138,8 @@ function normalizeNumbers(){for(const m of data.value.materials)if(m.actual===''
 async function addPhoto(event,id){
  let file=event.target.files[0];if(!file)return
  const isVideo=file.type.startsWith('video/')
- if(!isVideo&&!file.type.startsWith('image/')){error.value='Допустимы фото JPEG/PNG и видео MP4/WebM.';event.target.value='';return}
+ const looksImage=file.type.startsWith('image/')||(!file.type&&/\.(jpe?g|png|webp|heic|heif)$/i.test(file.name))
+ if(!isVideo&&!looksImage){error.value='Допустимы фото JPEG/PNG/HEIC и видео MP4/WebM.';event.target.value='';return}
  if(isVideo&&file.size>25_000_000){error.value='Видео до 25 МБ.';event.target.value='';return}
  if(!await save()){event.target.value='';return}
  busy.value=true;error.value=''

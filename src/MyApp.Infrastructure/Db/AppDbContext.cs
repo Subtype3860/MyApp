@@ -12,6 +12,7 @@ namespace MyApp.Infrastructure.Db {
         public DbSet<VehicleMaintenanceEvent> VehicleMaintenanceEvents => Set<VehicleMaintenanceEvent>();
         public DbSet<GtoReport> GtoReports => Set<GtoReport>();
         public DbSet<VehicleEngineSettings> VehicleEngineSettings => Set<VehicleEngineSettings>();
+        public DbSet<EcuReplacementRecord> EcuReplacements => Set<EcuReplacementRecord>();
         public DbSet<GtoUserSettings> GtoUserSettings => Set<GtoUserSettings>();
         public DbSet<GtoVehicleSettings> GtoVehicleSettings => Set<GtoVehicleSettings>();
         public DbSet<GtoDefectSettings> GtoDefectSettings => Set<GtoDefectSettings>();
@@ -166,6 +167,17 @@ namespace MyApp.Infrastructure.Db {
                 entity.Property(x => x.VehicleId).HasColumnName("vehicle_id");
                 entity.Property(x => x.EngineNumber).HasColumnName("engine_number");
                 entity.Property(x => x.HoursAtReplacement).HasColumnName("hours_at_replacement");
+            });
+            modelBuilder.Entity<EcuReplacementRecord>(entity => {
+                entity.ToTable("vehicle_ecu_replacements"); entity.HasKey(x => x.Id);
+                entity.Property(x => x.Id).HasColumnName("id");
+                entity.Property(x => x.VehicleId).HasColumnName("vehicle_id");
+                entity.Property(x => x.EngineNumber).HasColumnName("engine_number");
+                entity.Property(x => x.ReplacedOn).HasColumnName("replaced_on");
+                entity.Property(x => x.Note).HasColumnName("note").HasMaxLength(500);
+                entity.Property(x => x.CreatedBy).HasColumnName("created_by");
+                entity.Property(x => x.CreatedAt).HasColumnName("created_at");
+                entity.HasIndex(x => new { x.VehicleId, x.EngineNumber, x.ReplacedOn }).IsUnique();
             });
             modelBuilder.Entity<GtoUserSettings>(entity => {
                 entity.ToTable("gto_user_settings"); entity.HasKey(x => x.UserId);

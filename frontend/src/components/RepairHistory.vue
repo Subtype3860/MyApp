@@ -135,7 +135,8 @@ async function attachMedia(request, files) {
   try {
     for (const raw of files) {
       const isVideo = raw.type.startsWith('video/')
-      if (!isVideo && !raw.type.startsWith('image/')) throw new Error('Допустимы фото и видео.')
+      const looksImage = raw.type.startsWith('image/') || (!raw.type && /\.(jpe?g|png|webp|heic|heif)$/i.test(raw.name))
+      if (!isVideo && !looksImage) throw new Error('Допустимы фото и видео.')
       let file = raw
       if (!isVideo) {
         try { file = await convertImageToWebp(raw, { maxSide: 1600 }) } catch { /* HEIC и подобные форматы отправляем как есть. */ }

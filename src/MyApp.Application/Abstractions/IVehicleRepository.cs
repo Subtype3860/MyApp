@@ -222,4 +222,12 @@ public interface IVehicleRepository
     Task<ServiceResult<Guid>> SaveVehicleCatalogAsync(Guid? id, VehicleCatalogRequest request, CancellationToken cancellationToken);
     /// <summary>Переводит технику в архив с сохранением связанных записей истории.</summary>
     Task<bool> ArchiveVehicleAsync(Guid id, CancellationToken cancellationToken);
+    /// <summary>Возвращает отметки о замене ЭБУ по технике.</summary>
+    Task<EcuReplacementView[]> GetEcuReplacementsAsync(Guid vehicleId, CancellationToken cancellationToken);
+
+    /// <summary>Сохраняет отметку о замене ЭБУ (повтор на ту же дату обновляет комментарий).</summary>
+    Task<Guid> AddEcuReplacementAsync(Guid vehicleId, EcuReplacementRequest request, Guid createdBy, CancellationToken cancellationToken);
+
+    /// <summary>Удаляет отметку о замене ЭБУ.</summary>
+    Task<bool> DeleteEcuReplacementAsync(Guid id, CancellationToken cancellationToken);
 }

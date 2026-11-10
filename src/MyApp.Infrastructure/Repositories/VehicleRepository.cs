@@ -553,6 +553,48 @@ public sealed class VehicleRepository(
             cancellationToken);
 
     /// <summary>Добавляет показание моточасов техники.</summary>
+    /// <summary>Возвращает отметки о замене ЭБУ по технике.</summary>
+    public async Task<EcuReplacementView[]> GetEcuReplacementsAsync(Guid vehicleId, CancellationToken cancellationToken) =>
+        await dbContext.EcuReplacements.AsNoTracking()
+            .Where(x => x.VehicleId == vehicleId)
+            .OrderByDescending(x => x.ReplacedOn).ThenBy(x => x.EngineNumber)
+            .Select(x => new EcuReplacementView(x.Id, x.VehicleId, x.EngineNumber, x.ReplacedOn, x.Note, x.CreatedAt))
+            .ToArrayAsync(cancellationToken);
+
+    /// <summary>Сохраняет отметку о замене ЭБУ (повтор на ту же дату обновляет комментарий).</summary>
+    public async Task<Guid> AddEcuReplacementAsync(Guid vehicleId, EcuReplacementRequest request, Guid createdBy, CancellationToken cancellationToken)
+    {
+        var note = (request.Note ?? "").Trim();
+        var existing = await dbContext.EcuReplacements.SingleOrDefaultAsync(
+            x => x.VehicleId == vehicleId && x.EngineNumber == request.EngineNumber && x.ReplacedOn == request.ReplacedOn,
+            cancellationToken);
+        if (existing is not null)
+        {
+            existing.Note = note;
+            existing.CreatedBy = createdBy;
+            existing.CreatedAt = DateTimeOffset.UtcNow;
+            await dbContext.SaveChangesAsync(cancellationToken);
+            return existing.Id;
+        }
+        var entity = new EcuReplacementRecord
+        {
+            Id = Guid.NewGuid(),
+            VehicleId = vehicleId,
+            EngineNumber = request.EngineNumber,
+            ReplacedOn = request.ReplacedOn,
+            Note = note,
+            CreatedBy = createdBy,
+            CreatedAt = DateTimeOffset.UtcNow,
+        };
+        dbContext.EcuReplacements.Add(entity);
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return entity.Id;
+    }
+
+    /// <summary>Удаляет отметку о замене ЭБУ.</summary>
+    public async Task<bool> DeleteEcuReplacementAsync(Guid id, CancellationToken cancellationToken) =>
+        await dbContext.EcuReplacements.Where(x => x.Id == id).ExecuteDeleteAsync(cancellationToken) > 0;
+
     public async Task<Guid> AddHoursAsync(
         Guid vehicleId,
         VehicleHoursRequest request,

@@ -477,6 +477,16 @@ public sealed class DatabaseInitializer(AppDbContext db) : IDatabaseInitializer
 
             ALTER TABLE vehicle_hour_readings ADD COLUMN IF NOT EXISTS engine_number integer NOT NULL DEFAULT 0;
             ALTER TABLE vehicle_hour_readings ADD COLUMN IF NOT EXISTS reading_time time without time zone;
+            CREATE TABLE IF NOT EXISTS vehicle_ecu_replacements (
+                id uuid PRIMARY KEY,
+                vehicle_id uuid NOT NULL REFERENCES number_car(id) ON DELETE CASCADE,
+                engine_number integer NOT NULL CHECK (engine_number IN (1,2)),
+                replaced_on date NOT NULL,
+                note text NOT NULL DEFAULT '',
+                created_by uuid NOT NULL REFERENCES app_users(id) ON DELETE RESTRICT,
+                created_at timestamptz NOT NULL DEFAULT now(),
+                UNIQUE (vehicle_id, engine_number, replaced_on)
+            );
             CREATE TABLE IF NOT EXISTS vehicle_engine_settings (
                 vehicle_id uuid NOT NULL REFERENCES number_car(id) ON DELETE CASCADE,
                 engine_number integer NOT NULL CHECK (engine_number IN (1,2)),
