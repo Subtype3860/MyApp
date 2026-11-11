@@ -9,7 +9,8 @@ public static class DailyHoursPlanner
 {
     /// <summary>Проверяет хронологию показаний по каждому ДВС, переносит прошлое значение при простое и вычисляет отпечаток результата.</summary>
     public static DailyHoursPreview Build(IReadOnlyList<DailyHoursRow> input,
-        IReadOnlyList<VehicleResponse> vehicles, IReadOnlyList<DailyHoursHistory> history)
+        IReadOnlyList<VehicleResponse> vehicles, IReadOnlyList<DailyHoursHistory> history,
+        IReadOnlySet<(Guid VehicleId, int EngineNumber, DateOnly Date)>? ecuReplacements = null)
     {
         // Generic single-engine headers and explicit ДВС1 identify the same counter.
         input = input.Select(r => r.EngineNumber == 0 && vehicles.Count(v => !v.IsArchived && v.GarageNumber == r.GarageNumber) == 1 &&
@@ -31,7 +32,7 @@ public static class DailyHoursPlanner
             var originalRows = group.OrderBy(r => r.EngineNumber).ToArray();
             var candidates = vehicles.Where(v => !v.IsArchived && v.GarageNumber == group.Key.GarageNumber).ToArray();
             var pair = candidates.Length == 1 && candidates[0].EngineCount == 2
-                ? Synchronize(originalRows, candidates[0].Id, timelines, blocked)
+                ? Synchronize(originalRows, candidates[0].Id, timelines, blocked, ecuReplacements)
                 : (Rows: originalRows, Error: (string?)null, Message: (string?)null);
             foreach (var row in pair.Rows)
             {
@@ -58,6 +59,14 @@ public static class DailyHoursPlanner
                     if (prior.Length == 0) { Add("error", "Нет предыдущего показания для простоя."); continue; }
                     value = prior[0].Value;
                 }
+                // Замена ЭБУ: показание на эту дату — новое начало отсчёта, скачок допустим.
+                if (ecuReplacements?.Contains((vehicle.Id, engine, row.ReadingDate)) == true)
+                {
+                    timeline[row.ReadingDate] = value.Value;
+                    blocked.Remove(key);
+                    Add("ready", "Замена ЭБУ: показание принято как новое начало отсчёта.", value);
+                    continue;
+                }
                 if (prior.Length > 0 && value < prior[0].Value || next.Length > 0 && value > next[0].Value) {
                     blocked.Add(key); Add("error", "Показание нарушает хронологию счётчика. Проверьте ошибку или замену ДВС.", value); continue;
                 }
@@ -83,14 +92,18 @@ public static class DailyHoursPlanner
     /// <summary>Согласует пару счётчиков по большему приросту за одинаковый период, сохраняя отдельные начальные показания.</summary>
     private static (DailyHoursRow[] Rows, string? Error, string? Message) Synchronize(
         DailyHoursRow[] rows, Guid vehicleId,
-        Dictionary<(Guid, int), Dictionary<DateOnly, decimal>> timelines, HashSet<(Guid, int)> blocked)
+        Dictionary<(Guid, int), Dictionary<DateOnly, decimal>> timelines, HashSet<(Guid, int)> blocked,
+        IReadOnlySet<(Guid VehicleId, int EngineNumber, DateOnly Date)>? ecuReplacements = null)
     {
         // An incomplete pair or duplicate is handled by the ordinary row validation.
         if (rows.Length != 2 || rows[0].EngineNumber != 1 || rows[1].EngineNumber != 2)
             return (rows, null, null);
+        // При замене ЭБУ пара не выравнивается: каждая строка принимается как новый отсчёт.
+        var date = rows[0].ReadingDate;
+        if (ecuReplacements is not null && rows.Any(r => ecuReplacements.Contains((vehicleId, r.EngineNumber, date))))
+            return (rows, null, null);
         if (rows.Any(r => r.Invalid || r.EngineHours is < 0 or > 1000000000))
             return (rows, "Некорректное показание одного из ДВС. Исправьте пару показаний.", null);
-        var date = rows[0].ReadingDate;
         var histories = rows.Select(r => timelines.GetValueOrDefault((vehicleId, r.EngineNumber)) ?? new()).ToArray();
         var prior = histories.Select(h => h.Where(p => p.Key < date).OrderByDescending(p => p.Key).ToArray()).ToArray();
         // Two explicit initial readings establish the baseline; there is no elapsed interval to compare yet.

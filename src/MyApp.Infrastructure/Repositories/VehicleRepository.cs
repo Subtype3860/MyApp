@@ -33,7 +33,12 @@ public sealed class VehicleRepository(
         var history = await dbContext.VehicleHourReadings.AsNoTracking().Where(h => ids.Contains(h.VehicleId))
             .Select(h => new DailyHoursHistory(h.VehicleId, h.ReadingDate, h.EngineNumber, h.EngineHours, h.CreatedAt))
             .ToArrayAsync(cancellationToken);
-        var preview = MyApp.Application.Services.DailyHoursPlanner.Build(request.Rows, vehicles, history);
+        var ecu = (await dbContext.EcuReplacements.AsNoTracking()
+            .Where(x => ids.Contains(x.VehicleId))
+            .Select(x => new { x.VehicleId, x.EngineNumber, x.ReplacedOn })
+            .ToArrayAsync(cancellationToken))
+            .Select(x => (x.VehicleId, x.EngineNumber, x.ReplacedOn)).ToHashSet();
+        var preview = MyApp.Application.Services.DailyHoursPlanner.Build(request.Rows, vehicles, history, ecu);
         if (!commit) return ServiceResult<DailyHoursPreview>.Success(preview);
         if (request.Fingerprint != preview.Fingerprint)
             return ServiceResult<DailyHoursPreview>.Conflict("Данные изменились. Повторите предварительную проверку.");

@@ -126,6 +126,7 @@ public class VehicleController : ControllerBase
         Guid defectId,
         IFormFile file,
         [FromServices] IVehicleService service,
+        [FromServices] MyApp.Infrastructure.Media.MediaImageNormalizer normalizer,
         CancellationToken cancellationToken)
     {
         if (!TryGetUserId(out var userId))
@@ -138,12 +139,11 @@ public class VehicleController : ControllerBase
             return InvalidFile("Фотография должна быть не более 8 МБ.");
         }
 
-        await using var stream = new MemoryStream();
-        await file.CopyToAsync(stream, cancellationToken);
+        var photo = await NormalizePhotoAsync(file, normalizer, cancellationToken);
 
         var result = await service.AddDefectPhotosAsync(
             defectId,
-            [new VehicleWorkPhotoUpload(Path.GetFileName(file.FileName), file.ContentType, stream.ToArray())],
+            [new VehicleWorkPhotoUpload(Path.GetFileName(file.FileName), photo.ContentType, photo.Bytes)],
             userId,
             cancellationToken);
 
@@ -388,6 +388,7 @@ public class VehicleController : ControllerBase
         Guid workId,
         IFormFile file,
         [FromServices] IVehicleService service,
+        [FromServices] MyApp.Infrastructure.Media.MediaImageNormalizer normalizer,
         CancellationToken cancellationToken)
     {
         if (!TryGetUserId(out var userId))
@@ -400,12 +401,11 @@ public class VehicleController : ControllerBase
             return InvalidFile("Фотография должна быть не более 8 МБ.");
         }
 
-        await using var stream = new MemoryStream();
-        await file.CopyToAsync(stream, cancellationToken);
+        var photo = await NormalizePhotoAsync(file, normalizer, cancellationToken);
 
         var result = await service.AddWorkPhotosAsync(
             workId,
-            [new VehicleWorkPhotoUpload(Path.GetFileName(file.FileName), file.ContentType, stream.ToArray())],
+            [new VehicleWorkPhotoUpload(Path.GetFileName(file.FileName), photo.ContentType, photo.Bytes)],
             userId,
             cancellationToken);
 
@@ -697,6 +697,48 @@ public class VehicleController : ControllerBase
         if (!SessionIdentity.TryRead(User, out var userId, out var stamp))
             throw new InvalidOperationException("Authenticated session identity is missing.");
         return new(videoId, isWorkVideo, userId, stamp);
+    }
+
+    /// <summary>Возвращает отметки о замене ЭБУ двигателей техники.</summary>
+    [HttpGet("{vehicleId:guid}/ecu-replacements")]
+    public async Task<IActionResult> GetEcuReplacements(Guid vehicleId,
+        [FromServices] IVehicleService service, CancellationToken cancellationToken) =>
+        this.ToActionResult(await service.GetEcuReplacementsAsync(vehicleId, cancellationToken), value => Ok(value));
+
+    /// <summary>Сохраняет отметку о замене ЭБУ: показание на эту дату начинает новый отсчёт.</summary>
+    [HttpPost("{vehicleId:guid}/ecu-replacements")]
+    public async Task<IActionResult> AddEcuReplacement(Guid vehicleId, [FromBody] EcuReplacementRequest request,
+        [FromServices] IVehicleService service, CancellationToken cancellationToken)
+    {
+        if (!TryGetUserId(out var userId)) return Unauthorized();
+        return this.ToActionResult(await service.AddEcuReplacementAsync(vehicleId, request, userId, cancellationToken),
+            id => Created($"/api/vehicles/ecu-replacements/{id}", new { id }));
+    }
+
+    /// <summary>Удаляет отметку о замене ЭБУ.</summary>
+    [HttpDelete("ecu-replacements/{id:guid}")]
+    public async Task<IActionResult> DeleteEcuReplacement(Guid id,
+        [FromServices] IVehicleService service, CancellationToken cancellationToken)
+    {
+        if (!TryGetUserId(out var userId)) return Unauthorized();
+        return this.ToActionResult(await service.DeleteEcuReplacementAsync(id, userId, cancellationToken), _ => NoContent());
+    }
+
+    /// <summary>Приводит загруженное фото к WebP на сервере, включая HEIC с iPhone.</summary>
+    private static async Task<(byte[] Bytes, string ContentType)> NormalizePhotoAsync(
+        IFormFile file, MyApp.Infrastructure.Media.MediaImageNormalizer normalizer, CancellationToken cancellationToken)
+    {
+        await using var stream = new MemoryStream();
+        await file.CopyToAsync(stream, cancellationToken);
+        var bytes = stream.ToArray();
+        var type = MaintenanceCardMedia.ContentType(bytes) ?? file.ContentType ?? "application/octet-stream";
+        if (type.StartsWith("image/", StringComparison.Ordinal) && type != "image/webp")
+        {
+            var normalized = await normalizer.NormalizeAsync(bytes, cancellationToken);
+            bytes = normalized.Bytes;
+            type = normalized.ContentType;
+        }
+        return (bytes, type);
     }
 
     /// <summary>Временное разрешение на чтение конкретного видео в рамках сессии.</summary>

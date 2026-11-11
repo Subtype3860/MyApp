@@ -9,6 +9,7 @@ const props=defineProps({token:{type:String,required:true}})
 const canManage=ref(false)
 const rows=ref([]),query=ref(''),date=ref(localDate(new Date())),loading=ref(false),error=ref(''),message=ref(''),busy=ref('')
 const modal=ref(null),file=ref(null),importing=ref(false),importResult=ref(null)
+const ecuDialog=ref(null),ecuVehicle=ref({}),ecuDate=ref(date.value),ecuEngine=ref(1),ecuNote=ref(''),ecuList=ref([]),ecuBusy=ref(false)
 let controller
 const matches=computed(()=>rows.value.filter(row=>[row.vehicle.modelName,row.vehicle.typeName,row.vehicle.garageNumber,row.vehicle.stateNumber].some(value=>String(value??'').toLocaleLowerCase('ru').includes(query.value.trim().toLocaleLowerCase('ru')))))
 const /** Формирует заголовки запроса с токеном текущей сессии. */ headers=()=>({Authorization:`Bearer ${props.token}`})
@@ -18,6 +19,15 @@ async function failure(response,fallback){const body=await response.json().catch
 async function load(){controller?.abort();controller=new AbortController();loading.value=true;error.value='';try{const response=await fetch('/api/vehicles/repair-journal',{headers:headers(),signal:controller.signal});if(!response.ok)throw await failure(response,'Не удалось загрузить технику.');rows.value=forecastGroups(buildForecastRows(await response.json())).flatMap(group=>group.rows);for(const row of rows.value)row.draft=row.engines.map(engine=>engine.hours ?? '')}catch(e){if(e.name!=='AbortError')error.value=e.message}finally{loading.value=false}}
 /** Проверяет и сохраняет вручную введённые показания отдельных ДВС выбранной техники. */
 async function save(row){if(!canManage.value)return;if(busy.value || importing.value)return;if(!date.value){error.value='Выберите дату показаний.';return}const values=row.draft.map(value=>value==='' ? null : Number(value));if(values.some(value=>value!=null && (!Number.isFinite(value)||value<0))){error.value='Введите неотрицательные моточасы.';return}if(values.every(value=>value==null)){error.value='Введите показания хотя бы одного ДВС.';return}busy.value=row.vehicle.id;error.value='';message.value='';let saved=0;try{for(let index=0;index<values.length;index++){if(values[index]==null)continue;const response=await fetch(`/api/vehicles/${row.vehicle.id}/hours`,{method:'POST',headers:{...headers(),'Content-Type':'application/json'},body:JSON.stringify({readingDate:date.value,engineHours:values[index],engineNumber:index+1,note:'Ручной ввод'})});if(!response.ok)throw await failure(response,'Не удалось сохранить моточасы.');saved++}message.value=`${vehicleTitle(row.vehicle)}: показания сохранены.`;const drafts=new Map(rows.value.filter(item=>item.vehicle.id!==row.vehicle.id).map(item=>[item.vehicle.id,[...item.draft]]));await load();for(const item of rows.value)if(drafts.has(item.vehicle.id))item.draft=drafts.get(item.vehicle.id)}catch(e){error.value=`${e.message}${saved?' Часть показаний уже сохранена.':''}`}finally{busy.value=''}}
+/** Открывает отметки о замене ЭБУ для выбранной техники. */
+async function openEcu(row){if(!canManage.value||busy.value)return;ecuVehicle.value=row.vehicle;ecuDate.value=date.value;ecuEngine.value=1;ecuNote.value='';await loadEcu();ecuDialog.value.showModal()}
+/** Загружает список отметок о замене ЭБУ. */
+async function loadEcu(){ecuBusy.value=true;try{const response=await fetch(`/api/vehicles/${ecuVehicle.value.id}/ecu-replacements`,{headers:headers()});ecuList.value=response.ok?await response.json():[]}catch{ecuList.value=[]}finally{ecuBusy.value=false}}
+/** Сохраняет отметку о замене ЭБУ: показание за эту дату станет новым отсчётом. */
+async function saveEcu(){if(!ecuVehicle.value||ecuBusy.value)return;ecuBusy.value=true;error.value='';message.value='';try{const response=await fetch(`/api/vehicles/${ecuVehicle.value.id}/ecu-replacements`,{method:'POST',headers:{...headers(),'Content-Type':'application/json'},body:JSON.stringify({engineNumber:ecuEngine.value,replacedOn:ecuDate.value,note:ecuNote.value})});if(!response.ok)throw await failure(response,'Не удалось сохранить замену ЭБУ.');ecuNote.value='';message.value='Замена ЭБУ отмечена.';await loadEcu();await load()}catch(e){error.value=e.message}finally{ecuBusy.value=false}}
+/** Удаляет отметку о замене ЭБУ. */
+async function removeEcu(id){if(ecuBusy.value)return;ecuBusy.value=true;try{const response=await fetch(`/api/vehicles/ecu-replacements/${id}`,{method:'DELETE',headers:headers()});if(!response.ok)throw await failure(response,'Не удалось удалить отметку.');await loadEcu()}catch(e){error.value=e.message}finally{ecuBusy.value=false}}
+
 /** Очищает состояние предыдущего импорта и открывает диалог выбора файла. */
 function openImport(){if(!canManage.value)return;file.value=null;importResult.value=null;modal.value.showModal()}
 /** Проверяет CSV или XLSX с моточасами, загружает его и обновляет показания. */
@@ -46,6 +56,7 @@ onMounted(()=>Promise.all([load(),loadAccess()]));onBeforeUnmount(()=>controller
     <label v-for="(engine,index) in row.engines" :key="engine.number">ДВС № {{ engine.number }}<input v-model="row.draft[index]" type="number" min="0" step="0.1" :aria-label="`ДВС № ${engine.number}, ${vehicleTitle(row.vehicle)}`" :disabled="!canManage || !!busy || importing" placeholder="м/ч" /></label>
     <span v-if="row.engines.length===1" class="hours-placeholder"></span>
     <button v-if="canManage" type="submit" class="secondary-button" :disabled="!!busy || importing">{{busy===row.vehicle.id?'…':'Сохранить'}}</button>
+    <button v-if="canManage" type="button" class="secondary-button" :disabled="!!busy || importing" @click="openEcu(row)">Замена ЭБУ</button>
    </form>
    <p v-if="!matches.length">Техника не найдена.</p>
   </div>
@@ -64,8 +75,24 @@ onMounted(()=>Promise.all([load(),loadAccess()]));onBeforeUnmount(()=>controller
    <button class="primary-button" type="button" :disabled="!file || importing || !date" @click="importFile">{{importing?'Импорт…':'Импортировать'}}</button>
    </template>
   </dialog>
- </section>
-</template>
+  <dialog ref="ecuDialog" class="hours-ecu" aria-label="Замена ЭБУ">
+   <form @submit.prevent="saveEcu">
+    <header><h2>Замена ЭБУ</h2><button type="button" aria-label="Закрыть замену ЭБУ" @click="ecuDialog.close()">×</button></header>
+    <p>{{ vehicleTitle(ecuVehicle) }}</p>
+    <label>Дата замены<input v-model="ecuDate" type="date" required :disabled="ecuBusy" /></label>
+    <label>Двигатель<select v-model.number="ecuEngine" :disabled="ecuBusy"><option v-for="n in (ecuVehicle?.engineCount || 1)" :key="n" :value="n">ДВС № {{ n }}</option></select></label>
+    <label>Комментарий<input v-model="ecuNote" maxlength="500" placeholder="Например, замена по гарантии" :disabled="ecuBusy" /></label>
+    <button type="submit" class="primary-button" :disabled="ecuBusy">Отметить замену</button>
+    <p>Показание, загруженное за эту дату, считается новым началом отсчёта моточасов.</p>
+    <ul v-if="ecuList.length">
+     <li v-for="item in ecuList" :key="item.id">
+      {{ item.replacedOn.split('-').reverse().join('.') }} · ДВС № {{ item.engineNumber }}<template v-if="item.note"> · {{ item.note }}</template>
+      <button type="button" :disabled="ecuBusy" @click="removeEcu(item.id)">Удалить</button>
+     </li>
+    </ul>
+   </form>
+  </dialog>
+ </section></template>
 <style scoped>
 .vehicle-hours{display:grid;gap:12px}.hours-toolbar{display:flex;gap:10px;flex-wrap:wrap;align-items:end}.hours-toolbar label,.hours-row label{display:grid;gap:4px;font-size:12px}.hours-search{flex:1;min-width:180px}input{box-sizing:border-box;width:100%;min-width:0;padding:8px;border:1px solid var(--border);border-radius:7px;background:var(--bg-main);color:var(--text-main);font:inherit}.hours-list{display:grid;gap:6px}.hours-row{display:grid;grid-template-columns:minmax(0,1fr) 90px 90px 104px;gap:10px;align-items:center;padding:10px 12px;border:1px solid var(--border);border-radius:9px;background:var(--bg-surface)}.hours-vehicle{min-width:0;overflow-wrap:anywhere}.hours-vehicle strong{font-size:13px}.hours-vehicle small{display:block;font-size:11px;color:var(--text-secondary)}.hours-row button{padding:8px;font-size:12px}.hours-import{box-sizing:border-box;width:min(600px,calc(100% - 24px));max-height:90vh;overflow:auto;border:1px solid var(--border);border-radius:14px;padding:20px;background:var(--bg-surface);color:var(--text-main)}.hours-import::backdrop{background:#0008}.hours-import header{display:flex;justify-content:space-between;align-items:center;gap:10px}.hours-import h2{font-size:20px;margin:0}.hours-import header button{background:transparent;border:0;color:inherit;font-size:28px;cursor:pointer}.hours-import p{font-size:13px;line-height:1.6}.hours-file{display:grid;gap:6px;margin:16px 0}@media(max-width:760px){.hours-row{grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}.hours-vehicle{grid-column:1/-1}.hours-placeholder{display:none}.hours-row button{grid-column:3}.hours-toolbar{align-items:stretch}.hours-toolbar label{flex:1}.hours-toolbar button{flex:1}}
 </style>
