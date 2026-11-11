@@ -74,7 +74,7 @@ test('maintenance-only report contains full names in preview and PDF', async ({ 
     if (ids.some(id => String(id).startsWith('mp'))) return route.fulfill({ status: 404, body: '' })
     return route.fulfill({ json: ids.map(id => ({ id, type: 'image', url: `/api/report-media/image/${id}/signed` })) })
   })
-  await page.route('**/api/maintenance-plans/cards/m2/media-links', route => route.fulfill({ json: [{ photoId: 'mp1', url: '/api/maintenance-plans/cards/m2/media/mp1/sig' }] }))
+  await page.route('**/api/maintenance-plans/cards/m2/media-links', route => route.fulfill({ json: [{ id: 'mp1', url: '/api/maintenance-plans/cards/m2/media/mp1/sig' }] }))
   await page.route('**/api/maintenance-plans/cards/m2/photos/mp1', route => route.fulfill({ body: photo, contentType: 'image/webp' }))
   await page.route('**/api/vehicles/repair-journal*', route => route.fulfill({ json: [] }))
   await page.route('**/api/maintenance-plans/shift-report', route => route.fulfill({ json: [

@@ -28,7 +28,7 @@ export async function fetchReportMediaLinks(cards, token, signal) {
     })
     if (!response.ok) throw new Error('Не удалось создать ссылки на фото карты ТО.')
     for (const item of await response.json()) {
-      links[`image:${item.photoId}`] = new URL(item.url, window.location.origin).href
+      links[`image:${item.id ?? item.photoId}`] = new URL(item.url, window.location.origin).href
     }
   }
   if (references.some(item => !links[`${item.type}:${item.id}`])) throw new Error('Не для всех вложений созданы ссылки.')
