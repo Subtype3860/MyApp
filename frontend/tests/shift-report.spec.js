@@ -14,7 +14,7 @@ test('report orders areas and vehicle types, with additional works last', () => 
   const groups = groupReportWorks(works, [{ id: 'aux', location: 'КАРЬЕР', title: 'Уборка' }])
   expect(groups.map(g => g.location)).toEqual(['КАРЬЕР', 'РММ', 'Дополнительные работы'])
   for (const group of groups.slice(0, 2)) {
-    expect(group.categories.map(c => c.name)).toEqual(['Экскаватор', 'Бульдозер', 'Карьерный самосвал', 'Вспомогательная техника'])
+    expect(group.categories.map(c => c.name)).toEqual(['Экскаватор', 'Карьерный самосвал', 'Бульдозер', 'Вспомогательная техника'])
     for (const category of group.categories) expect(category.cards.map(c => c.vehicle.garageNumber)).toEqual([2, 10])
   }
   expect(groups[2].categories[0].name).toBe('КАРЬЕР')
@@ -43,7 +43,8 @@ test('area and equipment order is identical in preview and PDF', async ({ page }
   await page.route('**/api/auxiliary-works', route => route.fulfill({ json: [{ id: 'extra', workKind: 'auxiliary', location: 'КАРЬЕР', title: 'Уборка', description: 'Убрана площадка', completedAt: '2026-10-11T21:00:00+06:00' }] }))
   await page.goto('/?reportWork=unused&reportDate=2026-10-11&reportShift=2')
   await expect(page.locator('.shift-report__location h3')).toHaveText(['КАРЬЕР', 'РММ', 'Дополнительные работы'])
-  const expected = ['КАРЬЕР', 'РММ'].flatMap(location => [...types].reverse().map(type => `${location} ${type}`))
+  const order = ['Экскаваторы', 'Самосвалы', 'Бульдозеры', 'Вспомогательная техника']
+  const expected = ['КАРЬЕР', 'РММ'].flatMap(location => order.map(type => `${location} ${type}`))
   const titles = await page.locator('.shift-report__card h5').allTextContents()
   expected.forEach((title, i) => expect(titles[i]).toContain(title))
   await page.getByLabel('Меню отчёта за смену', { exact: true }).click()

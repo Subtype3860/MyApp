@@ -42,10 +42,12 @@ export function selectShiftWorks(journals, date, shift) {
 /** Производственный порядок типов техники; остальные типы идут последними. */
 function vehicleTypeOrder(name) {
   const type = String(name).toLocaleLowerCase('ru-RU')
+  // Порядок разделов отчёта: экскаваторы, самосвалы, бульдозеры, вспомогательная техника.
   if (type.includes('экскаватор')) return 0
-  if (type.includes('бульдозер')) return 1
-  if (type.includes('самосвал')) return 2
-  return 3
+  if (type.includes('самосвал')) return 1
+  if (type.includes('бульдозер')) return 2
+  if (type.includes('вспомогательн')) return 3
+  return 4
 }
 
 /** Группирует работы смены для отображения в отчёте. */
