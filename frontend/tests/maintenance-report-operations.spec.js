@@ -29,3 +29,34 @@ test('maintenance report falls back to the service summary without operations', 
   expect(card.works[0].description).toContain('ТО-700')
   expect(card.works[0].description).toContain('Замечаний нет')
 })
+test('report media links ignore maintenance photos', async () => {
+  const { fetchReportMediaLinks } = await import('../src/utils/reportMedia.js')
+  const originalFetch = globalThis.fetch
+  const originalWindow = globalThis.window
+  globalThis.window = { location: { origin: 'https://boora.ru' } }
+  const bodies = []
+  globalThis.fetch = async (url, options = {}) => {
+    const target = String(url)
+    if (target.includes('/api/report-media/links')) {
+      bodies.push(JSON.parse(options.body))
+      return { ok: true, json: async () => [{ id: 'w1', type: 'image', url: '/api/report-media/w1/sig' }] }
+    }
+    if (target.includes('/api/maintenance-plans/cards/c1/media-links')) {
+      return { ok: true, json: async () => [{ photoId: 'p1', url: '/api/maintenance-plans/cards/c1/media/p1/sig' }] }
+    }
+    throw new Error('unexpected ' + target)
+  }
+  try {
+    const cards = [
+      { id: 'maintenance:c1', maintenance: true, cardId: 'c1', works: [{ photos: [{ id: 'p1', source: 'maintenance', cardId: 'c1' }] }] },
+      { id: 'w', works: [{ photos: [{ id: 'w1' }] }] },
+    ]
+    const links = await fetchReportMediaLinks(cards, 'token')
+    expect(bodies[0].map(item => item.id)).toEqual(['w1'])
+    expect(links['image:p1']).toContain('/media/p1/')
+    expect(links['image:w1']).toContain('/api/report-media/')
+  } finally {
+    globalThis.fetch = originalFetch
+    globalThis.window = originalWindow
+  }
+})

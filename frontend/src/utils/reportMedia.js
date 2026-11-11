@@ -3,7 +3,7 @@ export async function fetchReportMediaLinks(cards, token, signal) {
   const items = new Map()
   for (const card of cards) for (const work of card.works) {
     for (const [type, files] of [['image', work.photos ?? []], ['video', work.videos ?? []]]) {
-      for (const file of files) items.set(`${type}:${file.id}`, { id: file.id, type })
+      for (const file of files) if (file.source !== 'maintenance') items.set(`${type}:${file.id}`, { id: file.id, type })
     }
   }
   const references = [...items.values()], links = {}
