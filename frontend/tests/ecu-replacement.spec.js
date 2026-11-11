@@ -31,6 +31,7 @@ test('engine control unit replacement can be recorded and removed', async ({ pag
   await page.goto('/')
   await page.getByRole('button', { name: 'Транспорт', exact: true }).click()
   await page.getByRole('button', { name: 'Моточасы', exact: true }).click()
+  await page.getByRole('button', { name: /Действия с моточасами/ }).click()
   await page.getByRole('button', { name: 'Замена ЭБУ', exact: true }).click()
 
   const dialog = page.getByRole('dialog', { name: 'Замена ЭБУ' })

@@ -9,7 +9,7 @@ for (const width of [390,1440]) test(`engine entry and file import ${width}`,asy
  await expect(page.locator('.hours-row')).toHaveCount(2)
  const truck=page.locator('.hours-row').filter({hasText:'901'}),excavator=page.locator('.hours-row').filter({hasText:'94'})
  await excavator.locator('input').fill('20511');await truck.locator('input').nth(0).fill('875');await truck.locator('input').nth(1).fill('852')
- await truck.getByRole('button',{name:'Сохранить',exact:true}).click();await expect(page.getByRole('status').filter({hasText:'сохранены'})).toContainText('сохранены')
+ await truck.getByRole('button',{name:/Действия с моточасами/}).click();await page.getByRole('button',{name:'Сохранить',exact:true}).click();await expect(page.getByRole('status').filter({hasText:'сохранены'})).toContainText('сохранены')
  expect(writes.slice(0,2).map(x=>JSON.parse(x.data).engineNumber)).toEqual([1,2]);await expect(excavator.locator('input')).toHaveValue('20511')
  await page.getByLabel('Меню моточасов',{exact:true}).click();await page.getByRole('button',{name:'Импорт Excel / CSV'}).click();await expect(page.getByRole('dialog')).toBeVisible()
  await page.getByRole('dialog').getByLabel('Формат файла').selectOption('legacy')
