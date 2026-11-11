@@ -67,14 +67,31 @@ test('area and equipment order is identical in preview and PDF', async ({ page }
 
 test('maintenance-only report contains full names in preview and PDF', async ({ page }) => {
   await prepare(page)
+  const photo = await readFile(new URL('./fixtures/repair-cylinder.webp', import.meta.url))
+  await page.route('**/api/report-media/links', route => {
+    const ids = route.request().postDataJSON().map(item => item.id)
+    // Фото карт ТО подписываются ссылками карты, а не общим эндпоинтом отчёта.
+    if (ids.some(id => String(id).startsWith('mp'))) return route.fulfill({ status: 404, body: '' })
+    return route.fulfill({ json: ids.map(id => ({ id, type: 'image', url: `/api/report-media/image/${id}/signed` })) })
+  })
+  await page.route('**/api/maintenance-plans/cards/m2/media-links', route => route.fulfill({ json: [{ photoId: 'mp1', url: '/api/maintenance-plans/cards/m2/media/mp1/sig' }] }))
+  await page.route('**/api/maintenance-plans/cards/m2/photos/mp1', route => route.fulfill({ body: photo, contentType: 'image/webp' }))
   await page.route('**/api/vehicles/repair-journal*', route => route.fulfill({ json: [] }))
-  await page.route('**/api/maintenance-plans/shift-report', route => route.fulfill({ json: [{
-    id: 'm1', vehicleLabel: 'Sany SET150 №903', service: 'ТО-700',
-    finishedAt: '2026-10-12T01:15:00+06:00', executors: ['Иванов Иван Иванович', 'Петров Пётр Петрович'],
-  }] }))
+  await page.route('**/api/maintenance-plans/shift-report', route => route.fulfill({ json: [
+    {
+      id: 'm1', vehicleLabel: 'Sany SET150 №903', service: 'ТО-700',
+      finishedAt: '2026-10-12T01:15:00+06:00', executors: ['Иванов Иван Иванович', 'Петров Пётр Петрович'],
+    },
+    {
+      id: 'm2', vehicleLabel: 'Sany SET150 №904', service: 'ТО-1000',
+      finishedAt: '2026-10-12T02:15:00+06:00', executors: ['Сидоров Сидор Сидорович'],
+      operations: [{ id: 'o1', text: 'Проверить масло', status: 'done', condition: 'ok', executor: 'Сидоров Сидор Сидорович', note: '', photos: ['mp1'] }],
+    },
+  ] }))
   await page.goto('/?reportWork=missing&reportDate=2026-10-11&reportShift=2')
   await expect(page.locator('.shift-report__paper')).toContainText('ТО-700 — проведено')
   await expect(page.locator('.shift-report__paper')).toContainText('Иванов Иван Иванович')
+  await expect(page.locator('.shift-report__paper')).toContainText('Проверить масло — Сидоров Сидор Сидорович')
   await page.getByLabel('Меню отчёта за смену', { exact: true }).click()
   const downloadEvent = page.waitForEvent('download')
   await page.getByRole('button', { name: 'Скачать PDF', exact: true }).click()
@@ -87,6 +104,8 @@ test('maintenance-only report contains full names in preview and PDF', async ({ 
   expect(text).toContain('ТО-700')
   expect(text).toContain('Иванов Иван Иванович')
   expect(text).toContain('Петров Пётр Петрович')
+  expect(text).toContain('Проверить масло')
+  expect(text).toContain('Сидоров Сидор Сидорович')
   await loadingTask.destroy()
 })
 
