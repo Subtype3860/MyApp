@@ -78,7 +78,10 @@ async function loadPreviews() {
     if (!previewPromises.has(item.id)) {
       previewPromises.set(item.id, (async () => {
         try {
-          const response = await fetch(item.source === 'auxiliary' ? `/api/auxiliary-works/photos/${item.id}` : `/api/vehicles/work-photos/${item.id}`, { headers: { Authorization: `Bearer ${props.token}` }, signal: controller.signal })
+          const url = item.source === 'auxiliary' ? `/api/auxiliary-works/photos/${item.id}` :
+            item.source === 'maintenance' ? `/api/maintenance-plans/cards/${item.cardId}/photos/${item.id}` :
+            `/api/vehicles/work-photos/${item.id}`
+          const response = await fetch(url, { headers: { Authorization: `Bearer ${props.token}` }, signal: controller.signal })
           if (!response.ok) throw new Error('Фото недоступно')
           const blob = await compactPhoto(await response.blob())
           if (!controller.signal.aborted) photos.value[item.id] = { blob, url: URL.createObjectURL(blob) }

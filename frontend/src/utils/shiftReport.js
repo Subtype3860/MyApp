@@ -83,7 +83,7 @@ export function cardState(card) {
 /** Собирает фото или видео работ карточки отчёта. */
 export function cardMedia(card, type) {
   return card.works.flatMap(work => (type === 'video' ? work.videos ?? [] : work.photos ?? [])
-    .map(media => ({ ...media, source: work.workKind === 'auxiliary' ? 'auxiliary' : 'work', workId: work.id })))
+    .map(media => ({ ...media, source: media.source ?? (work.workKind === 'auxiliary' ? 'auxiliary' : 'work'), workId: work.id })))
 }
 
 /** Формирует ссылку перехода к вложению из отчёта. */
@@ -211,10 +211,20 @@ export function maintenanceReportGroups(records, date, shift) {
     if (!record.finishedAt || at < start || at >= end || !Number.isFinite(+at) || seen.has(record.id)) return false
     seen.add(record.id)
     return true
-  }).sort((a, b) => new Date(a.finishedAt) - new Date(b.finishedAt)).map(record => ({
-    id: `maintenance:${record.id}`, maintenance: true, title: record.vehicleLabel,
-    works: [{ id: `maintenance:${record.id}`, executors: record.executors || [],
-      description: `${record.service} — проведено. Завершено: ${new Date(record.finishedAt).toLocaleString('ru-RU')}${record.notes ? `\n${record.notes}` : ''}` }],
-  }))
+  }).sort((a, b) => new Date(a.finishedAt) - new Date(b.finishedAt)).map(record => {
+    const finished = new Date(record.finishedAt).toLocaleString('ru-RU')
+    // Показываем выполненные операции: описание и исполнитель до фото.
+    const works = (record.operations || []).map((operation, index) => ({
+      id: `maintenance:${record.id}:${index}`,
+      executors: operation.executor ? [operation.executor] : [],
+      description: `${operation.text}${operation.executor ? ` — ${operation.executor}` : ''}${operation.condition === 'defect' ? ' · выявлен дефект' : ''}`,
+      photos: (operation.photos || []).map(photoId => ({ id: photoId, source: 'maintenance', cardId: record.id })),
+    }))
+    if (!works.length) works.push({
+      id: `maintenance:${record.id}`, executors: record.executors || [],
+      description: `${record.service} — проведено. Завершено: ${finished}${record.notes ? `\n${record.notes}` : ''}`,
+    })
+    return { id: `maintenance:${record.id}`, maintenance: true, cardId: record.id, title: record.vehicleLabel, works }
+  })
   return cards.length ? [{ location: 'Техническое обслуживание', categories: [{ name: 'Проведённые ТО', cards }] }] : []
 }

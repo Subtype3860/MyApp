@@ -18,6 +18,19 @@ export async function fetchReportMediaLinks(cards, token, signal) {
       links[`${item.type}:${item.id}`] = new URL(item.url, window.location.origin).href
     }
   }
+  // Фото карт ТО отдаются по подписанным ссылкам карты.
+  for (const card of cards.filter(item => item.maintenance && item.cardId)) {
+    const photoIds = card.works.flatMap(work => (work.photos ?? []).map(photo => photo.id))
+    if (!photoIds.length) continue
+    const response = await fetch(`/api/maintenance-plans/cards/${card.cardId}/media-links`, {
+      method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(photoIds), signal,
+    })
+    if (!response.ok) throw new Error('Не удалось создать ссылки на фото карты ТО.')
+    for (const item of await response.json()) {
+      links[`image:${item.photoId}`] = new URL(item.url, window.location.origin).href
+    }
+  }
   if (references.some(item => !links[`${item.type}:${item.id}`])) throw new Error('Не для всех вложений созданы ссылки.')
   return links
 }
