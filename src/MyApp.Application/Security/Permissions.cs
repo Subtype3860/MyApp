@@ -13,7 +13,10 @@ public static class Permissions
     public const string AuxiliaryWorksRead = "auxiliary-works.read";
     public const string RequirementsView = "menu.requirements";
     public const string MaintenanceView = "menu.maintenance";
+    public const string GamesView = "menu.games";
+    public const string MechanicGame = "games.mechanic";
     public const string TanksPlay = "games.tanks";
+    public const string FortpostGame = "games.fortpost";
 
     public static readonly IReadOnlyList<PermissionDefinition> Catalog =
     [
@@ -41,7 +44,12 @@ public static class Permissions
             new(GtoReport, "Выход ГТО"),
             new(RequirementsView, "Выписанные требования")
         ]),
-        new(TanksPlay, "Танки — доступ к сетевой игре")
+        new(GamesView, "Игры",
+        [
+            new(MechanicGame, "Смена"),
+            new(TanksPlay, "Танки 3D"),
+            new(FortpostGame, "Форпост")
+        ])
     ];
 
     public static readonly IReadOnlyList<string> All =

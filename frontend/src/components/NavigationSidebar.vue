@@ -1,7 +1,7 @@
 <script setup>
 import { expandPermissions } from "../utils/permissions"
 import { readAuth } from "../utils/authStorage"
-import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import BrandIdentity from './BrandIdentity.vue'
 
 const props = defineProps({
@@ -103,6 +103,9 @@ const isVehiclesExpanded = ref(false)
 const isReportsExpanded = ref(false)
 const isSettingsExpanded = ref(false)
 const isGamesExpanded = ref(['mechanic', 'tanks', 'fortpost'].includes(props.activePage))
+/** Доступ ко всем играм сразу: выдано право на раздел без отдельных игр. */
+const gamesAll = computed(() => canView('menu.games') &&
+  !['games.mechanic', 'games.tanks', 'games.fortpost'].some(key => canView(key)))
 const profile = ref(null)
 const canCreateRegions = ref(false)
 watch(() => [props.token, props.profileVersion], async () => {
@@ -559,14 +562,14 @@ function toggleGames() {
           Загрузка CSV
         </button>
       </div>
-      <button class="nav-link" :class="{ 'nav-link--active': ['mechanic', 'tanks', 'fortpost'].includes(activePage) }" type="button" title="Игры" :aria-expanded="isGamesExpanded" aria-controls="games-submenu" @click="toggleGames">
+      <button v-if="canView('menu.games')" class="nav-link" :class="{ 'nav-link--active': ['mechanic', 'tanks', 'fortpost'].includes(activePage) }" type="button" title="Игры" :aria-expanded="isGamesExpanded" aria-controls="games-submenu" @click="toggleGames">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7h10c3 0 5 10 3 11-2 1-4-3-5-3H9c-1 0-3 4-5 3C2 17 4 7 7 7Z"/><path d="M8 9v5M5.5 11.5h5M15 10h.01M18 13h.01"/></svg>
         <span class="sidebar-label">Игры</span><span class="sidebar-label submenu-chevron" aria-hidden="true">{{ isGamesExpanded ? '⌄' : '›' }}</span>
       </button>
-      <div v-if="isGamesExpanded" id="games-submenu" class="nav-submenu">
-        <button class="nav-submenu-link" :class="{ 'nav-submenu-link--active': activePage === 'mechanic' }" type="button" :aria-current="activePage === 'mechanic' ? 'page' : undefined" @click="$emit('navigate', 'mechanic')">Смена</button>
-        <button class="nav-submenu-link" :class="{ 'nav-submenu-link--active': activePage === 'tanks' }" type="button" :aria-current="activePage === 'tanks' ? 'page' : undefined" @click="$emit('navigate', 'tanks')">Танки 3D</button>
-        <button class="nav-submenu-link" :class="{ 'nav-submenu-link--active': activePage === 'fortpost' }" type="button" :aria-current="activePage === 'fortpost' ? 'page' : undefined" @click="$emit('navigate', 'fortpost')">Форпост</button>
+      <div v-if="isGamesExpanded && canView('menu.games')" id="games-submenu" class="nav-submenu">
+        <button v-if="canView('games.mechanic') || gamesAll" class="nav-submenu-link" :class="{ 'nav-submenu-link--active': activePage === 'mechanic' }" type="button" :aria-current="activePage === 'mechanic' ? 'page' : undefined" @click="$emit('navigate', 'mechanic')">Смена</button>
+        <button v-if="canView('games.tanks') || gamesAll" class="nav-submenu-link" :class="{ 'nav-submenu-link--active': activePage === 'tanks' }" type="button" :aria-current="activePage === 'tanks' ? 'page' : undefined" @click="$emit('navigate', 'tanks')">Танки 3D</button>
+        <button v-if="canView('games.fortpost') || gamesAll" class="nav-submenu-link" :class="{ 'nav-submenu-link--active': activePage === 'fortpost' }" type="button" :aria-current="activePage === 'fortpost' ? 'page' : undefined" @click="$emit('navigate', 'fortpost')">Форпост</button>
       </div>
       <button class="nav-link" :class="{ 'nav-link--active': activePage === 'help' }"
         type="button" :aria-current="activePage === 'help' ? 'page' : undefined" title="Помощь"
