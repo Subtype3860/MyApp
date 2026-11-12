@@ -22,7 +22,7 @@ const props = defineProps({
   },
 })
 
-const emit = defineEmits(['back', 'clear', 'update:rows', 'update:responsibleEmployee'])
+const emit = defineEmits(['back', 'clear', 'issued', 'update:rows', 'update:responsibleEmployee'])
 const responsibleDialog = ref(null), choosingResponsible = ref(false), employees = ref([]), employeeIndex = ref(''), loadingEmployees = ref(false), employeeError = ref('')
 const chosenEmployee = ref(null)
 const responsible = computed(() => chosenEmployee.value || props.responsibleEmployee)
@@ -245,6 +245,10 @@ async function generateDocument(withoutResponsible = false) {
       )
     }
     renderPdfDocument(previewWindow, pdfBlob)
+    // Требование выписано: освобождаем список, чтобы тот же материал можно было
+    // выписать на другую технику.
+    emit('clear')
+    emit('issued')
   } catch (error) {
     previewWindow.close()
     documentError.value =

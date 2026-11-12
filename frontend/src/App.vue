@@ -72,6 +72,8 @@ const currentTable = ref('v_full_ost')
 const currentSettings = ref('users')
 const currentVehicleSection = ref(hasReportLink ? 'report' : 'defects')
 const selectedComponentRows = ref([])
+/** Счётчик обновления остатков после выписки требования. */
+const stockRevision = ref(0)
 const selectedResponsibleEmployee = ref(null)
 const profileVersion = ref(0)
 const sessionExpiredMessage = ref('')
@@ -175,6 +177,12 @@ function updateResponsibleEmployee(employee) {
   selectedResponsibleEmployee.value = employee
 }
 
+/** После выписки очищает список и перечитывает остатки склада. */
+function handleComponentsIssued() {
+  selectedComponentRows.value = []
+  stockRevision.value++
+}
+
 /** Обновляет выбранные материалы и их количества. */
 function updateSelectedComponentRows(rows) {
   selectedComponentRows.value = rows
@@ -254,6 +262,7 @@ function updateSelectedComponentRows(rows) {
         :navigation-collapsed="isNavigationCollapsed"
         :selected-table-id="currentTable"
         :selected-component-rows="selectedComponentRows"
+        :stock-revision="stockRevision"
         :selected-responsible-employee="selectedResponsibleEmployee"
         :token="token"
         @select-table="currentTable = $event"
@@ -270,6 +279,7 @@ function updateSelectedComponentRows(rows) {
         :token="token"
         @back="openTable(currentTable)"
         @clear="selectedComponentRows = []"
+        @issued="handleComponentsIssued"
         @update:rows="updateSelectedComponentRows"
       />
       <RequirementsJournalView

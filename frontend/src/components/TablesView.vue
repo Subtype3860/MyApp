@@ -23,6 +23,10 @@ const props = defineProps({
     type: Object,
     default: null,
   },
+  stockRevision: {
+    type: Number,
+    default: 0,
+  },
 })
 
 const emit = defineEmits([
@@ -455,6 +459,10 @@ function changePageSize() {
   loadTable()
 }
 
+watch(
+  () => props.stockRevision,
+  () => { loadTable() },
+)
 watch(
   () => props.selectedTableId,
   () => {
