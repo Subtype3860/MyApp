@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref, watch, onBeforeUnmount } from 'vue'
+import { computed, ref, watch, onBeforeUnmount, onMounted } from 'vue'
 import { localDate } from '../utils/shiftReport'
 import { convertImageToWebp } from '../utils/mediaUpload'
 import MaintenanceDateReadings from './MaintenanceDateReadings.vue'
@@ -45,12 +45,31 @@ async function load(){
  }catch(e){if(current===generation)error.value=e.message}
 }
 function keepLocal(){try{localStorage.setItem(localKey(),JSON.stringify({revision:card.value.revision,data:data.value}))}catch{error.value='Не удалось сохранить локальную копию. Сохраните карту на сервер.'}}
+/** Перезапускает отложенное автосохранение. */
+function scheduleSave(delay=1200){
+ clearTimeout(timer)
+ timer=setTimeout(runSave,delay)
+}
+/** Сохраняет черновик, но не теряет правку, если форма временно занята. */
+function runSave(){
+ timer=null
+ if(!editable.value||recovery.value){return}
+ if(busy.value||editingTime||saving.value){scheduleSave(1500);return}
+ if(invalidTimes.size){scheduleSave(3000);return}
+ save('save')
+}
+/** Немедленно отправляет несохранённые правки перед уходом с карты. */
+function flushSave(){
+ if(!timer)return
+ clearTimeout(timer);timer=null
+ if(!editable.value||recovery.value||!card.value)return
+ save('save')
+}
 function changed(){
- editGeneration++;keepLocal();message.value='Черновик сохранён на устройстве';clearTimeout(timer)
- timer=setTimeout(()=>{if(!busy.value&&!recovery.value&&!editingTime&&!invalidTimes.size)save('save')},1200)
+ editGeneration++;keepLocal();message.value='Черновик сохранён на устройстве';scheduleSave()
 }
 async function open(item){
- clearTimeout(timer);editingTime=false;invalidTimes.clear();card.value=clone(item);data.value=clone(item.data);error.value='';message.value='';reason.value='';recovery.value=null;photos.value=[];requirement.value=null
+ flushSave();editingTime=false;invalidTimes.clear();card.value=clone(item);data.value=clone(item.data);error.value='';message.value='';reason.value='';recovery.value=null;photos.value=[];requirement.value=null
  readings.value=Array.from({length:props.vehicle.engineCount||1},(_,i)=>({number:i+1,hours:''}))
  try{const saved=JSON.parse(localStorage.getItem(localKey())||'null');if(saved && item.status==='draft' && JSON.stringify(saved.data)!==JSON.stringify(item.data))recovery.value=saved}catch{}
  try{const result=await request('cards/'+item.id+'/photos');if(card.value?.id===item.id)photos.value=result}catch(e){error.value=e.message}
@@ -75,14 +94,15 @@ async function start(){
 }
 async function save(action='save'){
  if(busy.value||!editable.value||recovery.value)return false
- if(saving.value){timer=setTimeout(()=>save(action),500);return false}
+ if(saving.value){scheduleSave(800);return false}
  if(invalidTimes.size){error.value='Введите дату и время полностью.';return false}
- clearTimeout(timer);const auto=action==='save';if(auto)saving.value=true;else busy.value=true;error.value='';const version=editGeneration;const id=card.value.id;const payload=clone(data.value)
- try{const item=await request('cards/'+id,{method:'PUT',body:JSON.stringify({revision:card.value.revision,data:payload,action,reason:reason.value})});card.value=item
+ clearTimeout(timer);timer=null;const auto=action==='save';if(auto)saving.value=true;else busy.value=true;error.value='';const version=editGeneration;const id=card.value.id;const payload=clone(data.value)
+ try{const item=await request('cards/'+id,{method:'PUT',keepalive:true,body:JSON.stringify({revision:card.value.revision,data:payload,action,reason:reason.value})})
+  const same=card.value?.id===id;if(same)card.value=item
   cards.value=cards.value.map(c=>c.id===id?item:c)
   if(version===editGeneration){
    // Автосохранение не подменяет поля формы: иначе ввод даты и времени сбрасывается.
-   if(!auto)data.value=clone(item.data)
+   if(!auto&&same)data.value=clone(item.data)
    localStorage.removeItem(localKey());message.value=action==='submit'?'Карта передана на проверку':'Сохранено на сервере'
   }else{keepLocal();timer=setTimeout(()=>save(),1200)}
   return true
@@ -261,7 +281,10 @@ watch(()=>props.vehicle.id,()=>{clearTimeout(timer);card.value=null;data.value=n
 watch(()=>props.token,async token=>{
  try{const response=await fetch('/api/profile',{headers:{Authorization:'Bearer '+token}});if(!response.ok)return;const profile=await response.json();if(token===props.token)currentExecutor.value=[profile.lastName,profile.firstName,profile.middleName].filter(Boolean).join(' ')}catch{}
 },{immediate:true})
-onBeforeUnmount(()=>{clearTimeout(timer);generation++;closeMedia()})
+/** Перед скрытием вкладки отправляет несохранённые правки. */
+function flushOnHide(){if(document.visibilityState==='hidden')flushSave()}
+onMounted(()=>{document.addEventListener('visibilitychange',flushOnHide);window.addEventListener('pagehide',flushSave)})
+onBeforeUnmount(()=>{document.removeEventListener('visibilitychange',flushOnHide);window.removeEventListener('pagehide',flushSave);flushSave();clearTimeout(timer);generation++;closeMedia()})
 </script>
 
 <template>
