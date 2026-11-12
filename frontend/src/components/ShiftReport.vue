@@ -160,16 +160,16 @@ onBeforeUnmount(() => {
           <article v-for="card in category.cards" :key="card.id || card.vehicle.id" class="shift-report__card">
             <header><h5>{{ reportCardTitle(card) }}</h5><span v-if="!card.auxiliary && !card.maintenance" class="shift-report__state" :class="`shift-report__state--${cardState(card).kind}`">{{ cardState(card).label }}</span></header>
             <section v-for="section in cardWorkSections(card)" :key="section.works[0].id" class="shift-report__work-section">
-              <div v-for="work in section.works" :key="work.id" class="shift-report__work">
-                <ul class="shift-report__works"><li class="shift-report__description">{{ work.description || work.cause || 'Описание не указано.' }}</li></ul>
-                <div v-if="cardMedia({ works: [work] }, 'image').length" class="shift-report__photos">
-                  <a v-for="photo in cardMedia({ works: [work] }, 'image')" :key="photo.id" :href="mediaLinks[`image:${photo.id}`]" target="_blank" rel="noopener noreferrer" :aria-label="`Открыть фото: ${photo.fileName}`">
+              <div class="shift-report__work">
+                <ul class="shift-report__works"><li v-for="work in section.works" :key="work.id" class="shift-report__description">{{ work.description || work.cause || 'Описание не указано.' }}</li></ul>
+                <div v-if="cardMedia({ works: section.works }, 'image').length" class="shift-report__photos">
+                  <a v-for="photo in cardMedia({ works: section.works }, 'image')" :key="photo.id" :href="mediaLinks[`image:${photo.id}`]" target="_blank" rel="noopener noreferrer" :aria-label="`Открыть фото: ${photo.fileName}`">
                     <img v-if="photos[photo.id]?.url" :src="photos[photo.id].url" :alt="photo.fileName" />
                     <span v-else>{{ photos[photo.id]?.error ? 'Превью недоступно' : 'Загрузка фото…' }}</span>
                   </a>
                 </div>
                 <div class="shift-report__links">
-                  <a v-for="video in cardMedia({ works: [work] }, 'video')" :key="video.id" :href="mediaLinks[`video:${video.id}`]" target="_blank" rel="noopener noreferrer" :aria-label="`Открыть видео: ${video.fileName}`">▶</a>
+                  <a v-for="video in cardMedia({ works: section.works }, 'video')" :key="video.id" :href="mediaLinks[`video:${video.id}`]" target="_blank" rel="noopener noreferrer" :aria-label="`Открыть видео: ${video.fileName}`">▶</a>
                 </div>
               </div>
               <div v-if="!card.hidePerformers" class="shift-report__performers">

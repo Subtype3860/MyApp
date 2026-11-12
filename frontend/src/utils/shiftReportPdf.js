@@ -122,14 +122,17 @@ export async function createShiftReportPdf({ groups, date, shift, photos, mediaL
             page.drawLine({ start: { x: left, y }, end: { x: left + width, y }, thickness: .5, dashArray: [3, 3], color: muted })
             y -= 18
           }
+          // Сначала все работы раздела, затем их фото и ссылки — как в заявках на ремонт.
+          for (const work of section.works) {
+            const description = work.description || work.cause || 'Описание не указано.'
+            ensureCard(54)
+            textBlock(description, false, 12, '•')
+            y -= 10
+          }
           for (const work of section.works) {
             const workCard = { ...card, works: [work] }
             const media = cardMedia(workCard, 'image'), videos = cardMedia(workCard, 'video')
             const previews = media.filter(item => photos[item.id]?.blob)
-            const description = work.description || work.cause || 'Описание не указано.'
-            ensureCard(54)
-            textBlock(description, false, 12, '•')
-            y -= 8
             for (let offset = 0; offset < previews.length; offset += 2) {
               ensureCard(104)
               for (let index = 0; index < Math.min(2, previews.length - offset); index++) {
@@ -149,7 +152,7 @@ export async function createShiftReportPdf({ groups, date, shift, photos, mediaL
               shortcuts.slice(offset, offset + 12).forEach(({ item, type, label }, index) => link(label, mediaUrl(type, item.id), left + index * 30))
               y -= 24
             }
-            y -= 10
+            y -= 6
           }
           if (!card.hidePerformers) {
           const performers = section.performers

@@ -164,9 +164,11 @@ export function cardPerformers(card) {
 /** Отбирает вспомогательные работы выбранной смены. */
 export function cardWorkSections(card) {
   if (card.hidePerformers) return [{ works: card.works, performers: { groups: [] } }]
-  if (card.maintenance) return card.works.map(work => ({ works: [work], performers: {
-    groups: work.executors.length ? [{ position: 'Исполнители ТО', names: work.executors }] : [],
-  } }))
+  if (card.maintenance) {
+    // Сначала все операции, затем фото, в конце исполнители — как в заявках на ремонт.
+    const names = [...new Set(card.works.flatMap(work => work.executors ?? []))]
+    return [{ works: card.works, performers: { groups: names.length ? [{ position: 'Исполнители ТО', names }] : [] } }]
+  }
   return card.works.map(work => ({ works: [work], performers: cardPerformers({ works: [work] }) }))
 }
 
