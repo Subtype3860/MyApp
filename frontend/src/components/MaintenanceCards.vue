@@ -12,7 +12,7 @@ const canManage=ref(false),canFill=ref(false),busy=ref(false),saving=ref(false),
 const selectedTemplate=ref(''),runInId=ref(''),reason=ref(''),batchExecutor=ref(''),recovery=ref(null)
 const requirement=ref(null), currentExecutor=ref(''), mediaPreview=ref(null), mediaDialog=ref(null)
 let previewGeneration=0
-let timer, generation=0, editGeneration=0
+let timer, generation=0, editGeneration=0, dirty=false
 let editingTime=false
 const invalidTimes=new Set()
 const clone=v=>JSON.parse(JSON.stringify(v))
@@ -54,22 +54,22 @@ function scheduleSave(delay=1200){
 function runSave(){
  timer=null
  if(!editable.value||recovery.value){return}
- if(busy.value||editingTime||saving.value){scheduleSave(1500);return}
+ if(busy.value||saving.value){scheduleSave(1500);return}
  if(invalidTimes.size){scheduleSave(3000);return}
  save('save')
 }
 /** Немедленно отправляет несохранённые правки перед уходом с карты. */
 function flushSave(){
- if(!timer)return
+ if(!timer && !dirty)return
  clearTimeout(timer);timer=null
  if(!editable.value||recovery.value||!card.value)return
  save('save')
 }
 function changed(){
- editGeneration++;keepLocal();message.value='Черновик сохранён на устройстве';scheduleSave()
+ editGeneration++;dirty=true;keepLocal();message.value='Черновик сохранён на устройстве';scheduleSave()
 }
 async function open(item){
- flushSave();editingTime=false;invalidTimes.clear();card.value=clone(item);data.value=clone(item.data);error.value='';message.value='';reason.value='';recovery.value=null;photos.value=[];requirement.value=null
+ flushSave();editingTime=false;dirty=false;invalidTimes.clear();card.value=clone(item);data.value=clone(item.data);error.value='';message.value='';reason.value='';recovery.value=null;photos.value=[];requirement.value=null
  readings.value=Array.from({length:props.vehicle.engineCount||1},(_,i)=>({number:i+1,hours:''}))
  try{const saved=JSON.parse(localStorage.getItem(localKey())||'null');if(saved && item.status==='draft' && JSON.stringify(saved.data)!==JSON.stringify(item.data))recovery.value=saved}catch{}
  try{const result=await request('cards/'+item.id+'/photos');if(card.value?.id===item.id)photos.value=result}catch(e){error.value=e.message}
@@ -101,6 +101,7 @@ async function save(action='save'){
   const same=card.value?.id===id;if(same)card.value=item
   cards.value=cards.value.map(c=>c.id===id?item:c)
   if(version===editGeneration){
+   dirty=false
    // Автосохранение не подменяет поля формы: иначе ввод даты и времени сбрасывается.
    if(!auto&&same)data.value=clone(item.data)
    localStorage.removeItem(localKey());message.value=action==='submit'?'Карта передана на проверку':'Сохранено на сервере'
@@ -135,18 +136,20 @@ function setMaterialActual(id,value){
 function setExecutor(){for(const a of data.value.answers)if(!a.executor)a.executor=batchExecutor.value;for(const m of data.value.materials)if(!m.executor)m.executor=batchExecutor.value;changed()}
 const timeValue=value=>value?new Date(new Date(value).getTime()-new Date(value).getTimezoneOffset()*60000).toISOString().slice(0,16):''
 function beginTimeEdit(){editingTime=true;clearTimeout(timer)}
-/** Запоминает выбранное значение без сохранения: сохраняем только по завершении выбора. */
+/** Запоминает выбранное значение времени и планирует автосохранение. */
 function syncTime(key,input){
  const value=input.value, parsed=value?new Date(value):null
  if(input.validity.badInput || (parsed&&!Number.isFinite(parsed.getTime()))){invalidTimes.add(key);return}
  invalidTimes.delete(key)
  data.value[key]=parsed?parsed.toISOString():null
+ changed()
 }
 function setTime(key,input){
  const value=input.value, parsed=value?new Date(value):null
  if(input.validity.badInput || (parsed&&!Number.isFinite(parsed.getTime()))){invalidTimes.add(key);clearTimeout(timer);return}
  invalidTimes.delete(key)
  data.value[key]=parsed?parsed.toISOString():null
+ editingTime=false
  changed()
 }
 function finishTimeEdit(key,input){
