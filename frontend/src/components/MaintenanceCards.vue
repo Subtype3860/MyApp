@@ -30,7 +30,7 @@ const readingsText=computed(()=>{
  if(!engines.length)return ''
  return engines.map(engine=>String(engine.hours??'').padStart(5,' ')).join(' / ')+(readingsEstimated.value?'*':'')
 })
-const groups=computed(()=>[...new Set(card.value?.template.operations.map(o=>o.section)||[])])
+const groups=computed(()=>[...new Set(card.value?.template.operations.map(o=>o.section)||[])].filter(section=>section!=='Заключительный контроль'))
 const localKey=()=>{let user='';try{user=JSON.parse(atob(props.token.split('.')[1].replace(/-/g,'+').replace(/_/g,'/'))).sub||JSON.parse(atob(props.token.split('.')[1].replace(/-/g,'+').replace(/_/g,'/')))['http://schemas.xmlsoap.org/ws/2005/05/identity/claims/nameidentifier']||''}catch{};return 'atlas.to-card.'+user+'.'+card.value?.id}
 async function request(path,options={}){
  const response=await fetch('/api/maintenance-plans/'+path,{...options,headers:{Authorization:'Bearer '+props.token,...(!(options.body instanceof FormData)?{'Content-Type':'application/json'}:{}),...options.headers},signal:options.signal??AbortSignal.timeout(60000)})
@@ -238,7 +238,7 @@ async function print(){
   return `<tr><td>${caption(o)}</td><td class="c">${yes}</td><td class="c">${no}</td><td>${escape(reason(a))}</td><td>${escape(a.executor||'')}</td></tr>`
  }).join('')
  const planned=t.operations.filter(o=>!o.control),checks=t.operations.filter(o=>o.control)
- const sections=[...new Set(planned.map(o=>o.section))]
+ const sections=[...new Set(planned.map(o=>o.section))].filter(section=>section!=='Заключительный контроль')
  const plannedRows=sections.map(section=>`<tr class="group"><td colspan="5">${escape(section)}</td></tr>${operationRows(planned.filter(o=>o.section===section))}`).join('')
  const consumed=t.materials.map(m=>({material:m,actual:consumption(m.id)||{}}))
  const petroleum=x=>isPetroleum(groupNames.get(normalizeName(x.material.name)))
@@ -314,7 +314,7 @@ onBeforeUnmount(()=>{document.removeEventListener('visibilitychange',flushOnHide
    </fieldset>
    <div class="actions"><strong>Заполнено {{progress}} из {{data.answers.length}}</strong><label>Найти работу<input v-model="filter" type="search" /></label><label class="check"><input v-model="onlyPending" type="checkbox" /> Только пропуски и невыполненные</label></div>
    <details v-for="section in groups" :key="section" open><summary>{{section}}</summary>
-    <div class="operation-columns" aria-hidden="true"><span>Описание операции</span><span>Медиа выполнения</span><span>Выполнено / кто выполнял</span></div>
+    <div class="operation-columns" aria-hidden="true"><span>Медиа выполнения</span><span>Выполнено / кто выполнял</span></div>
     <MaintenanceOperationRow v-for="o in operations(section)" :key="o.id" :operation="o" :answer="answer(o.id)" :media="photos.filter(p=>p.operationId===o.id)" :disabled="!editable || busy || !!recovery" :default-executor="batchExecutor.trim() || currentExecutor" :defect-id="card.defects[o.id]" @change="updateAnswer(o.id,$event)" @attach="addPhoto($event,o.id)" @preview="viewPhoto" @defect="createDefect(o.id)" />
    </details>
    <button v-if="canFill" type="button" @click="previewRequirement">Подготовить требование по нормам</button>
@@ -337,6 +337,6 @@ onBeforeUnmount(()=>{document.removeEventListener('visibilitychange',flushOnHide
 </template>
 <style scoped>
 .to-cards{display:grid;gap:16px;border:1px solid var(--border);border-radius:12px;padding:18px;min-width:0}.actions,.card-list{display:flex;flex-wrap:wrap;gap:10px;align-items:center}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px}label{display:grid;gap:5px;font-size:13px}input,select,textarea{box-sizing:border-box;width:100%;min-width:0;padding:9px;border:1px solid var(--border);border-radius:8px;background:var(--bg-main);color:var(--text-main);font:inherit}fieldset{border:0;padding:0;min-width:0;display:grid;gap:12px;margin:12px 0}button{min-height:44px;padding:8px 12px;border:1px solid var(--border);border-radius:8px;background:var(--bg-surface);color:var(--text-main);cursor:pointer}button:disabled{opacity:.55;cursor:default}article{padding:12px 0;border-bottom:1px solid var(--border)}summary{cursor:pointer;padding:12px 0;font-weight:600}.check{display:flex;align-items:center}.check input{width:auto}pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px;max-height:350px;overflow:auto}aside{padding:14px;background:var(--bg-surface);border:1px solid var(--border)}.card-editor{min-width:0}h4{font-size:18px}p{overflow-wrap:anywhere}@media(max-width:600px){.to-cards{padding:10px}.grid{grid-template-columns:1fr}.actions>label{width:100%}}
-.operation-columns{display:grid;grid-template-columns:minmax(0,1.8fr) minmax(150px,1fr) minmax(170px,1fr);gap:20px;padding:10px 0;border-bottom:1px solid var(--border);font-size:12px;font-weight:600}.card-media-dialog{box-sizing:border-box;width:min(900px,calc(100vw - 24px));max-height:90dvh;padding:16px;border:1px solid var(--border);border-radius:12px;background:var(--bg-main);color:var(--text-main)}.card-media-dialog::backdrop{background:#0009}.card-media-dialog header{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;gap:12px}.card-media-dialog img,.card-media-dialog video{display:block;max-width:100%;max-height:65dvh;margin:0 auto 12px}.card-media-dialog a{color:inherit}@media(max-width:760px){.operation-columns{display:none}}
+.operation-columns{display:grid;grid-template-columns:minmax(0,1fr) minmax(180px,1fr);gap:20px;padding:10px 0;border-bottom:1px solid var(--border);font-size:12px;font-weight:600}.card-media-dialog{box-sizing:border-box;width:min(900px,calc(100vw - 24px));max-height:90dvh;padding:16px;border:1px solid var(--border);border-radius:12px;background:var(--bg-main);color:var(--text-main)}.card-media-dialog::backdrop{background:#0009}.card-media-dialog header{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;gap:12px}.card-media-dialog img,.card-media-dialog video{display:block;max-width:100%;max-height:65dvh;margin:0 auto 12px}.card-media-dialog a{color:inherit}@media(max-width:760px){.operation-columns{display:none}}
 .to-cards{gap:10px;padding:12px}.to-cards>header{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}.to-cards h3{margin:0;font-size:17px}.to-cards p{margin:4px 0}.actions,.card-list{gap:6px}.to-cards>header button,.card-list button{min-height:34px;padding:5px 9px;font-size:12px}.card-list{max-height:150px;overflow:auto}@media(max-width:700px){.to-cards>header button,.card-list button{min-height:40px}}
 </style>
