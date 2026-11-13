@@ -1323,6 +1323,22 @@
       if (humanWon) this.startConfetti();
     }
 
+    /** Спрашивает, объявлять ли марьяж при заходе королём или дамой. */
+    askMarriage(suit, answer) {
+      const info = SUITS[suit];
+      this.openModal({
+        kind: 'confirm',
+        kicker: 'МАРЬЯЖ',
+        title: `Объявить марьяж ${info.symbol}?`,
+        body: `<p>${info.name} марьяж даёт +${info.marriage} и назначает козырь. Если зайти без объявления, марьяж останется на руке.</p>`,
+        closable: true,
+        actions: [
+          { label: 'Без марьяжа', style: 'ghost', onClick: () => answer(false) },
+          { label: `Объявить +${info.marriage}`, style: 'primary', onClick: () => answer(true) },
+        ],
+      });
+    }
+
     confirmMenu() {
       this.openModal({
         kind: 'confirm',

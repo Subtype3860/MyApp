@@ -858,8 +858,32 @@
       }
       const s = this.state;
       if (!s || s.phase !== 'playing' || s.turn !== 0 || s.trickComplete) return;
+      // Заход королём или дамой при необъявленном марьяже: предлагаем объявить.
+      const suit = card[0];
+      const rank = card.slice(1);
+      const canAnnounce =
+        !s.pendingMarriage &&
+        !s.trick.length &&
+        s.trickNumber >= 1 &&
+        (rank === 'K' || rank === 'Q') &&
+        E.marriageSuits(s.hands[0]).includes(suit) &&
+        !s.declared[0].includes(suit);
+      if (canAnnounce) {
+        this.ui.askMarriage(suit, (announce) => this.playHumanCard(card, announce ? suit : null));
+        return;
+      }
+      this.playHumanCard(card, null);
+    }
+
+    playHumanCard(card, marriageSuit) {
+      const s = this.state;
+      if (!s || s.phase !== 'playing' || s.turn !== 0) return;
       const prev = s.phase;
       try {
+        if (marriageSuit) {
+          E.declareMarriage(s, 0, marriageSuit);
+          S.play('marriage');
+        }
         E.playCard(s, 0, card);
         this.after(prev, 'card');
       } catch (error) {
