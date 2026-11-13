@@ -17,6 +17,7 @@ public static class Permissions
     public const string MechanicGame = "games.mechanic";
     public const string TanksPlay = "games.tanks";
     public const string FortpostGame = "games.fortpost";
+    public const string ThousandGame = "games.thousand";
 
     public static readonly IReadOnlyList<PermissionDefinition> Catalog =
     [
@@ -48,7 +49,8 @@ public static class Permissions
         [
             new(MechanicGame, "Смена"),
             new(TanksPlay, "Танки 3D"),
-            new(FortpostGame, "Форпост")
+            new(FortpostGame, "Форпост"),
+            new(ThousandGame, "1000")
         ])
     ];
 

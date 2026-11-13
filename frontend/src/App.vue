@@ -19,6 +19,7 @@ import AuxiliaryWorksView from './components/AuxiliaryWorksView.vue'
 import TanksView from './components/TanksView.vue'
 import MechanicView from './components/MechanicView.vue'
 import FortpostView from './components/FortpostView.vue'
+import ThousandView from './components/ThousandView.vue'
 import { readAuth, writeAuth, clearAuth } from './utils/authStorage'
 
 const storedToken = readAuth('token')
@@ -330,6 +331,7 @@ function updateSelectedComponentRows(rows) {
       <TanksView v-else-if="currentPage === 'tanks'" :token="token" :navigation-collapsed="isNavigationCollapsed" />
       <MechanicView v-else-if="currentPage === 'mechanic'" :navigation-collapsed="isNavigationCollapsed" />
       <FortpostView v-else-if="currentPage === 'fortpost'" :navigation-collapsed="isNavigationCollapsed" />
+      <ThousandView v-else-if="currentPage === 'thousand'" :navigation-collapsed="isNavigationCollapsed" />
       <HelpView v-else-if="currentPage === 'help'" :navigation-collapsed="isNavigationCollapsed" />
       <ProfileView
         v-else-if="currentPage === 'profile'"
