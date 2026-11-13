@@ -93,6 +93,7 @@
         menuFan: $('menuFan'),
         menuStats: $('menuStats'),
         playBtn: $('playBtn'),
+        resumeBtn: $('resumeBtn'),
         onlineBtn: $('onlineBtn'),
         menuRulesBtn: $('menuRulesBtn'),
         menuSoundBtn: $('menuSoundBtn'),
@@ -139,6 +140,9 @@
     }
 
     bind() {
+      this.el.resumeBtn.addEventListener('click', () => {
+        if (this.cb.onResume) this.cb.onResume();
+      });
       this.el.playBtn.addEventListener('click', () => {
         S.init();
         S.play('click');
@@ -227,6 +231,12 @@
         btn.setAttribute('aria-label', muted ? 'Включить звук' : 'Выключить звук');
         btn.title = muted ? 'Включить звук' : 'Выключить звук';
       });
+    }
+
+    /** Показывает или скрывает пункт «Продолжить партию». */
+    setSaveAvailable(available) {
+      if (!this.el.resumeBtn) return;
+      this.el.resumeBtn.classList.toggle('hidden', !available);
     }
 
     showMenu() {

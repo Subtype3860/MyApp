@@ -60,13 +60,19 @@
 
   function createRng(seed) {
     let a = (Number(seed) || 1) >>> 0;
-    return function rng() {
+    const rng = function rng() {
       a |= 0;
       a = (a + 0x6d2b79f5) | 0;
       let t = Math.imul(a ^ (a >>> 15), 1 | a);
       t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
       return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
     };
+    // Состояние генератора нужно для сохранения партии.
+    rng.getState = () => a;
+    rng.setState = (value) => {
+      a = (Number(value) || 1) >>> 0;
+    };
+    return rng;
   }
 
   function shuffle(array, rng) {
@@ -683,6 +689,7 @@
     marriageSuits,
     cardValue,
     cardPower,
+    createRng,
     cardName,
     cardLongName,
     sortHand,

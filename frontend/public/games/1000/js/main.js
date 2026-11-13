@@ -9,6 +9,8 @@
   const S = root.ThousandSound;
 
   const STATS_KEY = 'thousand.stats';
+  const SAVE_KEY = 'thousand.save';
+  const SAVE_VERSION = 1;
 
   function loadStats() {
     try {
@@ -62,6 +64,7 @@
 
       this.ui = new root.GameUI({
         onStart: () => this.startGame(),
+        onResume: () => this.resumeGame(),
         onBid: (amount) => this.humanBid(amount),
         onPass: () => this.humanPass(),
         onTakeTalon: () => this.humanTakeTalon(),
@@ -79,6 +82,7 @@
         onOnlineLeave: () => this.leaveOnline(),
       });
       this.ui.updateMenuStats(this.stats);
+      this.ui.setSaveAvailable(this.hasSave());
       this.ui.showMenu();
       root.__THOUSAND__ = this;
     }
@@ -389,6 +393,76 @@
       S.play('deal');
       this.ui.render(this.state);
       this.tick(this.version);
+      this.saveGame();
+      this.debug();
+    }
+
+    /* ---------- сохранение офлайн-партии ---------- */
+
+    hasSave() {
+      try {
+        const data = JSON.parse(root.localStorage.getItem(SAVE_KEY) || 'null');
+        return Boolean(data && data.v === SAVE_VERSION && data.state && data.state.phase !== 'gameover');
+      } catch (_) {
+        return false;
+      }
+    }
+
+    saveGame() {
+      if (this.mode !== 'offline' || !this.state || this.state.phase === 'gameover') return;
+      try {
+        const rng = this.state.rng && this.state.rng.getState ? this.state.rng.getState() : null;
+        root.localStorage.setItem(
+          SAVE_KEY,
+          JSON.stringify({ v: SAVE_VERSION, savedAt: Date.now(), rng, state: this.state })
+        );
+        this.ui.setSaveAvailable(true);
+      } catch (_) {
+        /* ignore */
+      }
+    }
+
+    clearSave() {
+      try {
+        root.localStorage.removeItem(SAVE_KEY);
+      } catch (_) {
+        /* ignore */
+      }
+      this.ui.setSaveAvailable(false);
+    }
+
+    resumeGame() {
+      let data = null;
+      try {
+        data = JSON.parse(root.localStorage.getItem(SAVE_KEY) || 'null');
+      } catch (_) {
+        data = null;
+      }
+      if (!data || data.v !== SAVE_VERSION || !data.state) {
+        this.clearSave();
+        return;
+      }
+      this.closeNet();
+      this.mode = 'offline';
+      this.clearOnlinePending();
+      this.onlineLastPhase = null;
+      this.version += 1;
+      this.clearTimer();
+      const state = data.state;
+      state.rng = E.createRng(state.seed);
+      if (data.rng != null && state.rng.setState) state.rng.setState(data.rng);
+      this.state = state;
+      this.ui.setOnlineRoom(null);
+      this.resultShown = false;
+      this.gameOverShown = false;
+      this.talonShownFor = null;
+      this.ui.stopConfetti();
+      this.ui.resetView();
+      this.ui.showGame();
+      S.init();
+      this.ui.render(this.state);
+      this.tick(this.version);
+      this.ui.setSaveAvailable(true);
       this.debug();
     }
 
@@ -513,6 +587,7 @@
         }
       }
       this.tick(this.version);
+      this.saveGame();
       this.debug();
     }
 
@@ -698,6 +773,7 @@
       if (!s) return;
       this.gameOverShown = true;
       this.resultShown = true;
+      this.clearSave();
       this.ui.closeModal();
       this.ui.showGameOver(s, {
         onRestart: () => this.startGame(),
