@@ -404,8 +404,12 @@
     const following = hand.filter((c) => suitOf(c) === led);
     if (following.length) return following;
     if (state.trump) {
-      const trumps = hand.filter((c) => suitOf(c) === state.trump);
-      if (trumps.length) return trumps;
+      // Перебивать козырем не обязательно, если козырь уже на столе.
+      const trumpOnTable = state.trick.some((t) => suitOf(t.card) === state.trump);
+      if (!trumpOnTable) {
+        const trumps = hand.filter((c) => suitOf(c) === state.trump);
+        if (trumps.length) return trumps;
+      }
     }
     return hand;
   }
