@@ -675,6 +675,10 @@
       const s = this.state;
 
       if (s.phase === 'discard' && s.bidder === 0) {
+        // После смены состояния в выборе не должно оставаться карт, которых уже нет на руке.
+        const hand = s.hands[0] || [];
+        this.selected = this.selected.filter((id) => hand.includes(id));
+        if (!hand.includes(card)) return;
         const index = this.selected.indexOf(card);
         if (index >= 0) {
           this.selected.splice(index, 1);
@@ -683,11 +687,8 @@
           this.renderDock();
           return;
         }
-        if (this.selected.length >= 2) {
-          this.toast('Снести можно ровно две карты');
-          S.play('warn');
-          return;
-        }
+        // Выбор третьей карты заменяет самую раннюю — без ошибки «ровно две».
+        if (this.selected.length >= 2) this.selected.shift();
         this.selected.push(card);
         S.play('click');
         this.updateHandClasses();
