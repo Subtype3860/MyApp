@@ -1,7 +1,7 @@
 import boldUrl from '../assets/LiberationSans-Bold.ttf?url'
 import italicUrl from '../assets/LiberationSans-Italic.ttf?url'
 import notoSansUrl from '../assets/NotoSans.ttf?url'
-import { cardMedia, cardState, formatReportDate, reportCardTitle, cardWorkSections } from './shiftReport'
+import { cardMedia, cardState, formatReportDate, reportCardTitle, cardWorkSections, maintenancePhotoGroups } from './shiftReport'
 
 // Resize authenticated previews before embedding; originals and videos stay in the application.
 export async function compactPhoto(blob) {
@@ -129,7 +129,29 @@ export async function createShiftReportPdf({ groups, date, shift, photos, mediaL
             textBlock(description, false, 12, '•')
             y -= 10
           }
+          if (card.maintenance) {
+            // Фото карты ТО: группы по разделу, под фото — кто выполнял.
+            for (const group of maintenancePhotoGroups(card)) {
+              const items = group.photos.filter(item => photos[item.id]?.blob)
+              if (!items.length) continue
+              ensureCard(30)
+              textBlock(group.section, true, 11)
+              y -= 4
+              for (const photo of items) {
+                ensureCard(126)
+                const embedded = await document.embedJpg(await photos[photo.id].blob.arrayBuffer())
+                const size = embedded.scale(Math.min(240 / embedded.width, 92 / embedded.height))
+                page.drawImage(embedded, { x: left, y: y - 92, width: size.width, height: size.height })
+                link('', mediaUrl('image', photo.id), left, y - 92, size.width)
+                y -= 100
+                textBlock(photo.caption || '', false, 9)
+                y -= 4
+              }
+              y -= 6
+            }
+          }
           for (const work of section.works) {
+            if (card.maintenance) break
             const workCard = { ...card, works: [work] }
             const media = cardMedia(workCard, 'image'), videos = cardMedia(workCard, 'video')
             const previews = media.filter(item => photos[item.id]?.blob)

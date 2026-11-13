@@ -4,7 +4,7 @@ import { pageBlockVisible, reportPresentation } from '../utils/pageVisibility'
 import FleetActionMenu from './FleetActionMenu.vue'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import RepairMediaViewer from './RepairMediaViewer.vue'
-import { cardMedia, cardState, defaultReportSelection, formatReportDate, selectShiftWorks, vehicleTitle, cardWorkSections, selectAuxiliaryWorks, groupReportWorks, reportCardTitle, maintenanceReportGroups } from '../utils/shiftReport'
+import { cardMedia, cardState, defaultReportSelection, formatReportDate, selectShiftWorks, vehicleTitle, cardWorkSections, selectAuxiliaryWorks, groupReportWorks, reportCardTitle, maintenanceReportGroups, maintenancePhotoGroups } from '../utils/shiftReport'
 import { compactPhoto, createShiftReportPdf } from '../utils/shiftReportPdf'
 
 const props = defineProps({ token: { type: String, required: true } })
@@ -162,8 +162,22 @@ onBeforeUnmount(() => {
             <section v-for="section in cardWorkSections(card)" :key="section.works[0].id" class="shift-report__work-section">
               <div class="shift-report__work">
                 <ul class="shift-report__works"><li v-for="work in section.works" :key="work.id" class="shift-report__description">{{ work.description || work.cause || 'Описание не указано.' }}</li></ul>
-                <div v-if="cardMedia({ works: section.works }, 'image').length" class="shift-report__photos">
-                  <a v-for="photo in cardMedia({ works: section.works }, 'image')" :key="photo.id" :href="mediaLinks[`image:${photo.id}`]" target="_blank" rel="noopener noreferrer" :aria-label="`Открыть фото: ${photo.fileName}`">
+                <template v-if="card.maintenance">
+                  <div v-for="group in maintenancePhotoGroups(card)" :key="group.section" class="shift-report__photo-group">
+                    <h6 class="shift-report__photo-section">{{ group.section }}</h6>
+                    <div class="shift-report__photos">
+                      <figure v-for="photo in group.photos" :key="photo.id" class="shift-report__photo">
+                        <a :href="mediaLinks[`image:${photo.id}`]" target="_blank" rel="noopener noreferrer" :aria-label="`Открыть фото: ${photo.fileName}`">
+                          <img v-if="photos[photo.id]?.url" :src="photos[photo.id].url" :alt="photo.fileName" />
+                          <span v-else>{{ photos[photo.id]?.error ? 'Превью недоступно' : 'Загрузка фото…' }}</span>
+                        </a>
+                        <figcaption>{{ photo.caption }}</figcaption>
+                      </figure>
+                    </div>
+                  </div>
+                </template>
+                <div v-else-if="cardMedia({ works: section.works }, 'image').length" class="shift-report__photos">
+                  <a v-for="photo in cardMedia({ works: section.works }, 'image')" v-show="cardMedia({ works: section.works }, 'image').length" :key="photo.id" :href="mediaLinks[`image:${photo.id}`]" target="_blank" rel="noopener noreferrer" :aria-label="`Открыть фото: ${photo.fileName}`">
                     <img v-if="photos[photo.id]?.url" :src="photos[photo.id].url" :alt="photo.fileName" />
                     <span v-else>{{ photos[photo.id]?.error ? 'Превью недоступно' : 'Загрузка фото…' }}</span>
                   </a>

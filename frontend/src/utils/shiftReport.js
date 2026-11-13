@@ -202,6 +202,19 @@ export function groupReportWorks(repairWorks, auxiliaryWorks, locations = {}, ma
 }
 
 /** Возвращает заголовок карточки сменного отчёта. */
+/** Группирует фото карты ТО по разделу и подписывает, кто выполнял операцию. */
+export function maintenancePhotoGroups(card) {
+  const groups = new Map()
+  for (const work of card.works) {
+    const photos = (work.photos || []).map(photo => ({ ...photo, caption: work.description }))
+    if (!photos.length) continue
+    const section = work.section || 'Без раздела'
+    if (!groups.has(section)) groups.set(section, [])
+    groups.get(section).push(...photos)
+  }
+  return [...groups].map(([section, photos]) => ({ section, photos }))
+}
+
 export function reportCardTitle(card) {
   return card.auxiliary || card.maintenance ? card.title : vehicleTitle(card.vehicle)
 }
@@ -219,7 +232,7 @@ export function maintenanceReportGroups(records, date, shift) {
     const finished = new Date(record.finishedAt).toLocaleString('ru-RU')
     // Показываем выполненные операции: описание и исполнитель до фото.
     const works = (record.operations || []).map((operation, index) => ({
-      id: `maintenance:${record.id}:${index}`,
+      id: `maintenance:${record.id}:${index}`, section: operation.section || 'Без раздела',
       executors: operation.executor ? [operation.executor] : [],
       description: `${operation.text}${operation.executor ? ` — ${operation.executor}` : ''}${operation.condition === 'defect' ? ' · выявлен дефект' : ''}`,
       photos: (operation.photos || []).map(photoId => ({ id: photoId, source: 'maintenance', cardId: record.id })),
