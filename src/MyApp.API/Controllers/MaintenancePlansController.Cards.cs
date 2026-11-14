@@ -44,7 +44,7 @@ public sealed partial class MaintenancePlansController
         audit = Array.Empty<CardAudit>(), auditCount = Decode<CardAudit[]>(card.Audit).Length,
         template = Decode<CardTemplate>(card.Template), data = Decode<CardData>(card.Data),
         defects = Decode<Dictionary<string,Guid>>(card.Defects), readings = Decode<MaintenanceEngine[]>(card.Readings) };
-    private object CardView(MaintenanceCard card) => new { card.Id, card.VehicleId, card.VehicleLabel, card.Revision, card.Status,
+    private object CardView(MaintenanceCard card) => new { card.Id, card.VehicleId, card.VehicleLabel, card.Revision, card.Status, currentUserId = Actor,
         card.TemplateId, card.TemplateRevision, card.PlanRevision, card.RunInId, card.CreatedBy, card.CreatedAt, card.AcceptedBy, card.AcceptedAt,
         template = Decode<CardTemplate>(card.Template), data = Decode<CardData>(card.Data), audit = Decode<CardAudit[]>(card.Audit),
         defects = Decode<Dictionary<string,Guid>>(card.Defects), readings = Decode<MaintenanceEngine[]>(card.Readings) };

@@ -8,5 +8,7 @@ public sealed record CardAnswer(string Id, string Status, string Condition, stri
 public sealed record CardConsumption(string Id, decimal? Actual, string Substitute, string Executor);
 public sealed record CardData(DateOnly Date, string Driver, string EngineModel, decimal? Mileage,
     DateTimeOffset? StoppedAt, DateTimeOffset? StartedAt, DateTimeOffset? FinishedAt, DateTimeOffset? ReleasedAt,
-    string Notes, CardAnswer[] Answers, CardConsumption[] Materials);
+    string Notes, CardAnswer[] Answers, CardConsumption[] Materials, CardSection[]? Sections = null);
+public sealed record CardParticipant(string UserId, string Name, string Position, string Status, string ApprovedBy = "", DateTimeOffset? ApprovedAt = null);
+public sealed record CardSection(string Name, CardParticipant[] Participants);
 public sealed record CardAudit(int Revision, Guid Actor, DateTimeOffset At, string Action, string Reason, CardData Data);

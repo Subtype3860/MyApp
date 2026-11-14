@@ -178,6 +178,41 @@ async function addPhoto(event,id){
  }catch(e){error.value=e.name==='TimeoutError'?'Сервер не ответил при загрузке. Проверьте связь и повторите.':(e.message||'Не удалось загрузить медиа.')}
  finally{busy.value=false;event.target.value=''}
 }
+/** Ключ раздела в таблице медиа карты. */
+const sectionKey=section=>'section:'+section
+/** Медиа, привязанное к разделу. */
+const sectionMedia=section=>photos.value.filter(photo=>photo.operationId===sectionKey(section))
+/** Участники раздела из данных карты. */
+const sectionParticipants=section=>{
+ const entry=(data.value.sections||[]).find(item=>item.name===section)
+ return entry?.participants||[]
+}
+/** Отметил ли текущий пользователь участие в разделе. */
+const joined=section=>{
+ const uid=card.value?.currentUserId
+ return Boolean(uid) && sectionParticipants(section).some(person=>person.userId===uid)
+}
+const participationLabel=status=>status==='approved'?'подтверждён':status==='rejected'?'отклонён':'ожидает'
+/** Отмечает участие в разделе: подтверждение даёт механик. */
+async function joinSection(section){
+ if(!card.value||busy.value)return
+ busy.value=true;error.value=''
+ try{
+  const result=await request('cards/'+card.value.id+'/participation',{method:'POST',body:JSON.stringify({section})})
+  data.value.sections=result.sections
+  message.value='Участие отмечено — ждёт подтверждения механика'
+ }catch(e){error.value=e.message}finally{busy.value=false}
+}
+/** Подтверждает или отклоняет участие работника (механик). */
+async function decideParticipation(section,userId,approve){
+ if(!card.value||busy.value)return
+ busy.value=true;error.value=''
+ try{
+  const result=await request('cards/'+card.value.id+'/participation/decision',{method:'POST',body:JSON.stringify({section,userId,approve})})
+  data.value.sections=result.sections
+  message.value=approve?'Участие подтверждено':'Участие отклонено'
+ }catch(e){error.value=e.message}finally{busy.value=false}
+}
 function closeMedia(){previewGeneration++;if(mediaPreview.value)URL.revokeObjectURL(mediaPreview.value.url);mediaPreview.value=null;mediaDialog.value?.close()}
 async function viewPhoto(photo){
  const current=++previewGeneration
@@ -313,9 +348,32 @@ onBeforeUnmount(()=>{document.removeEventListener('visibilitychange',flushOnHide
     <div class="actions"><label>Исполнитель для незаполненных строк<input v-model="batchExecutor" /></label><button type="button" @click="setExecutor">Назначить исполнителя</button></div>
    </fieldset>
    <div class="actions"><strong>Заполнено {{progress}} из {{data.answers.length}}</strong><label>Найти работу<input v-model="filter" type="search" /></label><label class="check"><input v-model="onlyPending" type="checkbox" /> Только пропуски и невыполненные</label></div>
-   <details v-for="section in groups" :key="section" open><summary>{{section}}</summary>
-    <div class="operation-columns" aria-hidden="true"><span>Медиа выполнения</span><span>Выполнено / кто выполнял</span></div>
-    <MaintenanceOperationRow v-for="o in operations(section)" :key="o.id" :operation="o" :answer="answer(o.id)" :media="photos.filter(p=>p.operationId===o.id)" :disabled="!editable || busy || !!recovery" :default-executor="batchExecutor.trim() || currentExecutor" :defect-id="card.defects[o.id]" @change="updateAnswer(o.id,$event)" @attach="addPhoto($event,o.id)" @preview="viewPhoto" @defect="createDefect(o.id)" />
+   <details v-for="section in groups" :key="section" open class="card-section"><summary>{{section}}</summary>
+    <div class="section-row">
+      <div class="section-media">
+        <span class="mobile-caption">Медиа раздела</span>
+        <label v-if="editable" class="attach-button">Добавить медиа
+          <input type="file" accept="image/jpeg,image/png,video/mp4,video/webm" :aria-label="'Медиа раздела: '+section" @change="addPhoto($event, sectionKey(section))" />
+        </label>
+        <span v-if="!sectionMedia(section).length" class="empty-media">Нет вложений</span>
+        <button v-for="(file,index) in sectionMedia(section)" :key="file.id" type="button" class="media-link" @click="viewPhoto(file)">{{file.contentType?.startsWith('video/')?'Видео':'Фото'}} {{index+1}} · Открыть</button>
+      </div>
+      <div class="section-participants">
+        <span class="mobile-caption">Участники раздела</span>
+        <ul class="participants">
+          <li v-for="person in sectionParticipants(section)" :key="person.userId">
+            <span>{{person.name || 'Работник'}}<small v-if="person.position"> · {{person.position}}</small></span>
+            <b class="participant-badge" :class="'participant-badge--'+person.status">{{participationLabel(person.status)}}</b>
+            <template v-if="canManage && card.status==='draft' && person.status==='pending'">
+              <button type="button" @click="decideParticipation(section, person.userId, true)">Подтвердить</button>
+              <button type="button" @click="decideParticipation(section, person.userId, false)">Отклонить</button>
+            </template>
+          </li>
+        </ul>
+        <span v-if="!sectionParticipants(section).length" class="empty-media">Пока никто не отметился</span>
+        <button v-if="canFill && card.status==='draft'" type="button" class="join-button" :disabled="joined(section) || busy" @click="joinSection(section)">{{joined(section) ? 'Вы участвуете' : 'Я участвовал'}}</button>
+      </div>
+    </div>
    </details>
    <button v-if="canFill" type="button" @click="previewRequirement">Подготовить требование по нормам</button>
    <section v-if="requirement"><h4>Материалы для требования</h4><p>Сопоставление по точному наименованию и единице. Подтвердите доступные позиции; остальные выберите на складе вручную. Фактический расход карты не меняется.</p><p v-for="m in requirement" :key="m.materialName+m.unit">{{m.materialName}}: требуется {{m.quantity}} {{m.unit}}, доступно {{m.availableQuantity}}. {{m.matched?'':'Нет однозначного совпадения со складом.'}}</p><button type="button" :disabled="!requirement.some(m=>m.matched&&m.availableQuantity>0)" @click="sendRequirement">Заменить выбранные компоненты доступными материалами</button></section>
@@ -337,6 +395,6 @@ onBeforeUnmount(()=>{document.removeEventListener('visibilitychange',flushOnHide
 </template>
 <style scoped>
 .to-cards{display:grid;gap:16px;border:1px solid var(--border);border-radius:12px;padding:18px;min-width:0}.actions,.card-list{display:flex;flex-wrap:wrap;gap:10px;align-items:center}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px}label{display:grid;gap:5px;font-size:13px}input,select,textarea{box-sizing:border-box;width:100%;min-width:0;padding:9px;border:1px solid var(--border);border-radius:8px;background:var(--bg-main);color:var(--text-main);font:inherit}fieldset{border:0;padding:0;min-width:0;display:grid;gap:12px;margin:12px 0}button{min-height:44px;padding:8px 12px;border:1px solid var(--border);border-radius:8px;background:var(--bg-surface);color:var(--text-main);cursor:pointer}button:disabled{opacity:.55;cursor:default}article{padding:12px 0;border-bottom:1px solid var(--border)}summary{cursor:pointer;padding:12px 0;font-weight:600}.check{display:flex;align-items:center}.check input{width:auto}pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px;max-height:350px;overflow:auto}aside{padding:14px;background:var(--bg-surface);border:1px solid var(--border)}.card-editor{min-width:0}h4{font-size:18px}p{overflow-wrap:anywhere}@media(max-width:600px){.to-cards{padding:10px}.grid{grid-template-columns:1fr}.actions>label{width:100%}}
-.operation-columns{display:grid;grid-template-columns:minmax(0,1fr) minmax(180px,1fr);gap:20px;padding:10px 0;border-bottom:1px solid var(--border);font-size:12px;font-weight:600}.card-media-dialog{box-sizing:border-box;width:min(900px,calc(100vw - 24px));max-height:90dvh;padding:16px;border:1px solid var(--border);border-radius:12px;background:var(--bg-main);color:var(--text-main)}.card-media-dialog::backdrop{background:#0009}.card-media-dialog header{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;gap:12px}.card-media-dialog img,.card-media-dialog video{display:block;max-width:100%;max-height:65dvh;margin:0 auto 12px}.card-media-dialog a{color:inherit}@media(max-width:760px){.operation-columns{display:none}}
+.section-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(220px,1fr);gap:16px;padding:8px 0}.section-media,.section-participants{display:grid;gap:8px;min-width:0}.participants{list-style:none;margin:0;padding:0;display:grid;gap:6px}.participants li{display:flex;flex-wrap:wrap;align-items:center;gap:8px;font-size:13px}.participant-badge{padding:2px 8px;border-radius:999px;font-size:11px;font-weight:600;background:#eef1f4;color:#41505c}.participant-badge--approved{background:#dff3e3;color:#1c6b2f}.participant-badge--rejected{background:#fbe3e3;color:#8a2b2b}.join-button{align-self:start}.operation-columns{display:grid;grid-template-columns:minmax(0,1fr) minmax(180px,1fr);gap:20px;padding:10px 0;border-bottom:1px solid var(--border);font-size:12px;font-weight:600}.card-media-dialog{box-sizing:border-box;width:min(900px,calc(100vw - 24px));max-height:90dvh;padding:16px;border:1px solid var(--border);border-radius:12px;background:var(--bg-main);color:var(--text-main)}.card-media-dialog::backdrop{background:#0009}.card-media-dialog header{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;gap:12px}.card-media-dialog img,.card-media-dialog video{display:block;max-width:100%;max-height:65dvh;margin:0 auto 12px}.card-media-dialog a{color:inherit}@media(max-width:760px){.section-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(220px,1fr);gap:16px;padding:8px 0}.section-media,.section-participants{display:grid;gap:8px;min-width:0}.participants{list-style:none;margin:0;padding:0;display:grid;gap:6px}.participants li{display:flex;flex-wrap:wrap;align-items:center;gap:8px;font-size:13px}.participant-badge{padding:2px 8px;border-radius:999px;font-size:11px;font-weight:600;background:#eef1f4;color:#41505c}.participant-badge--approved{background:#dff3e3;color:#1c6b2f}.participant-badge--rejected{background:#fbe3e3;color:#8a2b2b}.join-button{align-self:start}.operation-columns{display:none}}
 .to-cards{gap:10px;padding:12px}.to-cards>header{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}.to-cards h3{margin:0;font-size:17px}.to-cards p{margin:4px 0}.actions,.card-list{gap:6px}.to-cards>header button,.card-list button{min-height:34px;padding:5px 9px;font-size:12px}.card-list{max-height:150px;overflow:auto}@media(max-width:700px){.to-cards>header button,.card-list button{min-height:40px}}
 </style>

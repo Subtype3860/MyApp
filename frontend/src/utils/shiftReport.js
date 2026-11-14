@@ -206,7 +206,7 @@ export function groupReportWorks(repairWorks, auxiliaryWorks, locations = {}, ma
 export function maintenancePhotoGroups(card) {
   const groups = new Map()
   for (const work of card.works) {
-    const photos = (work.photos || []).map(photo => ({ ...photo, caption: work.description }))
+    const photos = (work.photos || []).map(photo => ({ ...photo, caption: (work.executors || []).join('; ') || work.description }))
     if (!photos.length) continue
     const section = work.section || 'Без раздела'
     if (!groups.has(section)) groups.set(section, [])
@@ -230,13 +230,18 @@ export function maintenanceReportGroups(records, date, shift) {
     return true
   }).sort((a, b) => new Date(a.finishedAt) - new Date(b.finishedAt)).map(record => {
     const finished = new Date(record.finishedAt).toLocaleString('ru-RU')
-    // Показываем выполненные операции: описание и исполнитель до фото.
-    const works = (record.operations || []).map((operation, index) => ({
-      id: `maintenance:${record.id}:${index}`, section: operation.section || 'Без раздела',
-      executors: operation.executor ? [operation.executor] : [],
-      description: `${operation.text}${operation.executor ? ` — ${operation.executor}` : ''}${operation.condition === 'defect' ? ' · выявлен дефект' : ''}`,
-      photos: (operation.photos || []).map(photoId => ({ id: photoId, source: 'maintenance', cardId: record.id })),
-    }))
+    // Показываем разделы карты: подтверждённые участники и медиа раздела.
+    const approved = section => (section.participants || []).filter(person => person.status === 'approved')
+      .map(person => person.name).filter(Boolean)
+    const works = (record.sections || []).map((section, index) => {
+      const people = approved(section)
+      return {
+        id: `maintenance:${record.id}:${index}`, section: section.name,
+        executors: people,
+        description: `${section.name}${people.length ? ` — ${people.join('; ')}` : ''}`,
+        photos: (section.photos || []).map(photoId => ({ id: photoId, source: 'maintenance', cardId: record.id })),
+      }
+    })
     if (!works.length) works.push({
       id: `maintenance:${record.id}`, executors: record.executors || [],
       description: `${record.service} — проведено. Завершено: ${finished}${record.notes ? `\n${record.notes}` : ''}`,

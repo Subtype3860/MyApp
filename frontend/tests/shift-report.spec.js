@@ -85,13 +85,13 @@ test('maintenance-only report contains full names in preview and PDF', async ({ 
     {
       id: 'm2', vehicleLabel: 'Sany SET150 №904', service: 'ТО-1000',
       finishedAt: '2026-10-12T02:15:00+06:00', executors: ['Сидоров Сидор Сидорович'],
-      operations: [{ id: 'o1', text: 'Проверить масло', section: 'Двигатель', status: 'done', condition: 'ok', executor: 'Сидоров Сидор Сидорович', note: '', photos: ['mp1'] }],
+      sections: [{ name: 'Двигатель', participants: [{ userId: 'u1', name: 'Сидоров Сидор Сидорович', position: 'Механик', status: 'approved' }], photos: ['mp1'] }],
     },
   ] }))
   await page.goto('/?reportWork=missing&reportDate=2026-10-11&reportShift=2')
   await expect(page.locator('.shift-report__paper')).toContainText('ТО-700 — проведено')
   await expect(page.locator('.shift-report__paper')).toContainText('Иванов Иван Иванович')
-  await expect(page.locator('.shift-report__paper')).toContainText('Проверить масло — Сидоров Сидор Сидорович')
+  await expect(page.locator('.shift-report__paper')).toContainText('Двигатель — Сидоров Сидор Сидорович')
   await expect(page.locator('.shift-report__photo-section').filter({ hasText: 'Двигатель' })).toBeVisible()
   const maintenanceCard = page.locator('.shift-report__card').filter({ hasText: 'Sany SET150 №904' })
   const order = await maintenanceCard.locator('.shift-report__works, .shift-report__photos, .shift-report__performers').evaluateAll(
@@ -109,7 +109,7 @@ test('maintenance-only report contains full names in preview and PDF', async ({ 
   expect(text).toContain('ТО-700')
   expect(text).toContain('Иванов Иван Иванович')
   expect(text).toContain('Петров Пётр Петрович')
-  expect(text).toContain('Проверить масло')
+  expect(text).toContain('Двигатель')
   expect(text).toContain('Сидоров Сидор Сидорович')
   expect(text).toContain('Двигатель')
   await loadingTask.destroy()

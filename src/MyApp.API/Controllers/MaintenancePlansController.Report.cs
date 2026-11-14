@@ -43,8 +43,22 @@ public sealed partial class MaintenancePlansController
                         .Select(photo => photo.Id).ToArray(),
                 };
             }).Where(item => item.status == "done" || item.condition == "defect").ToArray();
+            // Разделы карты: состав из шаблона (без заключительного контроля) и отметки участия.
+            var sectionNames = template.Operations.Select(operation => operation.Section)
+                .Where(name => !string.IsNullOrWhiteSpace(name) && name != "Заключительный контроль")
+                .Concat((data.Sections ?? []).Select(section => section.Name))
+                .Where(name => !string.IsNullOrWhiteSpace(name))
+                .Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+            var sections = sectionNames.Select(name => new
+            {
+                Name = name,
+                Participants = (data.Sections ?? []).FirstOrDefault(section => string.Equals(section.Name, name, StringComparison.OrdinalIgnoreCase))?
+                    .Participants ?? [],
+                Photos = photos.Where(photo => photo.CardId == card.Id && photo.OperationId == "section:" + name)
+                    .Select(photo => photo.Id).ToArray(),
+            }).ToArray();
             return new { card.Id, card.VehicleId, card.VehicleLabel, template.Service,
-                data.StartedAt, data.FinishedAt, data.Notes, executors, operations };
+                data.StartedAt, data.FinishedAt, data.Notes, executors, operations, sections };
         }));
     }
 }
