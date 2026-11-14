@@ -108,7 +108,7 @@ onMounted(load)
             <label>Раздел<input v-model="o.section" required /></label>
             <label>Описание операции<textarea v-model="o.text" rows="2" required /></label>
             <div class="template-operation-actions">
-              <label class="check"><input v-model="o.control" type="checkbox" /> Заключительный контроль</label>
+
               <button type="button" :aria-label="`Удалить операцию ${i+1}`" @click="editor.template.operations.splice(i,1)">Удалить</button>
             </div>
           </article>
