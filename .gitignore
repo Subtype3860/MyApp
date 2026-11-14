@@ -374,3 +374,5 @@ FodyWeavers.xsd
 # Local release staging, logs and generated previews
 /tmp/
 /gto_preview.png
+
+frontend/tmp/
