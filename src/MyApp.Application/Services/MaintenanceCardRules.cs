@@ -37,15 +37,8 @@ public static class MaintenanceCardRules
         if (!submitting) return null;
         if (data.StartedAt is null || data.FinishedAt is null || data.FinishedAt > DateTimeOffset.UtcNow)
             return "Укажите начало и окончание работ (не в будущем).";
-        foreach (var answer in data.Answers)
-        {
-            if (string.IsNullOrEmpty(answer.Status) || string.IsNullOrWhiteSpace(answer.Executor)) return "Заполните все операции и укажите исполнителей.";
-            if (answer.Status is "not-done" or "na" && string.IsNullOrWhiteSpace(answer.Reason)) return "Укажите причины невыполнения и неприменимости.";
-            if (template.Operations.Single(x => x.Id == answer.Id).Control && answer.Status != "done") return "Заключительные контрольные операции должны быть выполнены.";
-            if (answer.Condition == "defect" && string.IsNullOrWhiteSpace(answer.Note)) return "Опишите обнаруженные дефекты.";
-        }
-        if (data.Materials.Any(x => x.Actual is null || (x.Actual > 0 && string.IsNullOrWhiteSpace(x.Executor))))
-            return "Укажите фактический расход всех материалов (включая нулевой) и исполнителей для использованных материалов.";
+        // Новая модель карты: отчёт ведётся по разделам. Операции и факт материалов
+        // больше не заполняются, поэтому при отправке проверяются только даты работ.
         return null;
     }
 }
