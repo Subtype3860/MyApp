@@ -81,7 +81,6 @@ async function refreshMaterials(){
  busy.value=true;error.value=''
  try{const item=await request('cards/'+card.value.id+'/refresh-materials',{method:'POST',body:JSON.stringify({revision:card.value.revision})});cards.value=cards.value.map(c=>c.id===item.id?item:c);await open(item);message.value='Материалы загружены из технического обслуживания.'}catch(e){error.value=e.message}finally{busy.value=false}
 }
-async function previewRequirement(){try{requirement.value=await request('cards/'+card.value.id+'/requirement-preview')}catch(e){error.value=e.message}}
 function sendRequirement(){
  const rows=requirement.value.filter(m=>m.matched&&m.availableQuantity>0).map(m=>({Наименование:m.materialName,'Ед.изм.':m.unit,Количество:m.availableQuantity,__sourceTable:'v_full_ost',__availableQuantity:m.availableQuantity,__requestedQuantity:m.quantity,__quantity:Math.min(m.quantity,m.availableQuantity),__remainingQuantity:Math.max(m.availableQuantity-m.quantity,0),__maintenanceName:card.value.template.service}))
  emit('materials',rows)
@@ -375,8 +374,8 @@ onBeforeUnmount(()=>{document.removeEventListener('visibilitychange',flushOnHide
       </div>
     </div>
    </details>
-   <button v-if="canFill" type="button" @click="previewRequirement">Подготовить требование по нормам</button>
-   <section v-if="requirement"><h4>Материалы для требования</h4><p>Сопоставление по точному наименованию и единице. Подтвердите доступные позиции; остальные выберите на складе вручную. Фактический расход карты не меняется.</p><p v-for="m in requirement" :key="m.materialName+m.unit">{{m.materialName}}: требуется {{m.quantity}} {{m.unit}}, доступно {{m.availableQuantity}}. {{m.matched?'':'Нет однозначного совпадения со складом.'}}</p><button type="button" :disabled="!requirement.some(m=>m.matched&&m.availableQuantity>0)" @click="sendRequirement">Заменить выбранные компоненты доступными материалами</button></section>
+
+
    <section class="card-material-source"><p v-if="card.template.materialSource">Источник материалов: <strong>{{card.template.materialSource}}</strong>. Нормы зафиксированы при загрузке в карту.</p><p v-else>Материалы этой карты ещё не связаны с техническим обслуживанием.</p><button v-if="editable" type="button" :disabled="busy||!!recovery||data.materials.some(m=>m.actual!==null&&m.actual!==undefined&&m.actual!==''||m.substitute?.trim())" @click="refreshMaterials">Загрузить материалы из технического обслуживания</button><p v-if="!card.template.materials.length">Список материалов пуст. Настройте его в «Техническом обслуживании» и загрузите в черновик.</p></section>
 
    <fieldset :disabled="!editable||busy||!!recovery" @input="changed"><label>Общие замечания<textarea v-model="data.notes" rows="3" /></label></fieldset>
