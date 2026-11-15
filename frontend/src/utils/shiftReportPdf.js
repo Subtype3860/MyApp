@@ -123,7 +123,7 @@ export async function createShiftReportPdf({ groups, date, shift, photos, mediaL
             y -= 18
           }
           // Сначала все работы раздела, затем их фото и ссылки — как в заявках на ремонт.
-          for (const work of section.works) {
+          for (const work of card.maintenance ? [] : section.works) {
             const description = work.description || work.cause || 'Описание не указано.'
             ensureCard(54)
             textBlock(description, false, 12, '•')

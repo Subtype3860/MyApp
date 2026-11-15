@@ -14,7 +14,7 @@ export function reportPresentation(groups, token) {
   const media = pageBlockVisible(token, 'shift_report.media')
   const performers = pageBlockVisible(token, 'shift_report.performers')
   return groups.map(group => ({ ...group, categories: group.categories.map(category => ({
-    ...category, cards: category.cards.map(card => ({ ...card, hidePerformers: !performers,
+    ...category, cards: category.cards.map(card => ({ ...card, hidePerformers: !performers || card.hidePerformers,
       works: card.works.map(work => media ? work : { ...work, photos: [], videos: [] }),
     })),
   })) }))

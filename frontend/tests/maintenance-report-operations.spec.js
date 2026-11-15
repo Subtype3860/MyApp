@@ -13,13 +13,16 @@ test('maintenance report lists sections with approved participants and photos', 
   const groups = maintenanceReportGroups(records, '2026-11-11', '1')
   const [card] = groups[0].categories[0].cards
   expect(card.cardId).toBe('c1')
-  expect(card.works).toHaveLength(2)
-  // В отчёт попадают только подтверждённые участники раздела.
-  expect(card.works[0].description).toBe('ДВС — Петров Пётр')
+  // В заголовке карточки — какое ТО проводилось.
+  expect(card.title).toBe('SANY №902 — ТО-1000')
+  // Фамилии в отчёт не попадают.
+  expect(card.hidePerformers).toBe(true)
+  // Раздел без фото не выводится.
+  expect(card.works).toHaveLength(1)
+  expect(card.works[0].description).toBe('ДВС')
   expect(card.works[0].section).toBe('ДВС')
-  expect(card.works[0].executors).toEqual(['Петров Пётр'])
+  expect(card.works[0].executors).toEqual([])
   expect(card.works[0].photos).toEqual([{ id: 'p1', source: 'maintenance', cardId: 'c1' }])
-  expect(card.works[1].description).toBe('Шасси')
 })
 
 test('maintenance report falls back to the service summary without sections', () => {
