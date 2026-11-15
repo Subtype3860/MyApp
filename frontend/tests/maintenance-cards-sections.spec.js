@@ -87,9 +87,12 @@ for (const width of [390, 1440]) test(`maintenance card by sections at ${width}`
   await expect(panel).not.toContainText('Заключительный контроль')
 
   // Медиа привязывается к разделу.
-  await panel.getByLabel('Медиа раздела: ДВС', { exact: true }).setInputFiles({ name: 'f.png', mimeType: 'image/png', buffer: png })
-  await expect(panel.getByRole('button', { name: /Фото 1 · Открыть/ })).toBeVisible()
-  expect(media[0].operationId).toBe('section:ДВС')
+  await panel.getByLabel('Медиа раздела: ДВС', { exact: true }).setInputFiles([
+    { name: 'f1.png', mimeType: 'image/png', buffer: png },
+    { name: 'f2.png', mimeType: 'image/png', buffer: png },
+  ])
+  await expect(panel.getByRole('button', { name: /Фото 2 · Открыть/ })).toBeVisible()
+  expect(media.map(item => item.operationId)).toEqual(['section:ДВС', 'section:ДВС'])
 
   // Участие: отметка работника и подтверждение механиком.
   await panel.getByRole('button', { name: 'Я участвовал', exact: true }).first().click()

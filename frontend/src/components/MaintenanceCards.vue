@@ -157,25 +157,39 @@ function finishTimeEdit(key,input){
 }
 
 function normalizeNumbers(){for(const m of data.value.materials)if(m.actual==='')m.actual=null;for(const a of data.value.answers)if(a.measurement==='')a.measurement=null;if(data.value.mileage==='')data.value.mileage=null;changed()}
-async function addPhoto(event,id){
- let file=event.target.files[0];if(!file)return
+/** Загружает один файл медиа в раздел карты. */
+async function uploadPhoto(file,id){
  const isVideo=file.type.startsWith('video/')
  const looksImage=file.type.startsWith('image/')||(!file.type&&/\.(jpe?g|png|webp|heic|heif)$/i.test(file.name))
- if(!isVideo&&!looksImage){error.value='Допустимы фото JPEG/PNG/HEIC и видео MP4/WebM.';event.target.value='';return}
- if(isVideo&&file.size>25_000_000){error.value='Видео до 25 МБ.';event.target.value='';return}
- if(!await save()){event.target.value='';return}
- busy.value=true;error.value=''
- try{
-  if(!isVideo){
-   try{file=await convertImageToWebp(file,{maxSide:1600})}
-   catch{ /* HEIC и другие форматы без поддержки декодирования отправляем как есть. */ }
-  }
-  if(!isVideo&&file.size>4_000_000)throw Error('Фото до 4 МБ. Выберите снимок меньшего размера или сделайте фото в JPEG.')
-  const form=new FormData();form.append('file',file);form.append('operationId',id)
-  await request('cards/'+card.value.id+'/photos/'+crypto.randomUUID(),{method:'POST',body:form,signal:AbortSignal.timeout(180000)})
-  const key=card.value.id;await load();await open(cards.value.find(c=>c.id===key))
- }catch(e){error.value=e.name==='TimeoutError'?'Сервер не ответил при загрузке. Проверьте связь и повторите.':(e.message||'Не удалось загрузить медиа.')}
- finally{busy.value=false;event.target.value=''}
+ if(!isVideo&&!looksImage)throw Error('допустимы фото JPEG/PNG/HEIC и видео MP4/WebM')
+ if(isVideo&&file.size>25_000_000)throw Error('видео до 25 МБ')
+ let payload=file
+ if(!isVideo){
+  try{payload=await convertImageToWebp(file,{maxSide:1600})}
+  catch{ /* HEIC и другие форматы без поддержки декодирования отправляем как есть. */ }
+ }
+ if(!isVideo&&payload.size>4_000_000)throw Error('фото до 4 МБ')
+ const form=new FormData();form.append('file',payload);form.append('operationId',id)
+ await request('cards/'+card.value.id+'/photos/'+crypto.randomUUID(),{method:'POST',body:form,signal:AbortSignal.timeout(180000)})
+}
+/** Загружает один или несколько файлов медиа в раздел карты. */
+async function addPhoto(event,id){
+ const files=[...(event.target.files||[])]
+ event.target.value=''
+ if(!files.length)return
+ if(!await save())return
+ busy.value=true;error.value='';message.value=''
+ let uploaded=0
+ const failed=[]
+ for(const file of files){
+  try{await uploadPhoto(file,id);uploaded++}
+  catch(e){failed.push(file.name+': '+(e.name==='TimeoutError'?'сервер не ответил':(e.message||'ошибка загрузки')))}
+ }
+ try{const key=card.value.id;await load();await open(cards.value.find(c=>c.id===key))}
+ catch(e){error.value=e.message}
+ busy.value=false
+ if(uploaded)message.value=uploaded===1?'Медиа загружено':'Загружено файлов: '+uploaded
+ if(failed.length)error.value='Не удалось загрузить — '+failed.join('; ')
 }
 /** Ключ раздела в таблице медиа карты. */
 const sectionKey=section=>'section:'+section
@@ -352,8 +366,9 @@ onBeforeUnmount(()=>{document.removeEventListener('visibilitychange',flushOnHide
       <div class="section-media">
         <span class="mobile-caption">Медиа раздела</span>
         <label v-if="editable" class="attach-button">Добавить медиа
-          <input type="file" accept="image/jpeg,image/png,video/mp4,video/webm" :aria-label="'Медиа раздела: '+section" @change="addPhoto($event, sectionKey(section))" />
+          <input type="file" accept="image/jpeg,image/png,video/mp4,video/webm" multiple :aria-label="'Медиа раздела: '+section" @change="addPhoto($event, sectionKey(section))" />
         </label>
+        <small v-if="editable">Можно выбрать несколько файлов сразу</small>
         <span v-if="!sectionMedia(section).length" class="empty-media">Нет вложений</span>
         <button v-for="(file,index) in sectionMedia(section)" :key="file.id" type="button" class="media-link" @click="viewPhoto(file)">{{file.contentType?.startsWith('video/')?'Видео':'Фото'}} {{index+1}} · Открыть</button>
       </div>
