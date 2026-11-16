@@ -45,6 +45,19 @@ function confirmResponsible() {
 }
 function continueWithoutResponsible() { responsibleDialog.value.close(); generateDocument(true) }
 const vehicleNumber = ref('')
+/** Номера техники по строкам: одна позиция может быть выписана на разные машины. */
+const rowVehicle = row => row.__vehicle || ''
+function setRowVehicle(row, value) {
+  const index = props.rows.indexOf(row)
+  if (index < 0) return
+  const next = props.rows.map((item, position) => position === index ? { ...item, __vehicle: value } : item)
+  emit('update:rows', next)
+}
+/** Дублирует позицию, чтобы выписать тот же материал на другую технику. */
+function duplicateRow(row) {
+  const copy = { ...row, __vehicle: '', __quantity: 1 }
+  emit('update:rows', [...props.rows, copy])
+}
 const documentDate = ref(formatLocalDate(new Date()))
 const documentError = ref('')
 const isGeneratingDocument = ref(false)
@@ -125,12 +138,20 @@ function removeRow(index) {
 async function generateDocument(withoutResponsible = false) {
   if (isGeneratingDocument.value) return
   documentError.value = ''
-  if (!vehicleNumber.value.trim()) {
+  // Техника по строкам: одна позиция может быть выписана на разные машины.
+  const rowVehicles = props.rows.map(row => String(row.__vehicle ?? '').trim())
+  const hasRowVehicles = rowVehicles.some(Boolean)
+  if (hasRowVehicles && rowVehicles.some(value => !value)) {
+    documentError.value = 'Укажите технику для каждой строки или заполните общий номер техники.'
+    return
+  }
+  const vehicleValue = hasRowVehicles ? rowVehicles.join(';') : vehicleNumber.value.trim()
+  if (!vehicleValue) {
     documentError.value = 'Укажите номер техники.'
     return
   }
 
-  const vehicleNumbers = vehicleNumber.value
+  const vehicleNumbers = vehicleValue
     .split(';')
     .map((value) => value.trim())
     .filter(Boolean)
@@ -182,7 +203,7 @@ async function generateDocument(withoutResponsible = false) {
   try {
     const documentRequest = {
       date: documentDate.value,
-      vehicleNumber: vehicleNumber.value.trim(),
+      vehicleNumber: vehicleValue,
       sourceTable,
       jobName,
       withoutResponsibleEmployee: !responsible.value && withoutResponsible === true,
@@ -325,6 +346,7 @@ async function generateDocument(withoutResponsible = false) {
               <th v-for="column in columns" :key="column">
                 {{ columnLabels[column] ?? column }}
               </th>
+              <th class="vehicle-column">Техника</th>
               <th class="quantity-column">Количество</th>
               <th class="selection-remove-column">Действие</th>
             </tr>
@@ -334,8 +356,10 @@ async function generateDocument(withoutResponsible = false) {
               <td v-for="column in columns" :key="column">
                 {{ formatCell(row[column]) }}
               </td>
+              <td class="vehicle-column"><input class="row-vehicle" type="text" maxlength="40" :value="rowVehicle(row)" placeholder="№" :aria-label="`Техника для строки ${rowIndex + 1}`" @input="setRowVehicle(row, $event.target.value)" /></td>
               <td class="quantity-column">{{ formatCell(row.__quantity ?? 1) }}</td>
               <td class="selection-remove-column">
+                <button class="table-action-button" type="button" :aria-label="`Ещё на технику: строка ${rowIndex + 1}`" @click="duplicateRow(row)">Ещё на технику</button>
                 <button
                   class="table-action-button table-action-button--danger"
                   type="button"

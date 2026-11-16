@@ -317,6 +317,20 @@ public sealed class ComponentDocumentService(
                 ["Количество к списанию не может превышать остаток."];
         }
 
+        // Один материал может быть выписан на несколько машин отдельными строками:
+        // суммарное количество по наименованию не должно превышать остаток.
+        foreach (var group in request.Items.GroupBy(item => item.Name.Trim(), StringComparer.OrdinalIgnoreCase))
+        {
+            var total = group.Sum(item => item.Quantity);
+            var available = group.Max(item => item.AvailableQuantity);
+            if (total > available)
+            {
+                errors[nameof(ComponentDocumentItem.AvailableQuantity)] =
+                    [$"По материалу «{group.Key}» суммарно запрошено {total}, доступно {available}."];
+                break;
+            }
+        }
+
         return errors;
     }
 
