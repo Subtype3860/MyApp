@@ -165,9 +165,8 @@ export function cardPerformers(card) {
 export function cardWorkSections(card) {
   if (card.hidePerformers) return [{ works: card.works, performers: { groups: [] } }]
   if (card.maintenance) {
-    // Сначала все операции, затем фото, в конце исполнители — как в заявках на ремонт.
-    const names = [...new Set(card.works.flatMap(work => work.executors ?? []))]
-    return [{ works: card.works, performers: { groups: names.length ? [{ position: 'Исполнители ТО', names }] : [] } }]
+    // Исполнители выводятся так же, как в отчёте о ремонте: по профессиям, короткими именами.
+    return [{ works: card.works, performers: cardPerformers({ works: [{ participants: card.participants || [] }] }) }]
   }
   return card.works.map(work => ({ works: [work], performers: cardPerformers({ works: [work] }) }))
 }
@@ -230,11 +229,13 @@ export function maintenanceReportGroups(records, date, shift) {
     return true
   }).sort((a, b) => new Date(a.finishedAt) - new Date(b.finishedAt)).map(record => {
     const finished = new Date(record.finishedAt).toLocaleString('ru-RU')
-    // В отчёт попадают только разделы с фото: подпись — название раздела, без фамилий.
+    // В отчёт попадают только разделы с фото; фамилии собираются как в отчёте о ремонте.
+    const allParticipants = (record.sections || []).flatMap(section => section.participants || [])
     const works = (record.sections || [])
       .filter(section => (section.photos || []).length > 0)
       .map((section, index) => ({
         id: `maintenance:${record.id}:${index}`, section: section.name,
+        participants: allParticipants,
         executors: [],
         description: section.name,
         photos: (section.photos || []).map(photoId => ({ id: photoId, source: 'maintenance', cardId: record.id })),
@@ -243,7 +244,7 @@ export function maintenanceReportGroups(records, date, shift) {
       id: `maintenance:${record.id}`, executors: record.executors || [],
       description: `${record.service} — проведено. Завершено: ${finished}${record.notes ? `\n${record.notes}` : ''}`,
     })
-    return { id: `maintenance:${record.id}`, maintenance: true, hidePerformers: true, cardId: record.id, title: `${record.vehicleLabel} — ${record.service}`, works }
+    return { id: `maintenance:${record.id}`, maintenance: true, participants: allParticipants, cardId: record.id, title: `${record.vehicleLabel} — ${record.service}`, works }
   })
   return cards.length ? [{ location: 'Техническое обслуживание', categories: [{ name: 'Проведённые ТО', cards }] }] : []
 }

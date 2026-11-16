@@ -93,10 +93,11 @@ test('maintenance-only report contains full names in preview and PDF', async ({ 
   await expect(page.locator('.shift-report__paper')).toContainText('Sany SET150 №904 — ТО-1000')
   await expect(page.locator('.shift-report__paper')).toContainText('Двигатель')
   await expect(page.locator('.shift-report__photo-section').filter({ hasText: 'Двигатель' })).toBeVisible()
+  await expect(page.locator('.shift-report__paper')).toContainText('Исполнители')
   const maintenanceCard = page.locator('.shift-report__card').filter({ hasText: 'Sany SET150 №904' })
   const order = await maintenanceCard.locator('.shift-report__works, .shift-report__photos, .shift-report__performers').evaluateAll(
     nodes => nodes.map(node => node.className.split(' ')[0]))
-  expect(order).toEqual(['shift-report__photos'])
+  expect(order).toEqual(['shift-report__photos', 'shift-report__performers'])
   await page.getByLabel('Меню отчёта за смену', { exact: true }).click()
   const downloadEvent = page.waitForEvent('download')
   await page.getByRole('button', { name: 'Скачать PDF', exact: true }).click()

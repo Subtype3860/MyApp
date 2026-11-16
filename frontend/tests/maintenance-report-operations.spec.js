@@ -1,12 +1,12 @@
 import { test, expect } from '@playwright/test'
-import { maintenanceReportGroups } from '../src/utils/shiftReport'
+import { cardWorkSections, maintenanceReportGroups } from '../src/utils/shiftReport'
 
 test('maintenance report lists sections with approved participants and photos', () => {
   const records = [{
     id: 'c1', vehicleLabel: 'SANY №902', service: 'ТО-1000',
     finishedAt: '2026-11-11T05:00:00Z', notes: '', executors: ['Иванов Иван'],
     sections: [
-      { name: 'ДВС', participants: [{ userId: 'u1', name: 'Петров Пётр', status: 'approved' }, { userId: 'u2', name: 'Сидоров Сидор', status: 'pending' }], photos: ['p1'] },
+      { name: 'ДВС', participants: [{ userId: 'u1', name: 'Петров Пётр Петрович', position: 'Слесарь', status: 'approved' }, { userId: 'u2', name: 'Сидоров Сидор', status: 'pending' }], photos: ['p1'] },
       { name: 'Шасси', participants: [], photos: [] },
     ],
   }]
@@ -15,8 +15,9 @@ test('maintenance report lists sections with approved participants and photos', 
   expect(card.cardId).toBe('c1')
   // В заголовке карточки — какое ТО проводилось.
   expect(card.title).toBe('SANY №902 — ТО-1000')
-  // Фамилии в отчёт не попадают.
-  expect(card.hidePerformers).toBe(true)
+  // Исполнители выводятся как в отчёте о ремонте: по профессиям, короткими именами.
+  const viewers = cardWorkSections(card)[0].performers.groups
+  expect(viewers).toEqual([{ position: 'Слесарь', names: ['Петров П. П.'] }])
   // Раздел без фото не выводится.
   expect(card.works).toHaveLength(1)
   expect(card.works[0].description).toBe('ДВС')
