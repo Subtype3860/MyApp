@@ -99,6 +99,8 @@ function canEditRequest(entry) {
   return props.isAdministrator || props.isMechanic || Boolean(props.currentUserId && entry.createdById && String(entry.createdById).toLowerCase() === props.currentUserId.toLowerCase())
 }
 provide('canEditHistoryRequest', canEditRequest)
+// Удалять ремонты может механик и администратор.
+provide('canDeleteRepair', computed(() => props.isAdministrator || props.isMechanic))
 const editDialog = ref(null)
 const editEntry = ref(null)
 const editCategory = ref('defects')
@@ -179,7 +181,7 @@ async function manageEntry(action, category, entry) {
     editDialog.value?.showModal()
     return
   }
-  if (!props.isAdministrator || !window.confirm(category === 'defects'
+  if (!(props.isAdministrator || (props.isMechanic && category === 'works')) || !window.confirm(category === 'defects'
     ? 'Удалить заявку на ремонт со всеми работами, фото и видео?'
     : 'Удалить работу с фото и видео?')) return
   mutationBusy.value = true

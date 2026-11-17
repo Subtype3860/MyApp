@@ -152,6 +152,9 @@ public interface IVehicleRepository
         Guid photoId,
         CancellationToken cancellationToken);
 
+    /// <summary>Удаляет ремонт вместе с вложениями и участниками.</summary>
+    Task<bool> DeleteWorkAsync(Guid workId, CancellationToken cancellationToken);
+
     /// <summary>Удаляет фотографию ремонтных работ.</summary>
     Task<bool> DeleteWorkPhotoAsync(
         Guid photoId,

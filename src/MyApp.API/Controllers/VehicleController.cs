@@ -83,6 +83,17 @@ public class VehicleController : ControllerBase
     }
 
     /// <summary>Returns repair data for all vehicles using batched queries.</summary>
+    /// <summary>Удаляет ремонт: доступно механику и администратору.</summary>
+    [HttpDelete("works/{workId:guid}")]
+    public async Task<IActionResult> DeleteWork(
+        Guid workId,
+        [FromServices] IVehicleService service,
+        CancellationToken cancellationToken)
+    {
+        if (!TryGetUserId(out var userId)) return Unauthorized();
+        return this.ToActionResult(await service.DeleteWorkAsync(workId, userId, cancellationToken), _ => NoContent());
+    }
+
     [HttpGet("repair-journal")]
     public async Task<IActionResult> GetRepairJournals(
         [FromQuery] bool includeArchived,

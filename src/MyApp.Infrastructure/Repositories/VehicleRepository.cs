@@ -840,6 +840,24 @@ public sealed class VehicleRepository(
             cancellationToken);
 
     /// <summary>Удаляет фотографию выполненной работы.</summary>
+    /// <summary>Удаляет ремонт вместе с вложениями и участниками.</summary>
+    public async Task<bool> DeleteWorkAsync(Guid workId, CancellationToken cancellationToken)
+    {
+        var work = await dbContext.VehicleWorks.SingleOrDefaultAsync(item => item.Id == workId, cancellationToken);
+        if (work is null) return false;
+        var photos = await dbContext.VehicleWorkPhotos.Where(item => item.WorkId == workId).ToArrayAsync(cancellationToken);
+        var videos = await dbContext.VehicleWorkVideos.Where(item => item.WorkId == workId).ToArrayAsync(cancellationToken);
+        var participants = await dbContext.VehicleWorkParticipants.Where(item => item.WorkId == workId).ToArrayAsync(cancellationToken);
+        dbContext.VehicleWorkPhotos.RemoveRange(photos);
+        dbContext.VehicleWorkVideos.RemoveRange(videos);
+        dbContext.VehicleWorkParticipants.RemoveRange(participants);
+        dbContext.VehicleWorks.Remove(work);
+        await dbContext.SaveChangesAsync(cancellationToken);
+        foreach (var photo in photos) if (photo.StoragePath is string path) DeleteFile(path);
+        foreach (var video in videos) if (video.StoragePath is string path) DeleteFile(path);
+        return true;
+    }
+
     public Task<bool> DeleteWorkPhotoAsync(
         Guid photoId,
         CancellationToken cancellationToken) =>

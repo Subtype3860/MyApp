@@ -1,4 +1,5 @@
 <script setup>
+import { inject } from 'vue'
 import RepairActionsMenu from './RepairActionsMenu.vue'
 import WorkParticipants from './WorkParticipants.vue'
 defineProps({
@@ -8,6 +9,8 @@ defineProps({
 })
 
 const emit = defineEmits(['view-media', 'manage-entry'])
+// Механик и администратор могут удалять ремонты.
+const canDeleteRepair = inject('canDeleteRepair', () => false)
 </script>
 
 <template>
@@ -17,7 +20,7 @@ const emit = defineEmits(['view-media', 'manage-entry'])
         <time :datetime="work.date">{{ work.dateLabel || work.date || 'Дата не указана' }}</time>
         <h5>{{ work.name || 'Ремонтная работа' }}</h5>
       </div>
-      <RepairActionsMenu v-if="isAdministrator" label="Действия с работой" edit-label="Редактировать работу" delete-label="Удалить работу" :busy="busy"
+      <RepairActionsMenu v-if="isAdministrator || canDeleteRepair" label="Действия с работой" edit-label="Редактировать работу" delete-label="Удалить работу" :busy="busy"
         @edit="emit('manage-entry', 'edit', 'works', work)" @delete="emit('manage-entry', 'delete', 'works', work)" />
     </header>
 

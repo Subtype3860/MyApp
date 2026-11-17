@@ -187,6 +187,9 @@ public interface IVehicleService
     Task<ServiceResult<bool>> DeleteWorkPhotoAsync(
         Guid photoId, Guid userId, CancellationToken cancellationToken);
 
+    /// <summary>Удаляет ремонт: администратор или механик.</summary>
+    Task<ServiceResult<bool>> DeleteWorkAsync(Guid workId, Guid userId, CancellationToken cancellationToken);
+
     /// <summary>Добавляет видеозаписи ремонтных работ.</summary>
     /// <param name="workId">Идентификатор записи о ремонтных работах.</param>
     /// <param name="videos">Загружаемые видеофайлы.</param>

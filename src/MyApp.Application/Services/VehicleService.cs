@@ -1208,6 +1208,21 @@ public sealed class VehicleService(
              await repository.IsWorkPerformerAsync(workId, userId, cancellationToken));
     }
 
+    /// <summary>Удаляет ремонт: администратор или механик (по профессии).</summary>
+    public async Task<ServiceResult<bool>> DeleteWorkAsync(Guid workId, Guid userId, CancellationToken cancellationToken)
+    {
+        var user = await userRepository.FindByIdAsync(userId, cancellationToken);
+        if (user is null) return ServiceResult<bool>.Unauthorized();
+        var profession = user.Profession?.Name.Trim() ?? string.Empty;
+        var isMechanic = profession.Equals("Механик", StringComparison.OrdinalIgnoreCase) ||
+            profession.Equals("Старший механик", StringComparison.OrdinalIgnoreCase);
+        if (!IsAdministrator(user) && !isMechanic)
+            return ServiceResult<bool>.Forbidden("Удалять ремонты может механик или администратор.");
+        return await repository.DeleteWorkAsync(workId, cancellationToken)
+            ? ServiceResult<bool>.Success(true)
+            : ServiceResult<bool>.NotFound();
+    }
+
     /// <summary>Удаляет медиафайл и связанные с ним данные.</summary>
     private async Task<ServiceResult<bool>> DeleteMediaAsync(
         string category,
