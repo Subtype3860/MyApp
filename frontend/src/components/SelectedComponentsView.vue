@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue'
 import { createPdfDocument, renderPdfDocument } from '../utils/pdfPreview'
 import UserAvatar from './UserAvatar.vue'
+import FleetActionMenu from './FleetActionMenu.vue'
 
 const props = defineProps({
   navigationCollapsed: {
@@ -359,14 +360,10 @@ async function generateDocument(withoutResponsible = false) {
               <td class="vehicle-column"><input class="row-vehicle" type="text" maxlength="40" :value="rowVehicle(row)" placeholder="№" :aria-label="`Техника для строки ${rowIndex + 1}`" @input="setRowVehicle(row, $event.target.value)" /></td>
               <td class="quantity-column">{{ formatCell(row.__quantity ?? 1) }}</td>
               <td class="selection-remove-column">
-                <button class="table-action-button" type="button" :aria-label="`Ещё на технику: строка ${rowIndex + 1}`" @click="duplicateRow(row)">Ещё на технику</button>
-                <button
-                  class="table-action-button table-action-button--danger"
-                  type="button"
-                  @click="removeRow(rowIndex)"
-                >
-                  Удалить
-                </button>
+                <FleetActionMenu :label="`Действия со строкой ${rowIndex + 1}`">
+                  <button class="table-action-button" type="button" @click="duplicateRow(row)">Ещё на технику</button>
+                  <button class="table-action-button table-action-button--danger" type="button" @click="removeRow(rowIndex)">Удалить</button>
+                </FleetActionMenu>
               </td>
             </tr>
           </tbody>

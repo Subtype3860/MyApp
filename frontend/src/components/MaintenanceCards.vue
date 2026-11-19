@@ -177,7 +177,9 @@ async function addPhoto(event,id){
  const files=[...(event.target.files||[])]
  event.target.value=''
  if(!files.length)return
- if(!await save())return
+ // Сохранение не блокирует загрузку: фото привязано к карте, а не к ревизии,
+ // а карта могла быть изменена другим сотрудником (409).
+ await save()
  busy.value=true;error.value='';message.value=''
  let uploaded=0
  const failed=[]

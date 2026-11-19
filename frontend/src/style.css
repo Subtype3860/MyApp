@@ -520,7 +520,7 @@ button {
 .home-page {
   min-height: 100vh;
   margin-left: var(--sidebar-width);
-  padding: 36px 42px;
+  padding: 24px 28px;
   transition: margin-left 0.25s ease;
   color: var(--text-main);
   background: var(--bg-main);
@@ -532,7 +532,7 @@ button {
 
 .home-header {
   display: flex;
-  margin-bottom: 34px;
+  margin-bottom: 20px;
   align-items: center;
   justify-content: space-between;
 }
@@ -1082,7 +1082,7 @@ button {
 
 .data-table-header {
   display: flex;
-  margin-bottom: 20px;
+  margin-bottom: 12px;
   align-items: center;
   justify-content: space-between;
   gap: 20px;
@@ -3547,7 +3547,7 @@ button {
 }
 
 .macos-glass-panel {
-  padding: 20px;
+  padding: 14px;
   border: 1px solid var(--border);
   border-radius: 12px;
   color: var(--text-main);
