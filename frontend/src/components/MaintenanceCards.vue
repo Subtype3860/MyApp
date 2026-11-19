@@ -12,7 +12,7 @@ const canManage=ref(false),canFill=ref(false),busy=ref(false),saving=ref(false),
 const selectedTemplate=ref(''),runInId=ref(''),reason=ref(''),batchExecutor=ref(''),recovery=ref(null)
 const requirement=ref(null), currentExecutor=ref(''), mediaPreview=ref(null), mediaDialog=ref(null)
 let previewGeneration=0
-let timer, generation=0, editGeneration=0, dirty=false
+let timer, generation=0, editGeneration=0, dirty=false, conflictRetry=false
 let editingTime=false
 const invalidTimes=new Set()
 const clone=v=>JSON.parse(JSON.stringify(v))
@@ -35,7 +35,7 @@ const localKey=()=>{let user='';try{user=JSON.parse(atob(props.token.split('.')[
 async function request(path,options={}){
  const response=await fetch('/api/maintenance-plans/'+path,{...options,headers:{Authorization:'Bearer '+props.token,...(!(options.body instanceof FormData)?{'Content-Type':'application/json'}:{}),...options.headers},signal:options.signal??AbortSignal.timeout(60000)})
  const result=await response.json().catch(()=>null)
- if(!response.ok)throw Error(result?.message||'Сервер не выполнил действие. Проверьте связь и повторите.')
+ if(!response.ok){const error=Error(result?.message||'Сервер не выполнил действие. Проверьте связь и повторите.');error.status=response.status;throw error}
  return result
 }
 async function load(){
@@ -69,7 +69,7 @@ function changed(){
  editGeneration++;dirty=true;keepLocal();message.value='Черновик сохранён на устройстве';scheduleSave()
 }
 async function open(item){
- flushSave();editingTime=false;dirty=false;invalidTimes.clear();card.value=clone(item);data.value=clone(item.data);error.value='';message.value='';reason.value='';recovery.value=null;photos.value=[];requirement.value=null
+ flushSave();editingTime=false;dirty=false;conflictRetry=false;invalidTimes.clear();card.value=clone(item);data.value=clone(item.data);error.value='';message.value='';reason.value='';recovery.value=null;photos.value=[];requirement.value=null
  readings.value=Array.from({length:props.vehicle.engineCount||1},(_,i)=>({number:i+1,hours:''}))
  try{const saved=JSON.parse(localStorage.getItem(localKey())||'null');if(saved && item.status==='draft' && JSON.stringify(saved.data)!==JSON.stringify(item.data))recovery.value=saved}catch{}
  try{const result=await request('cards/'+item.id+'/photos');if(card.value?.id===item.id)photos.value=result}catch(e){error.value=e.message}
@@ -106,7 +106,27 @@ async function save(action='save'){
    localStorage.removeItem(localKey());message.value=action==='submit'?'Карта передана на проверку':'Сохранено на сервере'
   }else{keepLocal();timer=setTimeout(()=>save(),1200)}
   return true
- }catch(e){error.value=e.message;keepLocal();return false}finally{busy.value=false;saving.value=false}
+ }catch(e){
+  // Карта могла измениться в другой сессии (например, отметили участие или добавили фото):
+  // перечитываем актуальную ревизию и повторяем сохранение с локальными правками.
+  if(e.status===409 && !conflictRetry){
+   conflictRetry=true
+   try{
+    await load()
+    const fresh=cards.value.find(c=>c.id===id)
+    if(fresh){
+     card.value={...fresh}
+     dirty=true
+     saving.value=false;busy.value=false
+     const saved=await save(action)
+     if(saved)message.value='Карта обновлена, правки сохранены'
+     return saved
+    }
+   }catch{ /* ниже покажем исходную ошибку */ }
+  }
+  conflictRetry=false
+  error.value=e.message;keepLocal();return false
+ }finally{busy.value=false;saving.value=false}
 }
 async function decide(action){
  if(busy.value)return;busy.value=true;error.value=''
