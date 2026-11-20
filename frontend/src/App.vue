@@ -6,7 +6,6 @@ import HomeView from './components/HomeView.vue'
 import HelpView from './components/HelpView.vue'
 import MaintenanceView from './components/MaintenanceView.vue'
 import MaintenanceTemplatesSettings from './components/MaintenanceTemplatesSettings.vue'
-import SanyPartsView from './components/SanyPartsView.vue'
 import NavigationSidebar from './components/NavigationSidebar.vue'
 import ProfileView from './components/ProfileView.vue'
 import RequirementsJournalView from './components/RequirementsJournalView.vue'
@@ -327,7 +326,6 @@ function updateSelectedComponentRows(rows) {
         :selected-section="currentSettings"
         :token="token"
       />
-      <SanyPartsView v-else-if="currentPage === 'sany'" :token="token" :navigation-collapsed="isNavigationCollapsed" />
       <TanksView v-else-if="currentPage === 'tanks'" :token="token" :navigation-collapsed="isNavigationCollapsed" />
       <MechanicView v-else-if="currentPage === 'mechanic'" :navigation-collapsed="isNavigationCollapsed" />
       <FortpostView v-else-if="currentPage === 'fortpost'" :navigation-collapsed="isNavigationCollapsed" />
