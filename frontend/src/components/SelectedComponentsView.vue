@@ -46,17 +46,20 @@ function confirmResponsible() {
 }
 function continueWithoutResponsible() { responsibleDialog.value.close(); generateDocument(true) }
 const vehicleNumber = ref('')
-/** Номера техники по строкам: одна позиция может быть выписана на разные машины. */
-const rowVehicle = row => row.__vehicle || ''
-function setRowVehicle(row, value) {
+/** Меняет количество прямо в списке выбранных компонентов. */
+function setRowQuantity(row, value) {
   const index = props.rows.indexOf(row)
   if (index < 0) return
-  const next = props.rows.map((item, position) => position === index ? { ...item, __vehicle: value } : item)
+  const raw = String(value ?? '').replace(',', '.').trim()
+  const quantity = Number(raw)
+  const next = props.rows.map((item, position) => position === index
+    ? { ...item, __quantity: raw === '' || !Number.isFinite(quantity) || quantity <= 0 ? 1 : quantity }
+    : item)
   emit('update:rows', next)
 }
 /** Дублирует позицию, чтобы выписать тот же материал на другую технику. */
 function duplicateRow(row) {
-  const copy = { ...row, __vehicle: '', __quantity: 1 }
+  const copy = { ...row, __quantity: 1 }
   emit('update:rows', [...props.rows, copy])
 }
 const documentDate = ref(formatLocalDate(new Date()))
@@ -139,14 +142,7 @@ function removeRow(index) {
 async function generateDocument(withoutResponsible = false) {
   if (isGeneratingDocument.value) return
   documentError.value = ''
-  // Техника по строкам: одна позиция может быть выписана на разные машины.
-  const rowVehicles = props.rows.map(row => String(row.__vehicle ?? '').trim())
-  const hasRowVehicles = rowVehicles.some(Boolean)
-  if (hasRowVehicles && rowVehicles.some(value => !value)) {
-    documentError.value = 'Укажите технику для каждой строки или заполните общий номер техники.'
-    return
-  }
-  const vehicleValue = hasRowVehicles ? rowVehicles.join(';') : vehicleNumber.value.trim()
+  const vehicleValue = vehicleNumber.value.trim()
   if (!vehicleValue) {
     documentError.value = 'Укажите номер техники.'
     return
@@ -347,7 +343,6 @@ async function generateDocument(withoutResponsible = false) {
               <th v-for="column in columns" :key="column">
                 {{ columnLabels[column] ?? column }}
               </th>
-              <th class="vehicle-column">Техника</th>
               <th class="quantity-column">Количество</th>
               <th class="selection-remove-column">Действие</th>
             </tr>
@@ -357,8 +352,7 @@ async function generateDocument(withoutResponsible = false) {
               <td v-for="column in columns" :key="column">
                 {{ formatCell(row[column]) }}
               </td>
-              <td class="vehicle-column"><input class="row-vehicle" type="text" maxlength="40" :value="rowVehicle(row)" placeholder="№" :aria-label="`Техника для строки ${rowIndex + 1}`" @input="setRowVehicle(row, $event.target.value)" /></td>
-              <td class="quantity-column">{{ formatCell(row.__quantity ?? 1) }}</td>
+              <td class="quantity-column"><input class="row-quantity" type="number" min="1" step="any" :value="row.__quantity ?? 1" :aria-label="`Количество: строка ${rowIndex + 1}`" @input="setRowQuantity(row, $event.target.value)" /></td>
               <td class="selection-remove-column">
                 <FleetActionMenu :label="`Действия со строкой ${rowIndex + 1}`">
                   <button class="table-action-button" type="button" @click="duplicateRow(row)">Ещё на технику</button>
@@ -398,4 +392,5 @@ async function generateDocument(withoutResponsible = false) {
 <style scoped>
 .responsible-dialog{box-sizing:border-box;width:min(540px,calc(100vw - 24px));max-height:90dvh;overflow:auto;padding:20px;border:1px solid var(--border);border-radius:12px;background:var(--bg-surface);color:var(--text-main)}
 .responsible-dialog::backdrop{background:#0008}.responsible-dialog h2{margin:0 0 12px;font-size:20px}.responsible-dialog__actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:16px}.responsible-dialog label{display:grid;gap:8px;margin:12px 0}.responsible-dialog select{max-width:100%;padding:10px;font:inherit}.responsible-dialog button{min-height:40px}
+.row-quantity{box-sizing:border-box;width:88px;padding:6px 8px;border:1px solid var(--border);border-radius:7px;background:var(--bg-main);color:var(--text-main);font:inherit;font-size:13px}
 </style>
