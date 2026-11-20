@@ -72,6 +72,34 @@ public sealed class TableViewRepository(NpgsqlDataSource dataSource) : ITableVie
             }
         }
         await transaction.CommitAsync(cancellationToken);
+        // В таблице работников несколько телефонных колонок из CSV объединяем в одну.
+        if (fileName == "p.csv")
+        {
+            static bool IsPhone(string name) =>
+                name.Contains("телефон", StringComparison.OrdinalIgnoreCase) ||
+                name.Contains("phone", StringComparison.OrdinalIgnoreCase) ||
+                name.Contains("моб", StringComparison.OrdinalIgnoreCase) ||
+                name.Contains("сотов", StringComparison.OrdinalIgnoreCase) ||
+                name.Equals("тел", StringComparison.OrdinalIgnoreCase) ||
+                name.StartsWith("тел.", StringComparison.OrdinalIgnoreCase);
+
+            var phoneColumns = columns.Where(IsPhone).ToArray();
+            if (phoneColumns.Length > 1)
+            {
+                var target = phoneColumns[0];
+                columns = columns.Where(column => !IsPhone(column) || column == target).ToArray();
+                foreach (var row in rows)
+                {
+                    var values = phoneColumns
+                        .Select(column => row.GetValueOrDefault(column)?.ToString()?.Trim())
+                        .Where(value => !string.IsNullOrWhiteSpace(value))
+                        .Distinct(StringComparer.OrdinalIgnoreCase)
+                        .ToArray();
+                    row[target] = values.Length == 0 ? null : string.Join(", ", values);
+                    foreach (var extra in phoneColumns.Skip(1)) row.Remove(extra);
+                }
+            }
+        }
         return new(columns, rows, total, request.Page, request.PageSize);
     }
 }
