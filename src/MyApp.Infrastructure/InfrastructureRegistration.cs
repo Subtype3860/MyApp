@@ -38,7 +38,6 @@ public static class InfrastructureRegistration
         services.AddScoped<ICsvFileRepository, CsvFileRepository>();
         services.AddScoped<IRequirementJournalRepository, RequirementJournalRepository>();
         services.AddScoped<IMaterialGroupRepository, MaterialGroupRepository>();
-        services.AddScoped<IMaintenanceTemplateRepository, MaintenanceTemplateRepository>();
         services.AddScoped<IVehicleRepository, VehicleRepository>();
         services.AddScoped<IPasswordHasher, Pbkdf2PasswordHasher>();
         services.AddScoped<ITokenProvider, JwtTokenProvider>();

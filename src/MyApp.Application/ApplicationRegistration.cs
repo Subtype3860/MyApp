@@ -20,7 +20,6 @@ public static class ApplicationRegistration
         services.AddScoped<ICsvFileService, CsvFileService>();
         services.AddScoped<IRequirementJournalService, RequirementJournalService>();
         services.AddScoped<IMaterialGroupService, MaterialGroupService>();
-        services.AddScoped<IMaintenanceTemplateService, MaintenanceTemplateService>();
         services.AddScoped<IVehicleService, VehicleService>();
         return services;
     }
