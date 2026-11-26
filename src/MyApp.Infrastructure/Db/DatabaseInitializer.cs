@@ -777,7 +777,6 @@ public sealed class DatabaseInitializer(AppDbContext db) : IDatabaseInitializer
                     CHECK (max_storage_bytes BETWEEN 1048576 AND 1099511627776);
             """,
             cancellationToken);
-        await MaintenancePlanSchema.EnsureAsync(db, cancellationToken);
         await db.Database.ExecuteSqlRawAsync(LocalAdviceSchema.Sql, cancellationToken);
         await db.Database.ExecuteSqlRawAsync(RepairSyncSchema.Sql, cancellationToken);
         await FleetRegionSchema.EnsureAsync(db, cancellationToken);

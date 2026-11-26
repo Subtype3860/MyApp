@@ -71,7 +71,6 @@ namespace MyApp.Infrastructure.Db {
         public AppDbContext(DbContextOptions<AppDbContext> options) : base(options) {}
         /// <summary>Настраивает таблицы, ключи, связи и ограничения моделей Entity Framework Core.</summary>
         protected override void OnModelCreating(ModelBuilder modelBuilder) {
-            ConfigureMaintenanceCards(modelBuilder);
             ConfigureFleetRegions(modelBuilder);
             modelBuilder.Entity<RepairOperationReceipt>(e => {
                 e.ToTable("repair_operation_receipts"); e.HasKey(x => x.Id);
