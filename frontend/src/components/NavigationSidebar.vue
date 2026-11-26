@@ -332,14 +332,6 @@ function toggleGames() {
             {{ selectedComponentsCount }}
           </span>
         </button>
-        <button v-if="canView('menu.maintenance')" class="nav-submenu-link"
-          :class="{ 'nav-submenu-link--active': activePage === 'maintenance' }" type="button"
-          :aria-current="activePage === 'maintenance' ? 'page' : undefined"
-          @click="$emit('navigate', 'maintenance')">Техническое обслуживание</button>
-        <button v-if="isAdmin || profile?.canUseMaintenanceLibrary" class="nav-submenu-link"
-          :class="{ 'nav-submenu-link--active': activePage === 'maintenance-templates' }" type="button"
-          :aria-current="activePage === 'maintenance-templates' ? 'page' : undefined"
-          @click="$emit('navigate', 'maintenance-templates')">Шаблоны ТО</button>
 
       </div>
       <button
@@ -427,10 +419,6 @@ function toggleGames() {
         >
           Моточасы
         </button>
-        <button v-if="canView('vehicles.maintenance_execution')" class="nav-submenu-link"
-          :class="{ 'nav-submenu-link--active': activePage === 'vehicles' && activeVehicleSection === 'maintenanceExecution' }"
-          type="button" :aria-current="activePage === 'vehicles' && activeVehicleSection === 'maintenanceExecution' ? 'page' : undefined"
-          @click="$emit('navigate-vehicle', 'maintenanceExecution')">Проведение ТО</button>
         <button v-if="canView('menu.auxiliary_works')" class="nav-submenu-link"
           :class="{ 'nav-submenu-link--active': activePage === 'auxiliary-works' }" type="button"
           :aria-current="activePage === 'auxiliary-works' ? 'page' : undefined"

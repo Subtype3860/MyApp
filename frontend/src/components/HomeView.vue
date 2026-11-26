@@ -105,13 +105,6 @@ const shortcuts = computed(() =>
       icon: '⚒',
     },
     {
-      permission: 'menu.maintenance',
-      title: 'Техническое обслуживание',
-      text: 'Шаблоны ТО и подбор необходимых материалов.',
-      page: 'maintenance',
-      icon: '◷',
-    },
-    {
       permission: 'menu.requirements',
       title: 'Выписанные требования',
       text: 'Журнал документов на выдачу материалов.',
