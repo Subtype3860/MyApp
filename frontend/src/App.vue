@@ -9,6 +9,7 @@ import MaintenanceTemplatesSettings from './components/MaintenanceTemplatesSetti
 import NavigationSidebar from './components/NavigationSidebar.vue'
 import ProfileView from './components/ProfileView.vue'
 import RequirementsJournalView from './components/RequirementsJournalView.vue'
+import RepairMobileView from './components/RepairMobileView.vue'
 import SelectedComponentsView from './components/SelectedComponentsView.vue'
 import SettingsView from './components/SettingsView.vue'
 import FleetRegionsView from './components/FleetRegionsView.vue'
@@ -282,6 +283,7 @@ function updateSelectedComponentRows(rows) {
         @issued="handleComponentsIssued"
         @update:rows="updateSelectedComponentRows"
       />
+      <RepairMobileView v-if="currentPage === 'repair-mobile'" :token="token" @navigate="navigate" />
       <RequirementsJournalView
         v-else-if="currentPage === 'requirements'"
         :navigation-collapsed="isNavigationCollapsed"

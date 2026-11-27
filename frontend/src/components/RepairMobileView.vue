@@ -1,0 +1,197 @@
+<script setup>
+import { computed, onMounted, ref } from 'vue'
+
+const props = defineProps({ token: { type: String, required: true } })
+const emit = defineEmits(['navigate'])
+
+const loading = ref(true)
+const saving = ref(false)
+const error = ref('')
+const message = ref('')
+const query = ref('')
+const vehicles = ref([])
+const vehicle = ref(null)
+const symptoms = ref('')
+const work = ref('')
+const status = ref('В ремонте')
+const files = ref([])
+const input = ref(null)
+
+const matches = computed(() => {
+  const q = query.value.trim().toLowerCase()
+  const list = vehicles.value.filter(v => !v.isArchived)
+  if (!q) return list.slice(0, 30)
+  return list.filter(v => `${v.garageNumber} ${v.modelName} ${v.stateNumber} ${v.vin}`.toLowerCase().includes(q)).slice(0, 30)
+})
+
+const canSend = computed(() => vehicle.value && symptoms.value.trim().length > 1 && !saving.value)
+
+async function api(path, options = {}) {
+  const response = await fetch('/api/vehicles' + path, {
+    ...options,
+    headers: {
+      Authorization: 'Bearer ' + props.token,
+      ...(options.body instanceof FormData ? {} : { 'Content-Type': 'application/json' }),
+      ...(options.headers || {}),
+    },
+    signal: AbortSignal.timeout(60000),
+  })
+  const data = await response.json().catch(() => null)
+  if (!response.ok) throw Error(data?.message || 'Сервер не выполнил действие.')
+  return data
+}
+
+async function load() {
+  loading.value = true
+  error.value = ''
+  try {
+    vehicles.value = await api('', {})
+  } catch (e) {
+    error.value = e.message
+  } finally {
+    loading.value = false
+  }
+}
+
+function pick(v) {
+  vehicle.value = v
+  query.value = ''
+  error.value = ''
+  message.value = ''
+}
+
+function chooseFiles(event) {
+  files.value = [...event.target.files].slice(0, 8)
+}
+
+function vehicleTitle(v) {
+  return v ? `№ ${v.garageNumber} · ${v.modelName || 'Техника'}` : ''
+}
+
+async function send() {
+  if (!canSend.value) return
+  saving.value = true
+  error.value = ''
+  message.value = ''
+  try {
+    const defect = await api(`/${vehicle.value.id}/defects`, {
+      method: 'POST',
+      body: JSON.stringify({ errorCode: null, symptoms: symptoms.value.trim(), downtimeStartedAt: new Date().toISOString(), operationalState: 'stopped', nodeName: '', failureReason: '' }),
+    })
+    const defectId = defect?.id || defect
+    const created = await api(`/${vehicle.value.id}/works`, {
+      method: 'POST',
+      body: JSON.stringify({ defectId, cause: '', description: work.value.trim(), status: status.value, requiredParts: null, repairDateTime: new Date().toISOString(), location: '' }),
+    })
+    const workId = created?.id || created
+    for (const file of files.value) {
+      const form = new FormData()
+      form.append('file', file)
+      await api(`/works/${workId}/photos`, { method: 'POST', body: form })
+    }
+    message.value = 'Отчёт отправлен'
+    vehicle.value = null
+    symptoms.value = ''
+    work.value = ''
+    files.value = []
+    if (input.value) input.value.value = ''
+  } catch (e) {
+    error.value = e.message
+  } finally {
+    saving.value = false
+  }
+}
+
+onMounted(load)
+</script>
+
+<template>
+  <main class="repair-mobile">
+    <header class="repair-head">
+      <h1>Ремонт</h1>
+      <button type="button" class="link" @click="emit('navigate', 'vehicles')">Всё приложение</button>
+    </header>
+
+    <p v-if="loading" role="status">Загрузка техники…</p>
+    <p v-else-if="error" role="alert" class="err">{{ error }}</p>
+
+    <template v-if="!vehicle">
+      <input v-model="query" class="search" type="search" placeholder="Номер, модель или госномер" aria-label="Поиск техники" />
+      <ul class="list">
+        <li v-for="v in matches" :key="v.id">
+          <button type="button" class="card" @click="pick(v)">
+            <strong>№ {{ v.garageNumber }}</strong>
+            <span>{{ v.modelName }}</span>
+          </button>
+        </li>
+      </ul>
+      <p v-if="!matches.length" class="hint">Ничего не найдено</p>
+    </template>
+
+    <template v-else>
+      <div class="picked">
+        <div>
+          <p class="eyebrow">Техника</p>
+          <strong>{{ vehicleTitle(vehicle) }}</strong>
+          <p class="hint">{{ vehicle.stateNumber }} {{ vehicle.vin ? '· ' + vehicle.vin : '' }}</p>
+        </div>
+        <button type="button" class="link" @click="vehicle = null">Сменить</button>
+      </div>
+
+      <label class="field">
+        <span>Что случилось</span>
+        <textarea v-model="symptoms" rows="3" placeholder="Например: течь масла из гидроцилиндра" />
+      </label>
+
+      <label class="field">
+        <span>Что сделали</span>
+        <textarea v-model="work" rows="3" placeholder="Например: заменили сальник, долили масло" />
+      </label>
+
+      <label class="field">
+        <span>Статус</span>
+        <select v-model="status">
+          <option>В ремонте</option>
+          <option>Выполнено</option>
+          <option>Ожидает запчасти</option>
+        </select>
+      </label>
+
+      <label class="photo">
+        <input ref="input" type="file" accept="image/*" capture="environment" multiple @change="chooseFiles" />
+        <span>📷 Сделать фото<span v-if="files.length"> · {{ files.length }}</span></span>
+      </label>
+
+      <p v-if="error" role="alert" class="err">{{ error }}</p>
+      <p v-if="message" role="status" class="ok">{{ message }}</p>
+
+      <button type="button" class="send" :disabled="!canSend" @click="send">
+        {{ saving ? 'Отправляем…' : 'Отправить' }}
+      </button>
+    </template>
+  </main>
+</template>
+
+<style scoped>
+.repair-mobile{max-width:520px;margin:0 auto;padding:16px 14px 96px;display:grid;gap:14px}
+.repair-head{display:flex;align-items:center;justify-content:space-between}
+.repair-head h1{margin:0;font-size:24px}
+.link{background:none;border:0;color:var(--accent, #7cc8ff);font:inherit;padding:8px;cursor:pointer}
+.search{width:100%;padding:14px;border:1px solid var(--border);border-radius:12px;background:var(--bg-main);color:var(--text-main);font-size:16px}
+.list{list-style:none;margin:0;padding:0;display:grid;gap:10px}
+.card{width:100%;display:grid;gap:4px;text-align:left;padding:16px;border:1px solid var(--border);border-radius:14px;background:var(--bg-surface);color:var(--text-main);font:inherit;font-size:16px;min-height:64px}
+.card span{opacity:.7;font-size:14px}
+.picked{display:flex;gap:12px;justify-content:space-between;align-items:flex-start;padding:14px;border:1px solid var(--border);border-radius:14px;background:var(--bg-surface)}
+.eyebrow{margin:0 0 4px;font-size:12px;letter-spacing:.08em;text-transform:uppercase;opacity:.6}
+.field{display:grid;gap:6px}
+.field span{font-size:14px;opacity:.8}
+.field textarea,.field select{width:100%;box-sizing:border-box;padding:14px;border:1px solid var(--border);border-radius:12px;background:var(--bg-main);color:var(--text-main);font:inherit;font-size:16px}
+.photo{display:block;position:relative}
+.photo input{position:absolute;inset:0;opacity:0;width:100%;height:100%}
+.photo span{display:grid;place-items:center;min-height:64px;border:1px dashed var(--border);border-radius:14px;background:var(--bg-surface);font-size:16px}
+.send{position:sticky;bottom:16px;width:100%;min-height:56px;border:0;border-radius:16px;background:var(--accent,#2f7ec4);color:#fff;font:inherit;font-size:18px;font-weight:600}
+.send:disabled{opacity:.5}
+.err{color:#ff8a8a}
+.ok{color:#8fe3a8}
+.hint{opacity:.6;font-size:14px}
+</style>
