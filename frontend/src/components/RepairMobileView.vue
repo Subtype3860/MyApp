@@ -68,6 +68,92 @@ async function savePin() {
 function typeDigit(d) {
   if (pinInput.value.length < 4) pinInput.value += d
 }
+const pending = ref(0)
+const DB_NAME = 'atlas-repair-queue'
+
+function openDb() {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(DB_NAME, 1)
+    request.onupgradeneeded = () => request.result.createObjectStore('reports', { keyPath: 'id', autoIncrement: true })
+    request.onsuccess = () => resolve(request.result)
+    request.onerror = () => reject(request.error)
+  })
+}
+
+async function enqueue(report) {
+  const db = await openDb()
+  await new Promise((resolve, reject) => {
+    const tx = db.transaction('reports', 'readwrite')
+    tx.objectStore('reports').add(report)
+    tx.oncomplete = resolve
+    tx.onerror = () => reject(tx.error)
+  })
+  await refreshPending()
+}
+
+async function refreshPending() {
+  try {
+    const db = await openDb()
+    pending.value = await new Promise((resolve, reject) => {
+      const tx = db.transaction('reports', 'readonly')
+      const count = tx.objectStore('reports').count()
+      count.onsuccess = () => resolve(count.result || 0)
+      count.onerror = () => reject(count.error)
+    })
+  } catch { pending.value = 0 }
+}
+
+async function readQueue() {
+  const db = await openDb()
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('reports', 'readonly')
+    const all = tx.objectStore('reports').getAll()
+    all.onsuccess = () => resolve(all.result || [])
+    all.onerror = () => reject(all.error)
+  })
+}
+
+async function removeQueued(id) {
+  const db = await openDb()
+  await new Promise((resolve, reject) => {
+    const tx = db.transaction('reports', 'readwrite')
+    tx.objectStore('reports').delete(id)
+    tx.oncomplete = resolve
+    tx.onerror = () => reject(tx.error)
+  })
+  await refreshPending()
+}
+
+async function flushQueue() {
+  if (!navigator.onLine) return
+  const items = await readQueue()
+  for (const item of items) {
+    try {
+      await submitReport(item)
+      await removeQueued(item.id)
+    } catch {
+      break
+    }
+  }
+  await refreshPending()
+}
+
+async function submitReport(report) {
+  const defect = await api(`/${report.vehicleId}/defects`, {
+    method: 'POST',
+    body: JSON.stringify({ errorCode: null, symptoms: report.symptoms, downtimeStartedAt: report.createdAt, operationalState: 'stopped', nodeName: '', failureReason: '' }),
+  })
+  const created = await api(`/${report.vehicleId}/works`, {
+    method: 'POST',
+    body: JSON.stringify({ defectId: defect?.id || defect, cause: '', description: report.work, status: report.status, requiredParts: null, repairDateTime: report.createdAt, location: '' }),
+  })
+  const workId = created?.id || created
+  for (const file of report.files || []) {
+    const form = new FormData()
+    form.append('file', file)
+    await api(`/works/${workId}/photos`, { method: 'POST', body: form })
+  }
+}
 async function api(path, options = {}) {
   const response = await fetch('/api/vehicles' + path, {
     ...options,
@@ -115,21 +201,29 @@ async function send() {
   saving.value = true
   error.value = ''
   message.value = ''
+  const report = {
+    vehicleId: vehicle.value.id,
+    symptoms: symptoms.value.trim(),
+    work: work.value.trim(),
+    status: status.value,
+    createdAt: new Date().toISOString(),
+    files: [...files.value],
+  }
   try {
-    const defect = await api(`/${vehicle.value.id}/defects`, {
-      method: 'POST',
-      body: JSON.stringify({ errorCode: null, symptoms: symptoms.value.trim(), downtimeStartedAt: new Date().toISOString(), operationalState: 'stopped', nodeName: '', failureReason: '' }),
-    })
-    const defectId = defect?.id || defect
-    const created = await api(`/${vehicle.value.id}/works`, {
-      method: 'POST',
-      body: JSON.stringify({ defectId, cause: '', description: work.value.trim(), status: status.value, requiredParts: null, repairDateTime: new Date().toISOString(), location: '' }),
-    })
-    const workId = created?.id || created
-    for (const file of files.value) {
-      const form = new FormData()
-      form.append('file', file)
-      await api(`/works/${workId}/photos`, { method: 'POST', body: form })
+    try {
+      await submitReport(report)
+    } catch (failure) {
+      if (failure instanceof TypeError || !navigator.onLine) {
+        await enqueue(report)
+        message.value = 'Нет связи: отчёт сохранён и уйдёт автоматически'
+        vehicle.value = null
+        symptoms.value = ''
+        work.value = ''
+        files.value = []
+        if (input.value) input.value.value = ''
+        return
+      }
+      throw failure
     }
     message.value = 'Отчёт отправлен'
     vehicle.value = null
@@ -145,10 +239,12 @@ async function send() {
 }
 
 onMounted(async () => {
+  window.addEventListener('online', flushQueue)
+  await refreshPending()
   const stored = readPin()
   pinSet.value = !!stored
   locked.value = !!stored && sessionStorage.getItem('atlas-repair-unlocked') !== '1'
-  if (!locked.value) await load()
+  if (!locked.value) { await load(); await flushQueue() }
 })
 </script>
 
@@ -234,6 +330,7 @@ onMounted(async () => {
 
       <p v-if="error" role="alert" class="err">{{ error }}</p>
       <p v-if="message" role="status" class="ok">{{ message }}</p>
+      <p v-if="pending" class="hint">В очереди: {{ pending }}</p>
 
       <button type="button" class="send" :disabled="!canSend" @click="send">
         {{ saving ? 'Отправляем…' : 'Отправить' }}
