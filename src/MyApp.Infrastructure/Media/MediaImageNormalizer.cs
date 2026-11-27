@@ -35,8 +35,14 @@ public sealed class MediaImageNormalizer
     {
         if (bytes.Length is 0 or > SourceLimit) return new(bytes, Detect(bytes), false);
         var type = Detect(bytes);
-        if (type == "image/webp") return new(bytes, type, false);
-        if (type is not ("image/jpeg" or "image/png" or "image/heic")) return new(bytes, type, false);
+        // WebP без метаданных отдаём как есть; если внутри есть EXIF-чанк — пережимаем,
+        // чтобы убрать геометки и прочие метаданные с телефона.
+        if (type == "image/webp")
+        {
+            var hasExif = bytes.AsSpan().IndexOf("EXIF"u8) >= 0;
+            if (!hasExif) return new(bytes, type, false);
+        }
+        if (type is not ("image/jpeg" or "image/png" or "image/heic" or "image/webp")) return new(bytes, type, false);
 
         var directory = Path.Combine(Path.GetTempPath(), "atlas-media");
         var id = Guid.NewGuid().ToString("N");

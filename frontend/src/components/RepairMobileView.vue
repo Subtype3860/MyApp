@@ -16,6 +16,7 @@ const work = ref('')
 const status = ref('В ремонте')
 const files = ref([])
 const input = ref(null)
+const compression = ref('')
 
 const matches = computed(() => {
   const q = query.value.trim().toLowerCase()
@@ -188,8 +189,35 @@ function pick(v) {
   message.value = ''
 }
 
-function chooseFiles(event) {
-  files.value = [...event.target.files].slice(0, 8)
+function formatSize(bytes) {
+  return bytes >= 1024 * 1024 ? (bytes / 1024 / 1024).toFixed(1) + ' МБ' : Math.max(1, Math.round(bytes / 1024)) + ' КБ'
+}
+
+async function chooseFiles(event) {
+  const picked = [...event.target.files].slice(0, 8)
+  files.value = picked
+  compression.value = ''
+  if (!picked.length) return
+  const original = picked.reduce((sum, file) => sum + file.size, 0)
+  try {
+    const optimized = await Promise.all(picked.map(async file => {
+      if (!file.type.startsWith('image/')) return file
+      const bitmap = await createImageBitmap(file)
+      const scale = Math.min(1, 2048 / Math.max(bitmap.width, bitmap.height))
+      const canvas = document.createElement('canvas')
+      canvas.width = Math.round(bitmap.width * scale)
+      canvas.height = Math.round(bitmap.height * scale)
+      canvas.getContext('2d').drawImage(bitmap, 0, 0, canvas.width, canvas.height)
+      bitmap.close?.()
+      const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/webp', 0.8))
+      return blob || file
+    }))
+    files.value = optimized
+    const result = optimized.reduce((sum, file) => sum + file.size, 0)
+    compression.value = `фото оптимизировано: ${formatSize(original)} → ${formatSize(result)}`
+  } catch {
+    compression.value = ''
+  }
 }
 
 function vehicleTitle(v) {
@@ -330,6 +358,7 @@ onMounted(async () => {
 
       <p v-if="error" role="alert" class="err">{{ error }}</p>
       <p v-if="message" role="status" class="ok">{{ message }}</p>
+      <p v-if="compression" class="hint">{{ compression }}</p>
       <p v-if="pending" class="hint">В очереди: {{ pending }}</p>
 
       <button type="button" class="send" :disabled="!canSend" @click="send">
