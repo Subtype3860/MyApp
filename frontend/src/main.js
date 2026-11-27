@@ -1,3 +1,11 @@
+// Старые Safari (iOS 13–15) не имеют AbortSignal.timeout — добавляем совместимую заглушку.
+if (typeof AbortSignal !== 'undefined' && !AbortSignal.timeout) {
+  AbortSignal.timeout = ms => {
+    const controller = new AbortController()
+    setTimeout(() => controller.abort(new DOMException('TimeoutError', 'TimeoutError')), ms)
+    return controller.signal
+  }
+}
 import { createApp } from 'vue'
 import './style.css'
 import './styles/themes.css'

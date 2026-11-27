@@ -1,6 +1,6 @@
 /* Service worker «Атлас — Ремонт»: офлайн-оболочка и кэш статики. */
-const SHELL = 'atlas-shell-v1'
-const ASSETS = 'atlas-assets-v1'
+const SHELL = 'atlas-shell-v2'
+const ASSETS = 'atlas-assets-v2'
 const SHELL_FILES = ['/', '/index.html', '/manifest.webmanifest', '/icons/icon-192.png', '/icons/icon-512.png']
 
 self.addEventListener('install', event => {
