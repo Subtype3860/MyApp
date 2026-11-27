@@ -105,6 +105,13 @@ const shortcuts = computed(() =>
       icon: '⚒',
     },
     {
+      permission: 'vehicles.repair',
+      title: 'Ремонт — быстрый отчёт',
+      text: 'Мобильный экран слесаря: техника, фото, отчёт.',
+      page: 'repair-mobile',
+      icon: '🛠',
+    },
+    {
       permission: 'menu.requirements',
       title: 'Выписанные требования',
       text: 'Журнал документов на выдачу материалов.',
