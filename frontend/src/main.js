@@ -45,3 +45,9 @@ window.addEventListener('vite:preloadError', event => {
   sessionStorage.setItem('myapp:preload-reloaded', '1')
   window.location.reload()
 })
+// Регистрируем service worker только в собранном приложении: офлайн-оболочка «Ремонт».
+if (import.meta.env.PROD && 'serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch(() => {})
+  })
+}
