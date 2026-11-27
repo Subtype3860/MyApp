@@ -51,6 +51,8 @@ public partial class AppDbContext
         model.Entity<VehicleHourReadingRecord>().HasQueryFilter(x => !RestrictFleet || AccessibleVehicleIds.Contains(x.VehicleId));
         model.Entity<VehiclePurchaseRequestRecord>().HasQueryFilter(x => !RestrictFleet || AccessibleVehicleIds.Contains(x.VehicleId));
         model.Entity<VehicleWorkRecord>().HasQueryFilter(x => !RestrictFleet || x.VehicleId == null || AccessibleVehicleIds.Contains(x.VehicleId.Value));
+        model.Entity<VehicleMaintenancePlan>().HasQueryFilter(x => !RestrictFleet || AccessibleVehicleIds.Contains(x.VehicleId));
+        model.Entity<VehicleMaintenanceEvent>().HasQueryFilter(x => !RestrictFleet || AccessibleVehicleIds.Contains(x.VehicleId));
         model.Entity<VehicleShiftOutcome>().HasQueryFilter(x => !RestrictFleet || AccessibleVehicleIds.Contains(x.VehicleId));
         model.Entity<VehicleEngineSettings>().HasQueryFilter(x => !RestrictFleet || AccessibleVehicleIds.Contains(x.VehicleId));
         model.Entity<EcuReplacementRecord>().HasQueryFilter(x => !RestrictFleet || AccessibleVehicleIds.Contains(x.VehicleId));

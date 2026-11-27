@@ -406,6 +406,7 @@ function sectionTitle(section) {
     registration: 'Регистрация пользователя',
     professions: 'Профессии',
     'material-groups': 'Группы материалов',
+    maintenance: 'Шаблоны ТО',
     'csv-files': 'Импорт CSV / Excel',
     'media-storage': 'Хранение медиафайлов',
   }[section]

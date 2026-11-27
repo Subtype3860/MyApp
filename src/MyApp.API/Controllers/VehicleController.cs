@@ -735,15 +735,6 @@ public class VehicleController : ControllerBase
         return this.ToActionResult(await service.DeleteEcuReplacementAsync(id, userId, cancellationToken), _ => NoContent());
     }
 
-    /// <summary>Определяет тип изображения по сигнатуре файла.</summary>
-    private static string? DetectContentType(byte[] bytes)
-    {
-        if (bytes.Length > 3 && bytes[0] == 0xFF && bytes[1] == 0xD8) return "image/jpeg";
-        if (bytes.Length > 8 && bytes[0] == 0x89 && bytes[1] == 0x50 && bytes[2] == 0x4E && bytes[3] == 0x47) return "image/png";
-        if (bytes.Length > 12 && bytes[8] == 0x57 && bytes[9] == 0x45 && bytes[10] == 0x42 && bytes[11] == 0x50) return "image/webp";
-        if (bytes.Length > 12 && bytes[4] == 0x66 && bytes[5] == 0x74 && bytes[6] == 0x79 && bytes[7] == 0x70) return "image/heic";
-        return null;
-    }
     /// <summary>Приводит загруженное фото к WebP на сервере, включая HEIC с iPhone.</summary>
     private static async Task<(byte[] Bytes, string ContentType)> NormalizePhotoAsync(
         IFormFile file, MyApp.Infrastructure.Media.MediaImageNormalizer normalizer, CancellationToken cancellationToken)
@@ -751,7 +742,7 @@ public class VehicleController : ControllerBase
         await using var stream = new MemoryStream();
         await file.CopyToAsync(stream, cancellationToken);
         var bytes = stream.ToArray();
-        var type = DetectContentType(bytes) ?? file.ContentType ?? "application/octet-stream";
+        var type = MaintenanceCardMedia.ContentType(bytes) ?? file.ContentType ?? "application/octet-stream";
         if (type.StartsWith("image/", StringComparison.Ordinal) && type != "image/webp")
         {
             var normalized = await normalizer.NormalizeAsync(bytes, cancellationToken);

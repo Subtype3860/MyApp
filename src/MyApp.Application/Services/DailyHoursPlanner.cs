@@ -117,7 +117,7 @@ public static class DailyHoursPlanner
         if (deltas.Any(d => d < 0))
             return (rows, "Оба счётчика ДВС уменьшились. Проверьте показания или замену двигателей.", null);
         var limit = 24m * days;
-        var norm = 11m * days;
+        var norm = MaintenancePlanner.DailyHoursNorm * days;
         var spread = Math.Abs(deltas[0] - deltas[1]);
         var withinLimit = deltas.Select(d => d <= limit).ToArray();
         // 24 м/ч в сутки физически возможно: техника зимой работает круглосуточно.

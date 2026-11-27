@@ -40,12 +40,12 @@ async function load() {
   error.value = ''
   try {
     const options = { headers: { Authorization: `Bearer ${props.token}` }, signal: controller.signal }
-    const [response, auxiliaryResponse] = await Promise.all([fetch('/api/vehicles/repair-journal?includeArchived=true', options), fetch('/api/auxiliary-works', options)])
-    if (!response.ok || !auxiliaryResponse.ok) throw new Error('Не удалось загрузить все работы для отчёта. Попробуйте обновить.')
-    const [repairData, auxiliaryData] = await Promise.all([response.json(), auxiliaryResponse.json()])
+    const [response, auxiliaryResponse, maintenanceResponse] = await Promise.all([fetch('/api/vehicles/repair-journal?includeArchived=true', options), fetch('/api/auxiliary-works', options), fetch('/api/maintenance-plans/shift-report', options)])
+    if (!response.ok || !auxiliaryResponse.ok || !maintenanceResponse.ok) throw new Error('Не удалось загрузить все работы для отчёта. Попробуйте обновить.')
+    const [repairData, auxiliaryData, maintenanceData] = await Promise.all([response.json(), auxiliaryResponse.json(), maintenanceResponse.json()])
     journals.value = repairData
     auxiliaryJournal.value = auxiliaryData
-    maintenanceJournal.value = []
+    maintenanceJournal.value = maintenanceData
     await refreshMediaLinks()
     dataLoaded.value = true
     if (visible('media') && query.has('reportWork')) {
