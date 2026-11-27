@@ -26,6 +26,48 @@ const matches = computed(() => {
 
 const canSend = computed(() => vehicle.value && symptoms.value.trim().length > 1 && !saving.value)
 
+const PIN_KEY = 'atlas-repair-pin'
+const pinInput = ref('')
+const pinError = ref('')
+const pinSet = ref(false)
+const locked = ref(false)
+const showPinSetup = ref(false)
+const pinNew = ref('')
+
+async function hashPin(value) {
+  const data = new TextEncoder().encode('atlas-pin:' + value)
+  const digest = await crypto.subtle.digest('SHA-256', data)
+  return [...new Uint8Array(digest)].map(b => b.toString(16).padStart(2, '0')).join('')
+}
+
+function readPin() {
+  return localStorage.getItem(PIN_KEY) || ''
+}
+
+async function unlock() {
+  pinError.value = ''
+  if (pinInput.value.length < 4) { pinError.value = 'Введите 4 цифры'; return }
+  const stored = readPin()
+  if (await hashPin(pinInput.value) !== stored) { pinError.value = 'Неверный PIN'; pinInput.value = ''; return }
+  sessionStorage.setItem('atlas-repair-unlocked', '1')
+  locked.value = false
+  pinInput.value = ''
+}
+
+async function savePin() {
+  pinError.value = ''
+  if (!/^\d{4}$/.test(pinNew.value)) { pinError.value = 'PIN — 4 цифры'; return }
+  localStorage.setItem(PIN_KEY, await hashPin(pinNew.value))
+  sessionStorage.setItem('atlas-repair-unlocked', '1')
+  pinSet.value = true
+  showPinSetup.value = false
+  locked.value = false
+  pinNew.value = ''
+}
+
+function typeDigit(d) {
+  if (pinInput.value.length < 4) pinInput.value += d
+}
 async function api(path, options = {}) {
   const response = await fetch('/api/vehicles' + path, {
     ...options,
@@ -102,7 +144,12 @@ async function send() {
   }
 }
 
-onMounted(load)
+onMounted(async () => {
+  const stored = readPin()
+  pinSet.value = !!stored
+  locked.value = !!stored && sessionStorage.getItem('atlas-repair-unlocked') !== '1'
+  if (!locked.value) await load()
+})
 </script>
 
 <template>
@@ -112,6 +159,29 @@ onMounted(load)
       <button type="button" class="link" @click="emit('navigate', 'vehicles')">Всё приложение</button>
     </header>
 
+    <section v-if="locked" class="pin">
+      <p class="pin-title">Введите PIN</p>
+      <p class="pin-dots">{{ '•'.repeat(pinInput.length) }}</p>
+      <div class="pin-pad">
+        <button v-for="d in ['1','2','3','4','5','6','7','8','9']" :key="d" type="button" @click="typeDigit(d)">{{ d }}</button>
+        <button type="button" @click="pinInput = pinInput.slice(0, -1)">⌫</button>
+        <button type="button" @click="typeDigit('0')">0</button>
+        <button type="button" @click="pinInput = ''">Сброс</button>
+      </div>
+      <button type="button" class="send" @click="unlock">Войти</button>
+      <p v-if="pinError" class="err">{{ pinError }}</p>
+    </section>
+
+    <section v-else-if="showPinSetup" class="pin">
+      <p class="pin-title">Новый PIN (4 цифры)</p>
+      <input v-model="pinNew" class="search" inputmode="numeric" maxlength="4" placeholder="••••" aria-label="Новый PIN" />
+      <button type="button" class="send" @click="savePin">Сохранить PIN</button>
+      <p v-if="pinError" class="err">{{ pinError }}</p>
+    </section>
+
+    <p v-if="!pinSet && !locked && !showPinSetup" class="hint">
+      <button type="button" class="link" @click="showPinSetup = true">Задать PIN для быстрого входа</button>
+    </p>
     <p v-if="loading" role="status">Загрузка техники…</p>
     <p v-else-if="error" role="alert" class="err">{{ error }}</p>
 
@@ -173,6 +243,11 @@ onMounted(load)
 </template>
 
 <style scoped>
+.pin{display:grid;gap:14px;justify-items:center;padding:32px 0}
+.pin-title{margin:0;font-size:18px}
+.pin-dots{letter-spacing:.4em;font-size:28px;margin:0;min-height:34px}
+.pin-pad{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;width:100%}
+.pin-pad button{min-height:56px;font-size:22px;border:1px solid var(--border);border-radius:14px;background:var(--bg-surface);color:var(--text-main)}
 .repair-mobile{max-width:520px;margin:0 auto;padding:16px 14px 96px;display:grid;gap:14px}
 .repair-head{display:flex;align-items:center;justify-content:space-between}
 .repair-head h1{margin:0;font-size:24px}

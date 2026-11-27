@@ -382,6 +382,15 @@ function toggleGames() {
           Ремонт
         </button>
         <button
+          v-if="canView('vehicles.repair')"
+          class="nav-submenu-link"
+          :class="{ 'nav-submenu-link--active': activePage === 'repair-mobile' }"
+          type="button"
+          @click="$emit('navigate', 'repair-mobile')"
+        >
+          Ремонт — мобильный
+        </button>
+        <button
           v-if="canView('vehicles.repair_history')"
           class="nav-submenu-link"
           :class="{
