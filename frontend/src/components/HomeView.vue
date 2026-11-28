@@ -4,7 +4,6 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import UserAvatar from './UserAvatar.vue'
 import FleetVehicleEditor from './FleetVehicleEditor.vue'
 import FleetActionMenu from './FleetActionMenu.vue'
-import MaintenanceDashboard from './MaintenanceDashboard.vue'
 const props = defineProps({
   navigationCollapsed: { type: Boolean, required: true },
   token: { type: String, required: true },
@@ -215,7 +214,6 @@ function openShortcut(item) {
     </section>
 
     <template v-if="canView('menu.vehicles')">
-      <MaintenanceDashboard :token="token" :can-open="canView('vehicles.maintenance_execution')" @open="emit('navigate-vehicle', 'maintenanceExecution')" />
       <div class="dashboard-columns">
         <section
           id="fleet"
